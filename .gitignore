@@ -38,3 +38,6 @@ samples/_local/
 # example packs: .blend + canonical GLB + FBX + engine variants + index.json are committed
 !samples/packs/
 !samples/packs/**
+
+# local tool settings (Claude Code preview servers)
+.claude/
