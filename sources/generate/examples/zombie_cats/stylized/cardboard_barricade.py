@@ -1,58 +1,66 @@
-"""Barricade of stacked cardboard boxes with a zombie cat (ears + glowing eyes) hiding in the top box."""
+"""zc_cardboard_barricade: stacked cardboard boxes with a zombie cat peeking from the top box."""
 import math
 
 
 def build(mg):
-    card = mg.color("cardboard", (0.62, 0.47, 0.27), rough=0.85)
-    tape = mg.color("tape", (0.47, 0.35, 0.20), rough=0.7)
-    ear = mg.color("cat_fur", (0.42, 0.52, 0.47), rough=0.8)
-    eye = mg.color("eye_glow", (0.25, 1.0, 0.25), rough=0.3, glow=3.0)
+    card = mg.color("cardboard", (0.80, 0.62, 0.38), rough=0.9)
+    card_l = mg.color("cardboard_light", (0.88, 0.75, 0.53), rough=0.9)
+    card_d = mg.color("cardboard_dark", (0.70, 0.52, 0.32), rough=0.85)
+    tape = mg.color("cardboard_tape", (0.90, 0.83, 0.67), rough=0.7)
+    ear = mg.color("fabric_zombie", (0.44, 0.56, 0.42), rough=0.7)
+    eye = mg.color("eye_glow", (0.35, 1.0, 0.25), rough=0.3, glow=3.0, material="plain")
 
-    parts = []
+    P = []
 
-    def box(loc, size, rot=0.0):
-        w, d, h = size
-        cx, cy, cz = loc
-        parts.append(mg.part("cube", card, loc=loc, scale=size, rot=(0, 0, rot), bevel=0.02))
-        # tape seam across the top (running along X, narrow in Y)
-        tz = cz + h / 2 - 0.005
-        parts.append(mg.part("cube", tape, loc=(cx, cy, tz + 0.008),
-                             scale=(w + 0.012, d * 0.22, 0.02), rot=(0, 0, rot)))
-        if mg.at_least("mobile-high"):
-            # tape running down the front face
-            fy = cy - math.cos(rot) * d / 2 - math.sin(rot) * 0.0
-            parts.append(mg.part("cube", tape, loc=(cx, cy - d / 2 - 0.004, cz + h * 0.15),
-                                 scale=(w * 0.22, 0.02, h * 0.7), rot=(0, 0, rot)))
+    def box(cx, cz, w, h, d=0.56, cy=0.0):
+        P.append(mg.part("cube", card, loc=(cx, cy, cz), scale=(w, d, h), bevel=0.025))
+        if mg.at_least("mobile-mid"):
+            # folded top flaps (lighter)
+            P.append(mg.part("cube", card_l, loc=(cx, cy, cz + h / 2 - 0.015),
+                             scale=(w * 0.97, d * 0.97, 0.05), bevel=0.01))
+            # tape seam strip across the top
+            P.append(mg.part("cube", tape, loc=(cx, cy, cz + h / 2 + 0.005),
+                             scale=(0.09, d * 0.97, 0.03)))
+            # packing-tape patch on the front (-Y) face
+            P.append(mg.part("cube", card_d, loc=(cx, cy - d / 2 - 0.004, cz - h * 0.05),
+                             scale=(w * 0.30, 0.012, h * 0.55), bevel=0.005))
 
-    # bottom row
-    box((-0.62, 0.00, 0.30), (0.55, 0.60, 0.60), rot=0.04)
-    box((0.05, 0.05, 0.28), (0.78, 0.70, 0.56), rot=-0.02)
-    box((0.62, -0.16, 0.27), (0.50, 0.50, 0.54), rot=0.10)
+    # bottom row (three boxes)
+    box(-0.60, 0.28, 0.56, 0.55)
+    box(0.00, 0.27, 0.56, 0.53)
+    box(0.60, 0.28, 0.56, 0.55, cy=0.02)
 
-    # top row
-    box((-0.35, 0.06, 0.90), (0.60, 0.60, 0.58), rot=-0.03)
-    cat = (0.35, -0.05, 0.88)
-    cbw = 0.56
-    box(cat, (0.55, cbw, 0.56), rot=0.02)
+    # top row: left box and the cat box (right)
+    box(-0.45, 0.83, 0.54, 0.53)
+    cx, cz, cw, ch, cd = 0.42, 0.83, 0.55, 0.53, 0.54
+    box(cx, cz, cw, ch, d=cd)
 
-    # dented corners (small pushed-in cubes) at higher tiers
-    if mg.at_least("mobile-mid"):
-        for (dx, dy, dz) in [(-0.85, -0.28, 0.05), (0.80, -0.38, 0.03),
-                             (-0.12, 0.58, 1.15), (0.60, -0.30, 1.13)]:
-            parts.append(mg.part("cube", card, loc=(dx, dy, dz),
-                                 scale=(0.14, 0.14, 0.14), rot=(0.6, 0.5, 0.3), bevel=0.03))
+    # crumpled paper balls (decorative, dented)
+    P.append(mg.part("ico", card_l, loc=(-0.42, 0.0, 1.20), scale=(0.18, 0.18, 0.17),
+                     subdiv=1, bevel=0.01))
+    P.append(mg.part("ico", card_l, loc=(cx + 0.36, -0.10, 0.86), scale=(0.15, 0.15, 0.15),
+                     subdiv=1, bevel=0.01))
 
-    cx, cy, cz = cat
-    top_z = cz + 0.28
-    front_y = cy - cbw / 2
+    # zombie cat: pointed ears on top of the cat box
+    top = cz + ch / 2
+    for dx in (-0.14, 0.14):
+        P.append(mg.part("cone", ear, loc=(cx + dx, 0.06, top + 0.11),
+                         scale=(0.13, 0.13, 0.26), radius2=0.0))
 
-    # zombie cat: pointed ears poking out of the top
-    for sx in (-1, 1):
-        parts.append(mg.part("cone", ear, loc=(cx + sx * 0.12, cy + 0.10, top_z + 0.10),
-                             scale=(0.15, 0.15, 0.26), rot=(0.12 * sx, 0.10 * sx, 0)))
     # glowing green eyes on the front face
-    for sx in (-1, 1):
-        parts.append(mg.part("sphere", eye, loc=(cx + sx * 0.09, front_y + 0.01, cz + 0.10),
-                             scale=(0.06, 0.06, 0.06)))
+    fy = cx * 0 - cd / 2 - 0.02
+    for dx in (-0.11, 0.11):
+        P.append(mg.part("sphere", eye, loc=(cx + dx, fy, 0.86), scale=(0.09, 0.06, 0.09)))
 
-    mg.join("zc_cardboard_barricade", parts)
+    # cardboard-roll "wheels" at the front base corners
+    for wx in (-0.80, 0.80):
+        P.append(mg.part("cyl", card_d, loc=(wx, -0.22, 0.13), scale=(0.24, 0.24, 0.12),
+                         rot=(math.pi / 2, 0, 0), vertices=16))
+
+    # dented corner accents (only when there is budget)
+    if mg.at_least("mobile-high"):
+        for (dx, dz) in ((-0.86, 0.05), (0.86, 0.05), (-0.70, 1.06)):
+            P.append(mg.part("cube", card_d, loc=(dx, -0.24, dz),
+                             scale=(0.09, 0.09, 0.09), bevel=0.03))
+
+    mg.join("zc_cardboard_barricade", P)

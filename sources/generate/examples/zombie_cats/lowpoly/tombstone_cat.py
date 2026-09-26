@@ -1,61 +1,53 @@
-"""Cat-shaped tombstone: pointed-ear stone slab with a carved paw print on a low base, oozing glowing green goo."""
+"""Cat-shaped tombstone: stone slab with two pointed ears, carved paw print, low base, glowing green goo."""
 import math
 
 
 def build(mg):
-    mg.color("stone", "#6a6d72", rough=0.9)
-    mg.color("stone_lit", "#7c8086", rough=0.9)
-    mg.color("paw", "#34363b", rough=0.95)
-    mg.color("goo", "#7ce000", rough=0.35, glow=2.2)
-    mg.color("goo_dk", "#57b400", rough=0.4, glow=1.4)
+    stone = mg.color("stone", "#d8cfc0", rough=0.85)
+    stone_dark = mg.color("stone_dark", "#5a564f", rough=0.8)  # carved paw pads
+    goo = mg.color("goo_slime", "#8cf03a", rough=0.3, glow=2.5)
 
     parts = []
+    w, t, h = 0.7, 0.22, 1.1
+    z0 = 0.14  # top of base
+
+    # main slab, slightly tapered narrower toward top
+    parts.append(mg.part("cube", stone, loc=(0, 0, z0 + h / 2), scale=(w, t, h),
+                         taper=0.9, bevel=0.01))
+
+    # two pointed cat ears on top (triangular wedges) with a V notch between
+    ear_w, ear_h = 0.24, 0.34
+    top = z0 + h
+    ear = mg.extrude([(0.02, 0), (0.02 + ear_w, 0), (0.05 + ear_w * 0.4, ear_h)],
+                     t * 0.92, stone, loc=(0, 0, top), rot=(0, 0, 0))
+    parts.append(ear)
+    parts.append(mg.mirror_x(ear))
 
     # low stone base
-    parts.append(mg.part("cube", "stone", loc=(0, 0, 0.07), scale=(0.7, 0.28, 0.14), bevel=0.02))
-    parts.append(mg.part("cube", "stone_lit", loc=(0, 0, 0.135), scale=(0.66, 0.24, 0.02), bevel=0.01))
+    parts.append(mg.part("cube", stone, loc=(0, 0, z0 / 2), scale=(w + 0.28, t + 0.28, z0),
+                         bevel=0.01))
 
-    # slab silhouette with two pointed cat ears (front view = XZ)
-    outline = [
-        (-0.30, 0.13), (-0.31, 0.55), (-0.30, 0.82),
-        (-0.29, 1.05),                      # left ear tip
-        (-0.13, 0.84), (0.00, 0.90), (0.13, 0.84),
-        (0.29, 1.05),                       # right ear tip
-        (0.30, 0.82), (0.31, 0.55), (0.30, 0.13),
-    ]
-    parts.append(mg.extrude(outline, 0.15, "stone", bevel=0.014))
+    # carved paw print on the front face (front faces -Y)
+    yf = -t / 2 + 0.01
+    pz = z0 + h * 0.62
+    # big central pad
+    parts.append(mg.part("sphere", stone_dark, loc=(0, yf, pz - 0.06),
+                         scale=(0.17, 0.06, 0.15)))
+    # four toe pads
+    toes = [(-0.13, 0.05), (-0.05, 0.11), (0.05, 0.11), (0.13, 0.05)]
+    for tx, tzo in toes:
+        parts.append(mg.part("sphere", stone_dark, loc=(tx, yf, pz + tzo),
+                             scale=(0.07, 0.05, 0.07)))
 
-    # faceted rock chips on richer tiers
-    if mg.at_least("mobile-high"):
-        for x, z, s in [(-0.31, 0.35, 0.06), (0.31, 0.62, 0.05), (-0.30, 0.72, 0.05),
-                        (0.30, 0.28, 0.06), (-0.34, 0.05, 0.05)]:
-            parts.append(mg.part("ico", "stone_lit",
-                                 loc=(x, mg.rng.uniform(-0.05, 0.05), z),
-                                 scale=(s, 0.12, s),
-                                 rot=(0, 0, mg.rng.uniform(0, 1.0))))
+    tomb = mg.join("zc_tombstone_cat", parts)
 
-    # carved paw print on the front face (front = -Y)
-    fy = -0.055
-    parts.append(mg.part("sphere", "paw", loc=(0, fy, 0.54), scale=(0.17, 0.07, 0.15)))
-    toes = [(-0.115, 0.70), (-0.04, 0.75), (0.04, 0.75), (0.115, 0.70)]
-    for tx, tz in toes:
-        parts.append(mg.part("sphere", "paw", loc=(tx, fy, tz), scale=(0.075, 0.06, 0.09)))
-
-    body = mg.join("zc_tombstone_cat", parts)
-
-    # puddle of glowing green goo at the front-left, with a drip down the base
-    goo = []
-    goo.append(mg.part("sphere", "goo", loc=(-0.02, -0.22, 0.015), scale=(0.34, 0.30, 0.05)))
-    goo.append(mg.part("sphere", "goo", loc=(-0.20, -0.16, 0.012), scale=(0.14, 0.14, 0.04)))
-    goo.append(mg.part("sphere", "goo_dk", loc=(0.14, -0.20, 0.012), scale=(0.12, 0.12, 0.04)))
-    # drip running down the front of the base
-    goo.append(mg.part("cube", "goo", loc=(-0.05, -0.15, 0.09), scale=(0.06, 0.03, 0.16), bevel=0.02))
-    goo.append(mg.part("sphere", "goo", loc=(-0.05, -0.15, 0.02), scale=(0.10, 0.08, 0.05)))
+    # glowing green goo puddle at front of base
+    goo_parts = []
+    goo_parts.append(mg.part("cyl", goo, loc=(0, -t / 2 - 0.12, 0.015),
+                             scale=(0.34, 0.4, 0.03), vertices=12))
+    goo_parts.append(mg.part("cyl", goo, loc=(0, -t / 2 - 0.05, z0 * 0.5),
+                             scale=(0.16, 0.1, z0 * 1.1), vertices=10, taper=0.4))
     if mg.at_least("mobile-mid"):
-        for i in range(5):
-            gx = mg.rng.uniform(-0.28, 0.22)
-            gy = mg.rng.uniform(-0.30, -0.10)
-            r = mg.rng.uniform(0.03, 0.06)
-            goo.append(mg.part("sphere", "goo_dk", loc=(gx, gy, 0.01), scale=(r, r, 0.03)))
-    goo_mesh = mg.join("zc_tombstone_goo", goo)
-    mg.attach(goo_mesh, body)
+        goo_parts.append(mg.part("cyl", goo, loc=(0.28, -t / 2 - 0.24, 0.012),
+                                 scale=(0.11, 0.13, 0.025), vertices=10))
+    mg.join("zc_tombstone_goo", goo_parts)

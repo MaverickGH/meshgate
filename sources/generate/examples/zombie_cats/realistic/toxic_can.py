@@ -1,68 +1,86 @@
-"""Giant opened cat-food tin: metal can, purple fish label, glowing toxic goo, peeled lid, puddles."""
+"""zc_toxic_can — giant opened cat-food tin with purple label, cyan fish, glowing green toxic goo."""
 import math
 
 
 def build(mg):
-    steel = mg.color("steel", (0.62, 0.63, 0.66), rough=0.4, metal=1.0)
-    purple = mg.color("purple", (0.34, 0.14, 0.5), rough=0.55)
-    goo = mg.color("goo", (0.32, 0.82, 0.18), rough=0.3, glow=1.6)
-    fish = mg.color("fish", (0.2, 0.45, 0.68), rough=0.5)
+    steel = mg.color("steel", (0.34, 0.34, 0.38), rough=0.4, metal=1.0, material="metal")
+    steel_d = mg.color("steel_dark", (0.15, 0.15, 0.18), rough=0.5, metal=1.0, material="metal")
+    purple = mg.color("paint_purple", (0.40, 0.14, 0.52), rough=0.55, metal=0.1, material="metal")
+    cyan = mg.color("paint_cyan", (0.13, 0.62, 0.72), rough=0.5, metal=0.1, material="metal")
+    goo = mg.color("goo_green", (0.48, 0.88, 0.18), rough=0.25, glow=1.8, material="plain")
 
-    R, H = 0.22, 0.70
+    R = 0.30
     parts = []
+    # can body (purple painted metal)
+    parts.append(mg.part("cyl", purple, loc=(0, 0, 0.31), scale=(R * 2, R * 2, 0.60),
+                         vertices=32, bevel=0.005))
+    # bottom disc / floor of tin visible? solid body already. bare metal foot
+    parts.append(mg.part("cyl", steel, loc=(0, 0, 0.02), scale=(R * 2 + 0.01, R * 2 + 0.01, 0.04),
+                         vertices=32))
 
-    # ---- can body (metal) ----
-    parts.append(mg.part("cyl", steel, loc=(0, 0, H / 2), scale=(2 * R, 2 * R, H), bevel=0.006))
-    # top lip rim
-    parts.append(mg.part("torus", steel, loc=(0, 0, H), scale=(1, 1, 0.5),
-                         major_radius=R - 0.012, minor_radius=0.02))
+    # raised metal bands and rims (torus rings around the body)
+    def ring(z, minor, col, maj=R + 0.005):
+        parts.append(mg.part("torus", col, loc=(0, 0, z), major_radius=maj, minor_radius=minor))
 
-    # ---- purple label band ----
-    lz0, lz1 = 0.09, 0.60
-    parts.append(mg.part("cyl", purple, loc=(0, 0, (lz0 + lz1) / 2),
-                         scale=(2 * (R + 0.006), 2 * (R + 0.006), lz1 - lz0)))
-
-    # ---- fish picture on the label front (-Y) ----
+    ring(0.605, 0.035, steel)              # thick top rim
+    ring(0.60, 0.02, steel_d, maj=R - 0.02)
+    ring(0.05, 0.03, steel)                # bottom rim
+    ring(0.475, 0.022, steel)              # upper band
+    ring(0.13, 0.022, steel)               # lower band
     if mg.at_least("mobile-mid"):
-        outline = [(-0.09, 0.04), (-0.04, 0.0), (-0.09, -0.04), (-0.04, -0.035),
-                   (0.04, -0.045), (0.08, -0.02), (0.09, 0.0), (0.08, 0.02),
-                   (0.04, 0.045), (-0.04, 0.035)]
-        parts.append(mg.extrude(outline, 0.02, fish, loc=(-0.01, -(R - 0.005), 0.35)))
+        ring(0.545, 0.015, steel)
+        ring(0.075, 0.015, steel)
 
-    # ---- glowing goo domed over the open top ----
-    parts.append(mg.part("sphere", goo, loc=(0, 0, H - 0.04),
-                         scale=(2 * (R - 0.018), 2 * (R - 0.018), 0.13)))
-    # blobs / bubbles on the goo surface
-    for x, y, s in ((0.06, -0.05, 0.05), (-0.07, 0.05, 0.045), (0.02, 0.09, 0.035)):
-        parts.append(mg.part("sphere", goo, loc=(x, y, H + 0.02), scale=(s, s, s)))
+    # rivets on the bands
     if mg.at_least("mobile-high"):
-        for i in range(6):
-            a = mg.rng.uniform(0, math.tau)
-            rr = mg.rng.uniform(0.04, 0.14)
-            s = mg.rng.uniform(0.02, 0.04)
-            parts.append(mg.part("sphere", goo,
-                                 loc=(math.cos(a) * rr, math.sin(a) * rr, H + 0.01),
-                                 scale=(s, s, s)))
+        for i in range(12):
+            ang = i / 12 * math.tau
+            x, y = math.cos(ang) * (R + 0.01), math.sin(ang) * (R + 0.01)
+            parts.append(mg.part("sphere", steel_d, loc=(x, y, 0.475),
+                                 scale=(0.02, 0.02, 0.02), segments=8))
 
-    # ---- goo spilling over the rim ----
+    # cyan fish emblem on the front of the label (front faces -Y)
+    fish = [(-0.13, 0.0), (-0.05, 0.065), (0.05, 0.045), (0.12, 0.10),
+            (0.055, 0.0), (0.12, -0.10), (0.05, -0.045), (-0.05, -0.065)]
+    parts.append(mg.extrude(fish, 0.02, cyan, loc=(0, -0.285, 0.29), bevel=0.004))
+    parts.append(mg.part("sphere", steel_d, loc=(-0.075, -0.30, 0.31),
+                         scale=(0.02, 0.02, 0.02), segments=8))  # fish eye
+
+    # glowing goo dome inside the tin
+    parts.append(mg.part("sphere", goo, loc=(0, 0, 0.58), scale=(R - 0.03, R - 0.03, 0.14),
+                         segments=32, ring_count=16))
+    # bubbles resting on the goo surface
+    for bx, by, br in [(-0.10, 0.05, 0.05), (0.08, -0.07, 0.045), (0.02, 0.10, 0.038),
+                       (0.14, 0.04, 0.03), (-0.12, -0.06, 0.03)]:
+        parts.append(mg.part("sphere", goo, loc=(bx, by, 0.63),
+                             scale=(br * 2, br * 2, br * 2), segments=mg.seg(14)))
+
+    # goo drips spilling over the rim and down the outside
+    for x, zend in [(-0.12, 0.40), (0.04, 0.34), (0.16, 0.43), (-0.20, 0.47)]:
+        pts = [(x, -0.18, 0.61), (x, -0.31, 0.575), (x, -0.315, zend)]
+        parts.append(mg.tube(pts, 0, goo, radii=[0.035, 0.03, 0.018],
+                             sides=mg.seg(8), smooth=True))
+        parts.append(mg.part("sphere", goo, loc=(x, -0.315, zend),
+                             scale=(0.045, 0.045, 0.05), segments=mg.seg(12)))
+
+    # puddles of goo on the ground
+    for px, py, rx, ry in [(0.0, -0.42, 0.17, 0.12), (-0.36, -0.28, 0.11, 0.09),
+                           (0.37, -0.24, 0.12, 0.10), (0.22, 0.36, 0.09, 0.07)]:
+        parts.append(mg.part("sphere", goo, loc=(px, py, 0.015),
+                             scale=(rx * 2, ry * 2, 0.05), segments=mg.seg(18), ring_count=8))
+
+    # the round lid standing up above the rim (leaning back)
+    a = 1.42
+    Lx, Ly, Lz = 0.0, 0.20, 0.80
+    nx, ny, nz = 0.0, -math.sin(a), math.cos(a)
+    parts.append(mg.part("cyl", steel_d, loc=(Lx, Ly, Lz), scale=(0.56, 0.56, 0.03),
+                         rot=(a, 0, 0), vertices=32, bevel=0.006))
+    parts.append(mg.part("torus", steel, loc=(Lx, Ly, Lz), major_radius=0.27,
+                         minor_radius=0.03, rot=(a, 0, 0)))
     if mg.at_least("mobile-mid"):
-        for x in (-0.08, 0.10):
-            zt = H + 0.01
-            parts.append(mg.tube([(x, -R + 0.01, zt), (x + 0.01, -R - 0.02, zt - 0.08),
-                                  (x, -R - 0.01, zt - 0.18)], 0.03, goo, sides=8))
-
-    # ---- peeled lid standing up behind ----
-    th = -2.2
-    ly = R - R * math.cos(th)
-    lz = H - R * math.sin(th)
-    parts.append(mg.part("cyl", steel, loc=(0, ly, lz), rot=(th, 0, 0),
-                         scale=(2 * (R + 0.02), 2 * (R + 0.02), 0.02), bevel=0.005))
-    parts.append(mg.part("torus", steel, loc=(0, ly, lz), rot=(th, 0, 0),
-                         scale=(1, 1, 0.6), major_radius=R + 0.02, minor_radius=0.015))
-
-    # ---- puddles on the ground ----
-    for x, y, sx, sy in ((0.0, -0.32, 0.22, 0.15), (-0.26, -0.12, 0.15, 0.12),
-                         (0.24, -0.20, 0.14, 0.11)):
-        parts.append(mg.part("sphere", goo, loc=(x, y, 0.02), scale=(sx, sy, 0.05)))
+        parts.append(mg.part("torus", steel, loc=(Lx, Ly, Lz), major_radius=0.19,
+                             minor_radius=0.012, rot=(a, 0, 0)))
+    parts.append(mg.part("cyl", steel, loc=(Lx + 0.025 * nx, Ly + 0.025 * ny, Lz + 0.025 * nz),
+                         scale=(0.05, 0.05, 0.02), rot=(a, 0, 0), vertices=mg.seg(12)))
 
     mg.join("zc_toxic_can", parts)

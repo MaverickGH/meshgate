@@ -141,16 +141,96 @@ def _bake_material(pal: dict, size: float):
                 links.new(v, sock)
         return n.outputs[2]
 
+    def mapped(scale_xyz):
+        m = nodes.new("ShaderNodeMapping")
+        links.new(coord.outputs["Object"], m.inputs["Vector"])
+        m.inputs["Scale"].default_value = scale_xyz
+        return m.outputs["Vector"]
+
+    def noise_at(vec, scale, detail=4.0, rough_=.55):
+        n = nodes.new("ShaderNodeTexNoise")
+        n.inputs["Scale"].default_value, n.inputs["Detail"].default_value, n.inputs["Roughness"].default_value = \
+            scale, detail, rough_
+        links.new(vec, n.inputs["Vector"])
+        return n.outputs["Fac"]
+
+    def wave(vec, scale, direction, distortion, detail=2.0):
+        n = nodes.new("ShaderNodeTexWave")
+        n.wave_type, n.bands_direction = "BANDS", direction
+        n.inputs["Scale"].default_value, n.inputs["Distortion"].default_value = scale, distortion
+        n.inputs["Detail"].default_value = detail
+        links.new(vec, n.inputs["Vector"])
+        return n.outputs["Fac"]
+
+    def voronoi(scale, feature):
+        n = nodes.new("ShaderNodeTexVoronoi")
+        n.feature = feature
+        n.inputs["Scale"].default_value = scale
+        links.new(coord.outputs["Object"], n.inputs["Vector"])
+        return n.outputs["Distance"]
+
+    def shade(c, fac):
+        return mix(1.0, c, fac, "MULTIPLY")
+
     # colour variation: broad blotches and finer mottling, about ±20 %, less on bare metal
     var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.78, 1.14),
                 maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.88, 1.08))
     var = mix(math_("MULTIPLY", metal, 0.7), var, 1.0)
     col = mix(1.0, base.outputs["Color"], var, "MULTIPLY")
-    # dirt: occluded corners and the lowest band near the ground, broken up by noise
     ao = nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 16
     ao.inputs["Distance"].default_value = max(size * 0.08, 0.02)
     crevice = maprange(ao.outputs["AO"], 0.45, 1.0, 1.0, 0.0)
+    nz = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(geo.outputs["Normal"], nz.inputs[0])
+    obj = coord.outputs["Object"]
+
+    # what each colour is made of (the kit writes it into the ORM red: material index / 16), drawn in real metres
+    kind = math_("FLOOR", math_("MULTIPLY", sep_orm.outputs[0], 16.0))
+    grain = math_("MULTIPLY", math_("ADD", wave(mapped((1, 1, .12)), 9.0, "X", 7.0, 4), wave(mapped((1, 1, .12)), 9.0, "Y", 7.0, 4)), .5)
+    fibre, corr = noise_at(obj, 140, 3), wave(obj, 55.0, "Z", 0.0, 0)
+    crack = math_("MULTIPLY", maprange(voronoi(3.0, "DISTANCE_TO_EDGE"), 0.0, 0.018, 1.0, 0.0),   # thin, and only here and there
+                  maprange(noise_at(obj, 1.6, 3), .52, .64, 0.0, 1.0))
+    mottle = noise_at(obj, 3.5, 6)
+    moss = math_("MULTIPLY", math_("MAXIMUM", maprange(nz.outputs["Z"], .25, .85, 0, 1), math_("MULTIPLY", crevice, .6)),
+                 maprange(noise_at(obj, 2.5, 6), .45, .62, 0, 1))
+    brushed = noise_at(mapped((.06, 1, 1)), 40, 2)
+    rust_spots = maprange(noise_at(obj, 2.2, 8, .6), .56, .7, 0, 1)
+    rust_all = maprange(noise_at(obj, 2.2, 8, .6), .38, .6, 0, 1)
+    weave = math_("MULTIPLY", wave(obj, 80.0, "X", 0.0, 0), wave(obj, 80.0, "Z", 0.0, 0))
+    clumps, small = noise_at(obj, 3.0, 6), noise_at(obj, 28.0, 4)
+    pores = maprange(voronoi(70.0, "F1"), 0.0, 0.12, 1.0, 0.0)
+    looks = {   # material index: (colour, relief, extra roughness)
+        1: (shade(col, maprange(grain, 0, 1, .7, 1.12)), math_("MULTIPLY", grain, .7), 0.0),                      # wood
+        2: (shade(col, maprange(fibre, .3, .7, .9, 1.05)),
+            math_("ADD", math_("MULTIPLY", corr, .25), math_("MULTIPLY", fibre, .12)), 0.0),                       # cardboard
+        3: (mix(moss, mix(math_("MULTIPLY", crack, .6), shade(col, maprange(mottle, .35, .65, .82, 1.1)),
+                          (.08, .075, .07, 1.0)), (.16, .24, .07, 1.0)),
+            math_("SUBTRACT", math_("MULTIPLY", mottle, .4), math_("MULTIPLY", crack, .9)), .1),                   # stone
+        4: (mix(math_("MULTIPLY", rust_spots, .85), shade(col, maprange(brushed, .3, .7, .92, 1.06)), (.32, .12, .045, 1.0)),
+            math_("MULTIPLY", rust_spots, .35), math_("MULTIPLY", rust_spots, .45)),                               # metal
+        5: (mix(maprange(rust_all, 0, 1, .5, .95), col, (.30, .11, .04, 1.0)),
+            math_("ADD", math_("MULTIPLY", noise_at(obj, 30, 4), .5), math_("MULTIPLY", rust_all, .3)), .5),      # rust
+        6: (shade(col, maprange(weave, 0, 1, .86, 1.05)),
+            math_("ADD", math_("MULTIPLY", weave, .6), math_("MULTIPLY", noise_at(obj, 200, 2), .2)), .05),       # fabric
+        7: (shade(shade(col, maprange(clumps, .3, .7, .7, 1.2)), maprange(small, .3, .7, .9, 1.1)),
+            math_("ADD", math_("MULTIPLY", clumps, .8), math_("MULTIPLY", small, .4)), .1),                        # ground
+        8: (mix(math_("MULTIPLY", crevice, .5), mix(math_("MULTIPLY", pores, .35), col, (.35, .3, .22, 1.0)), (.55, .45, .28, 1.0)),
+            math_("MULTIPLY", pores, -.5), 0.0),                                                                     # bone
+    }
+    relief, rough_extra = None, None
+    for k, (c, h, r) in looks.items():
+        mask = nodes.new("ShaderNodeMath")
+        mask.operation = "COMPARE"
+        links.new(kind, mask.inputs[0])
+        mask.inputs[1].default_value, mask.inputs[2].default_value = float(k), .5
+        col = mix(mask.outputs[0], col, c)
+        hk = math_("MULTIPLY", mask.outputs[0], h)
+        relief = hk if relief is None else math_("ADD", relief, hk)
+        if r:
+            rk = math_("MULTIPLY", mask.outputs[0], r)
+            rough_extra = rk if rough_extra is None else math_("ADD", rough_extra, rk)
+    # dirt: occluded corners and the lowest band near the ground, broken up by noise
     world_z = nodes.new("ShaderNodeSeparateXYZ")
     links.new(geo.outputs["Position"], world_z.inputs[0])
     ground = maprange(world_z.outputs["Z"], 0.0, max(size * 0.25, 0.06), 0.75, 0.0)
@@ -161,7 +241,7 @@ def _bake_material(pal: dict, size: float):
     grime = mix(1.0, col, (0.1, 0.085, 0.065, 1.0), "MULTIPLY")
     col = mix(dirt, col, grime)
     # roughness: dirt is duller; relief: fine noise, stronger on rough surfaces, none on polished metal
-    rough_out = math_("MINIMUM", math_("ADD", rough, math_("MULTIPLY", dirt, 0.25)), 1.0)
+    rough_out = math_("MINIMUM", math_("ADD", math_("ADD", rough, math_("MULTIPLY", dirt, 0.25)), rough_extra), 1.0)
     orm_out = nodes.new("ShaderNodeCombineColor")
     orm_out.inputs[0].default_value = 1.0
     links.new(rough_out, orm_out.inputs[1])
@@ -170,8 +250,8 @@ def _bake_material(pal: dict, size: float):
     bump.inputs["Distance"].default_value = max(size * 0.006, 0.0015)
     links.new(math_("MULTIPLY", rough, 0.8), bump.inputs["Strength"])
     fine = noise(60.0 / max(size, 0.1) * 0.5, 10.0, 0.6)
-    links.new(math_("ADD", fine.outputs["Fac"], math_("MULTIPLY", noise(14.0 / max(size, 0.1) * 0.5, 4.0).outputs["Fac"], 0.6)),
-              bump.inputs["Height"])
+    links.new(math_("ADD", math_("ADD", fine.outputs["Fac"], math_("MULTIPLY", noise(14.0 / max(size, 0.1) * 0.5, 4.0).outputs["Fac"], 0.6)),
+                    math_("MULTIPLY", relief, 1.6)), bump.inputs["Height"])
 
     emit = nodes.new("ShaderNodeEmission")   # colour maps bake through Emission: exact values, no lighting
     bsdf = nodes.new("ShaderNodeBsdfPrincipled")

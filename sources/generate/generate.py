@@ -63,8 +63,10 @@ FINISHES = {"lowpoly": "faceted", "realistic": "weathered"}
 FINISH_NOTES = {
     "faceted": ". MeshGate renders it faceted: flat shading and few segments are enforced, so build bold, simple, chunky "
                "forms and let the facets show",
-    "weathered": ". MeshGate bakes weathering on top: dirt in crevices and near the ground, colour variation and fine "
-                 "surface relief. Give every part its clean base colour; do not model dirt, stains or noise yourself",
+    "weathered": ". MeshGate bakes weathering on top: dirt in crevices and near the ground, colour variation, fine "
+                 "surface relief and the look of each material. Name every colour by what it is made of (wood_dark, "
+                 "cardboard, stone, iron, rust, rope, fabric, grass, bone) or pass material=, and give it its clean "
+                 "base colour; do not model dirt, stains, grain or noise yourself",
 }
 
 

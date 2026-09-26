@@ -253,7 +253,7 @@ def gif_styles(preview):
         h.location.z = .12
         lab = text(label, (0, -.8, .02), .12, rot=(math.radians(78), 0, 0))
         items.append((h, lab))
-    camera((0, -6.8, 2.0), (0, 0, .68), lens=78)
+    camera((0, -6.8, 2.1), (0, 0, .8), lens=64)
     n = len(items)
 
     def step(t, f):

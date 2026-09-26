@@ -1,64 +1,68 @@
-"""Broken wooden garden fence: dark posts + rails, tan cat-ear pickets, some snapped, one crooked."""
+"""Broken wooden garden fence: 2 posts, 2 rails, cat-ear pickets, one crooked, two snapped short."""
 import math
 
 
 def build(mg):
-    dark = mg.color("wood_dark", "#432c17", rough=0.85)
-    tan = mg.color("wood_tan", "#a9825408"[:7], rough=0.8)
-    tan = mg.color("wood_tan", "#a98254", rough=0.8)
-    tan2 = mg.color("wood_tan2", "#946e42", rough=0.82)
-    nailc = mg.color("nail", (0.3, 0.3, 0.33), rough=0.45, metal=1.0)
+    mg.color("wood_post", "#8a5222", rough=0.85, material="wood")
+    mg.color("wood_rail", "#7a481d", rough=0.85, material="wood")
+    mg.color("wood_cap", "#a9702f", rough=0.8, material="wood")
+    mg.color("wood_picket", "#dca css".replace("dca css", "d7a24a"), rough=0.75, material="wood")
+    mg.color("nail", "#2e2117", rough=0.7, metal=0.4, material="rust")
 
     parts = []
+    w = 0.13           # picket width
+    pd = 0.03          # picket thickness (depth along Y)
+    py = -0.035        # picket front plane
+    ry = 0.02          # rail plane
+    post_y = 0.05
+    H = 1.1
 
-    # ---- posts (dark, chunky, at both ends) ----
-    for x in (-0.9, 0.9):
-        parts.append(mg.part("cube", dark, loc=(x, 0.0, 0.55),
-                             scale=(0.1, 0.13, 1.1), bevel=0.008))
-    # right post has a little slot cut near the top (broken look) -> small notch cube skipped, add stub
-    parts.append(mg.part("cube", dark, loc=(0.9, -0.08, 0.72),
-                         scale=(0.11, 0.03, 0.14), bevel=0.005))
+    # --- cat-ear picket outlines (XZ, centered on x=0) ---
+    def full_top(base):
+        return [(-w/2, base), (w/2, base), (w/2, 0.88),
+                (w/4, 1.0), (0, 0.80), (-w/4, 1.0), (-w/2, 0.88)]
 
-    # ---- two horizontal rails ----
-    for z in (0.35, 0.8):
-        parts.append(mg.part("cube", dark, loc=(0.0, 0.0, z),
-                             scale=(1.85, 0.09, 0.1), bevel=0.008))
+    def snapped():
+        # jagged snapped bottom, cat-ear top, short
+        return [(-w/2, 0.42), (-w/4, 0.33), (0.0, 0.45), (w/4, 0.34),
+                (w/2, 0.42), (w/2, 0.88), (w/4, 1.0), (0, 0.80), (-w/4, 1.0), (-w/2, 0.88)]
 
-    # ---- picket outlines (XZ front view) ----
-    full = [(-0.06, 0.0), (-0.06, 0.68), (-0.035, 0.86), (0.0, 0.7),
-            (0.035, 0.86), (0.06, 0.68), (0.06, 0.0)]
-    short = [(-0.06, 0.0), (-0.06, 0.42), (-0.02, 0.51), (0.015, 0.4),
-             (0.06, 0.47), (0.06, 0.0)]
-    dep = 0.035
-    fy, base_z = -0.06, 0.13
+    # --- posts ---
+    for x in (-1.0, 1.0):
+        parts.append(mg.part("cube", "wood_post", loc=(x, post_y, H/2),
+                             scale=(0.09, 0.08, H), bevel=0.006))
+        parts.append(mg.part("cube", "wood_cap", loc=(x, post_y, H - 0.03),
+                             scale=(0.095, 0.085, 0.06), bevel=0.006))
 
-    # full cat-ear pickets
-    full_x = [-0.68, -0.43, -0.18, 0.52]
-    picket = mg.extrude(full, dep, tan, loc=(0.0, fy, base_z), bevel=0.004)
-    parts.append(picket)
-    for i, x in enumerate(full_x):
-        c = tan if i % 2 else tan2
-        parts.append(mg.copy(picket, loc=(x, fy, base_z)))
+    # --- rails (slightly tilted for a broken look) ---
+    for z in (0.78, 0.40):
+        parts.append(mg.part("cube", "wood_rail", loc=(0, ry, z),
+                             scale=(1.94, 0.05, 0.085), rot=(0, 0.015, 0), bevel=0.005))
 
-    # snapped-short pickets
-    stub = mg.extrude(short, dep, tan2, loc=(0.0, fy, base_z), bevel=0.004)
-    parts.append(stub)
-    for x in (0.12, 0.74):
-        parts.append(mg.copy(stub, loc=(x, fy, base_z)))
+    # --- upright full pickets ---
+    full_x = [-0.80, -0.55, -0.30, -0.05]
+    for x in full_x:
+        parts.append(mg.extrude(full_top(0.02), pd, "wood_picket",
+                                loc=(x, py, 0), bevel=0.004))
 
-    # crooked hanging picket (leaning, front, from a single nail)
-    parts.append(mg.extrude(full, dep, tan, loc=(0.33, -0.1, 0.16),
-                            rot=(0.0, 0.32, 0.0), bevel=0.004))
-    parts.append(mg.part("cyl", nailc, loc=(0.3, -0.14, 0.42),
-                         scale=(0.03, 0.03, 0.04), rot=(math.pi / 2, 0, 0),
-                         vertices=8))
+    # --- one crooked picket hanging from a single nail (leaning) ---
+    parts.append(mg.extrude(full_top(0.02), pd, "wood_picket",
+                            loc=(0.24, py - 0.02, 0.0), rot=(0, 0.33, 0), bevel=0.004))
 
-    # ---- nails where pickets meet rails (richer tiers) ----
-    if mg.at_least("mobile-high"):
-        for x in [0.0] + full_x:
-            for z in (0.35, 0.8):
-                parts.append(mg.part("cyl", nailc, loc=(x + 0.02, -0.082, z),
-                                     scale=(0.02, 0.02, 0.035),
-                                     rot=(math.pi / 2, 0, 0), vertices=8))
+    # --- two snapped-short pickets on the right ---
+    for x in (0.55, 0.78):
+        parts.append(mg.extrude(snapped(), pd, "wood_picket",
+                                loc=(x, py, 0), bevel=0.004))
+
+    # --- nail heads at rail crossings ---
+    if mg.at_least("mobile-mid"):
+        nail_x = full_x + [0.24, 0.55, 0.78]
+        for x in nail_x:
+            for z in (0.78, 0.40):
+                if z == 0.40 and x in (0.55, 0.78):
+                    continue  # snapped ones broken off below top rail
+                parts.append(mg.part("cyl", "nail", loc=(x, py - 0.03, z),
+                                     scale=(0.024, 0.024, 0.03), rot=(math.pi/2, 0, 0),
+                                     vertices=8))
 
     mg.join("zc_fence_broken", parts)

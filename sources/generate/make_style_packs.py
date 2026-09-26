@@ -7,7 +7,8 @@ The build code in examples/zombie_cats/<style>/ was written by an AI (Claude Cod
 (examples/zombie_cats/assets.json) and a render of the hand-built Zombie Cats asset as its reference picture, one run
 per style. This script only rebuilds that code — no AI — with the style's finish: low-poly is faceted, realistic gets
 weathered textures. The packs go to out/packs/zombie_cats_<style> (not committed: the realistic textures alone are
-tens of megabytes); docs/img/zombie-cats-styles.png shows them side by side.
+tens of megabytes); docs/img/zc-styles-lineup.jpg shows them side by side. Assets listed in planned.json are not
+built yet (organic shapes that need a picture → 3D generator); the pack's index.json lists them under "planned".
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ def main() -> int:
     ap.add_argument("--blender")
     args = ap.parse_args()
     assets = json.loads((SRC / "assets.json").read_text(encoding="utf-8"))
+    planned = json.loads((SRC / "planned.json").read_text(encoding="utf-8"))
     extra = ["--blender", args.blender] if args.blender else []
     ok = True
     for style in args.styles.split(","):
@@ -41,6 +43,9 @@ def main() -> int:
         index = []
         with tempfile.TemporaryDirectory() as tmp:
             for asset, (size, description) in assets.items():
+                if asset in planned.get(style, {}):
+                    print(f"  · {style:9} {asset:20} planned: {planned[style][asset]}")
+                    continue
                 name = f"zc_{asset}"
                 code = SRC / style / f"{asset}.py"
                 work = Path(tmp) / name
@@ -68,7 +73,10 @@ def main() -> int:
                 tiers = ", ".join(f"{t} {e['tris']:,}" for t, e in rep["tiers"].items())
                 print(f"  {'✓' if rep.get('ok') else '✗'} {style:9} {asset:20} {tiers}")
         (out / "index.json").write_text(json.dumps({"pack": f"zombie_cats_{style}", "title": f"Zombie Cats — {style}",
-                                                    "canonical_detail": "pc", "assets": index}, indent=2) + "\n")
+                                                    "canonical_detail": "pc", "assets": index,
+                                                    "planned": [{"file": f"zc_{a}.glb", "why": why}
+                                                                for a, why in planned.get(style, {}).items()]},
+                                                   indent=2) + "\n")
     print("Result: " + ("every style pack built." if ok else "some assets failed."))
     return 0 if ok else 1
 

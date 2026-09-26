@@ -1,71 +1,89 @@
-"""Ruined cat scratching post: carpeted base, sisal-rope pole, tilted top platform, cracked side shelf."""
+"""Ruined cat scratching post: pink carpeted base, sisal-rope-wrapped pole, tilted top platform, cracked side shelf."""
 import math
 
 
 def build(mg):
-    carpet = mg.color("carpet", "#8a5a78", rough=0.92)
-    carpet2 = mg.color("carpet_dark", "#734a63", rough=0.92)
-    rope = mg.color("rope", "#b3a26a", rough=0.85)
-    rope_d = mg.color("rope_dark", "#8f7d4a", rough=0.88)
-    wood = mg.color("wood", "#5a4632", rough=0.8)
+    fabric = mg.color("fabric", "#d94a9e", rough=0.9, material="fabric")          # pink carpet
+    fabric_w = mg.color("fabric_worn", "#e6a7cf", rough=0.95, material="fabric")   # faded worn edges
+    rope = mg.color("rope", "#c9a56a", rough=0.85, material="fabric")              # sisal rope
+    rope_d = mg.color("rope_dark", "#9c7b46", rough=0.9, material="fabric")        # shaded/dirty rope
+    wood = mg.color("wood", "#b08a5a", rough=0.8, material="wood")                 # exposed board
+    metal = mg.color("iron", (0.35, 0.35, 0.38), rough=0.45, metal=1.0)           # staples/screws
 
     parts = []
 
-    # --- carpeted square base ---
-    bw = 0.44
-    parts.append(mg.part("cube", carpet, loc=(0, 0, 0.025), scale=(bw, bw, 0.05), bevel=0.012))
-    # torn corner flap (worn carpet edge)
-    if mg.at_least("mobile-mid"):
-        parts.append(mg.part("cube", carpet2, loc=(bw * 0.32, -bw * 0.36, 0.052),
-                             scale=(0.12, 0.1, 0.012), rot=(0.1, 0, 0.3), bevel=0.004))
+    def platform(cx, cy, cz, w, d, t, rx=0.0, ry=0.0, worn=True):
+        pl = []
+        pl.append(mg.part("cube", fabric, loc=(cx, cy, cz), scale=(w, d, t), rot=(rx, ry, 0), bevel=0.008))
+        if worn and mg.at_least("mobile-mid"):
+            # worn/torn lighter rim strips along the edges
+            pl.append(mg.part("cube", fabric_w, loc=(cx, cy - d / 2, cz + t * 0.1),
+                              scale=(w * 0.96, 0.02, t * 0.5), rot=(rx, ry, 0)))
+            pl.append(mg.part("cube", fabric_w, loc=(cx, cy + d / 2, cz + t * 0.1),
+                              scale=(w * 0.96, 0.02, t * 0.5), rot=(rx, ry, 0)))
+        return pl
 
-    # --- rope-wrapped pole ---
-    z0, z1 = 0.05, 0.98
-    core_r = 0.05
-    parts.append(mg.part("cyl", wood, loc=(0, 0, (z0 + z1) / 2),
-                         scale=(core_r * 1.9, core_r * 1.9, z1 - z0), vertices=20))
-    n = 11
-    for i in range(n):
-        z = z0 + (z1 - z0) * (i + 0.5) / n
-        parts.append(mg.part("torus", rope, loc=(0, 0, z),
-                             major_radius=core_r, minor_radius=0.021))
-    # thin rope bridging bands so the wrap reads continuous
+    # ---- base ----
+    bw = 0.52
+    parts += platform(0, 0, 0.03, bw, bw, 0.06)
+    # torn carpet patch exposing board on base corner
+    if mg.at_least("mobile-mid"):
+        parts.append(mg.part("cube", wood, loc=(0.17, 0.16, 0.055),
+                             scale=(0.12, 0.12, 0.02), rot=(0, 0, 0.3), bevel=0.005))
+
+    # ---- rope pole ----
+    z0, z1 = 0.06, 1.02
+    rp = 0.058          # pole core radius / helix radius
+    rope_r = 0.026      # rope thickness
+    # core cylinder so gaps between coils never see through
     parts.append(mg.part("cyl", rope_d, loc=(0, 0, (z0 + z1) / 2),
-                         scale=(core_r * 2.02, core_r * 2.02, z1 - z0), vertices=20))
+                         scale=(rp * 1.5, rp * 1.5, z1 - z0), vertices=16))
+    # helical wrapped rope
+    coils = 22
+    per = max(6, mg.seg(12))
+    steps = coils * per
+    pts, radii = [], []
+    for i in range(steps + 1):
+        a = i / per * 2 * math.pi
+        z = z0 + (z1 - z0) * i / steps
+        pts.append((rp * math.cos(a), rp * math.sin(a), z))
+        radii.append(rope_r)
+    parts.append(mg.tube(pts, 0, rope, radii=radii, sides=max(6, mg.seg(8))))
 
-    # frayed loose rope ends on richer tiers
+    # frayed loose rope bits
     if mg.at_least("mobile-high"):
-        for k in range(4):
-            a = k * 1.7
-            zz = z0 + 0.06 + k * 0.02
-            r = core_r + 0.01
-            p0 = (math.cos(a) * r, math.sin(a) * r, zz)
-            p1 = (math.cos(a) * (r + 0.05), math.sin(a) * (r + 0.05), zz - 0.04)
-            parts.append(mg.tube([p0, p1], 0.006, rope, sides=6))
+        for _ in range(6):
+            a = mg.rng.uniform(0, 2 * math.pi)
+            z = mg.rng.uniform(z0 + 0.1, z1 - 0.1)
+            bx, by = rp * math.cos(a), rp * math.sin(a)
+            ex = bx + math.cos(a) * mg.rng.uniform(0.04, 0.09)
+            ey = by + math.sin(a) * mg.rng.uniform(0.04, 0.09)
+            ez = z + mg.rng.uniform(-0.03, 0.03)
+            parts.append(mg.tube([(bx, by, z), (ex, ey, ez)], 0,
+                                 rope, radii=[0.012, 0.002], sides=6))
 
-    # --- cracked side shelf ---
-    sh_z = 0.52
-    sh_w = 0.30
-    if mg.at_least("pc"):
-        # two halves with a gap = the crack
-        parts.append(mg.part("cube", carpet, loc=(-0.20, 0.0, sh_z),
-                             scale=(sh_w, sh_w * 0.52 - 0.01, 0.045),
-                             rot=(0, 0, 0.05), bevel=0.01))
-        parts.append(mg.part("cube", carpet, loc=(-0.20, sh_w * 0.28, sh_z + 0.002),
-                             scale=(sh_w, sh_w * 0.42, 0.045),
-                             rot=(0.02, 0, -0.02), bevel=0.01))
-    else:
-        parts.append(mg.part("cube", carpet, loc=(-0.20, 0.02, sh_z),
-                             scale=(sh_w, sh_w, 0.045), rot=(0, 0, 0.03), bevel=0.01))
-
-    # --- tilted top platform ---
-    tp_z = 1.02
-    tw = 0.40
-    parts.append(mg.part("cube", carpet, loc=(0.03, 0.0, tp_z),
-                         scale=(tw, tw, 0.05), rot=(0.14, 0.02, 0.32), bevel=0.014))
-    # worn scratch groove on the platform (small darker patch)
+    # ---- cracked side shelf (viewer's left = -X) ----
+    sx, sz = -0.30, 0.50
+    sw = 0.36
+    # split into two boards with a crack gap, exposing wood between
+    parts.append(mg.part("cube", wood, loc=(sx, 0, sz), scale=(sw, 0.30, 0.05), bevel=0.006))
+    parts.append(mg.part("cube", fabric, loc=(sx - 0.10, 0, sz + 0.005),
+                        scale=(sw * 0.42, 0.29, 0.055), bevel=0.006))
+    parts.append(mg.part("cube", fabric, loc=(sx + 0.11, 0, sz + 0.005),
+                        scale=(sw * 0.40, 0.29, 0.055), rot=(0, 0.12, 0), bevel=0.006))
     if mg.at_least("mobile-mid"):
-        parts.append(mg.part("cube", carpet2, loc=(-0.06, -0.06, tp_z + 0.04),
-                             scale=(0.09, 0.05, 0.01), rot=(0.14, 0.02, 0.32), bevel=0.003))
+        parts.append(mg.part("cube", fabric_w, loc=(sx, 0, sz + 0.03),
+                            scale=(sw * 0.96, 0.02, 0.02)))
+
+    # ---- tilted top platform ----
+    tw, td = 0.46, 0.52
+    tz = 1.12
+    tilt = 0.11
+    parts += platform(0, -0.03, tz, tw, td, 0.055, rx=tilt)
+    # staples / small metal fittings on top
+    if mg.at_least("mobile-high"):
+        for dx, dy in [(-0.05, 0.02), (-0.02, 0.03)]:
+            parts.append(mg.part("cube", metal, loc=(dx, dy, tz + 0.03 + dy * math.tan(tilt)),
+                                scale=(0.03, 0.02, 0.012), rot=(tilt, 0, 0.2)))
 
     mg.join("zc_scratch_post_ruin", parts)

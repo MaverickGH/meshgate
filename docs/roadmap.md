@@ -99,6 +99,7 @@
 - [x] Animations on request for kit models; a clean public history; new splash with the app icon; live tools light up green.
 
 ## Later — characters and PBR
+- [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.
 - [ ] Hunyuan3D-2 as a local picture → 3D generator next to TripoSR (installable now).
 - [ ] Characters from text or a picture: a rigged Humanoid base + kit parts, or a generated mesh auto-rigged onto the MeshGate skeleton.

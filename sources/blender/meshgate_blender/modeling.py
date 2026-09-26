@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import os
 import random
+import re
 
 import bpy
 from mathutils import Matrix, Vector
@@ -36,6 +37,14 @@ DETAILS = {
 }
 # finish="faceted" (low-poly style): fewer segments, no subdivision, one-step bevels, flat shading everywhere
 FACETED_SEG = {"mobile-low": 0.4, "mobile-mid": 0.5, "mobile-high": 0.6, "pc": 0.75}
+# What a colour is made of. The realistic finish (finish.py) draws each one: wood grain, corrugated cardboard, cracked
+# and mossy stone, brushed and rusting metal, woven fabric, clumpy ground, porous bone. Stored in the palette's ORM red.
+MATERIALS = ["plain", "wood", "cardboard", "stone", "metal", "rust", "fabric", "ground", "bone"]
+_GUESS = [("rust", r"rust"), ("cardboard", r"card|carton|paper"), ("wood", r"wood|plank|bark|trunk|branch|_wd|board"),
+          ("stone", r"stone|rock|concrete|tomb|brick|marble|asphalt|cement"),
+          ("metal", r"steel|iron|metal|tin|brass|gold|copper|chrome|nail|bolt|rivet|silver"),
+          ("fabric", r"rope|string|yarn|carpet|canvas|sack|cloth|fabric|sisal|felt|fur|wool"),
+          ("ground", r"grass|dirt|soil|mud|ground|sand"), ("bone", r"bone|skull|tooth|teeth")]
 CELLS = 8          # palette grid: 8×8 = 64 colours
 PALETTE_PX = 256   # palette texture size (fits every tier, 32 px per colour)
 
@@ -43,6 +52,11 @@ PALETTE_PX = 256   # palette texture size (fits every tier, 32 px per colour)
 def _linear(c: float) -> float:
     """sRGB → linear (vertex colours and emission sockets are linear; the palette is written in sRGB)."""
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def material_code(material: str) -> float:
+    """The palette's ORM red for a material: the middle of its 1/16 band (finish.py reads it back)."""
+    return (MATERIALS.index(material) + .5) / 16
 
 
 class ModelError(ValueError):
@@ -109,16 +123,22 @@ class Kit:
         their own `segments`/`vertices`/`sides` arguments — use seg() for your own loops."""
         return max(5 if self._faceted else 6, round(n * self._detail["seg"])) if n >= 8 else max(3, n)
 
-    def color(self, name: str, rgb, rough: float = 0.6, metal: float = 0.0, glow: float = 0.0) -> str:
+    def color(self, name: str, rgb, rough: float = 0.6, metal: float = 0.0, glow: float = 0.0, material: str | None = None) -> str:
         """Define a named colour of the model's single palette material and return the name. rgb = (r, g, b) in 0..1 or
         '#rrggbb'. rough = roughness 0..1, metal = metallic 0..1, glow = emission strength (0 = none, 1–4 = lamp, eyes).
+        material = what it is made of, for the realistic finish's surface detail: "wood", "cardboard", "stone", "metal",
+        "rust", "fabric", "ground", "bone" or "plain"; by default it is read from the name (wood_dark → wood,
+        cardboard_b → cardboard, iron → metal), so name colours by their material.
         At most 64 colours. Parts may also pass an (r, g, b) tuple or hex string directly as their colour."""
         if name in self._colors:
             return name
         if len(self._colors) >= CELLS * CELLS:
             raise ModelError(f"more than {CELLS * CELLS} colours — reuse colours, the palette has one cell per colour")
+        if material is not None and material not in MATERIALS:
+            raise ModelError(f"material '{material}' — use one of {', '.join(MATERIALS)}")
+        guess = next((m for m, rx in _GUESS if re.search(rx, str(name).lower())), "plain")
         self._colors[name] = {"index": len(self._colors), "rgb": _rgb(rgb), "rough": float(rough),
-                              "metal": float(metal), "glow": float(glow)}
+                              "metal": float(metal), "glow": float(glow), "material": material or guess}
         return name
 
     def part(self, kind: str, color, loc=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0), *, smooth: bool | None = None,
@@ -719,7 +739,7 @@ class Kit:
         tex = nt.nodes.new("ShaderNodeTexImage"); tex.image = base; tex.interpolation = "Closest"; tex.location = (-600, 300)
         nt.links.new(tex.outputs["Color"], b.inputs["Base Color"])
         # glTF metallicRoughness: G = roughness, B = metallic, read through Separate Color
-        orm = self._image("orm", lambda c: [1.0, c["rough"], c["metal"], 1.0], True)
+        orm = self._image("orm", lambda c: [material_code(c.get("material", "plain")), c["rough"], c["metal"], 1.0], True)
         t2 = nt.nodes.new("ShaderNodeTexImage"); t2.image = orm; t2.interpolation = "Closest"; t2.location = (-600, 0)
         sep = nt.nodes.new("ShaderNodeSeparateColor"); sep.location = (-300, 0)
         nt.links.new(t2.outputs["Color"], sep.inputs[0])

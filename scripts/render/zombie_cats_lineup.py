@@ -17,20 +17,44 @@ LABELS = {"stylized": "Stylized", "lowpoly": "Low-poly", "realistic": "Realistic
 loaded = {}   # (style, name) → (top objects, min x, max x)
 for style in STYLES:
     for name in ORDER:
+        path = os.path.join(packs, f"zombie_cats_{style}", f"zc_{name}.glb")
+        if not os.path.exists(path):        # planned: a "coming soon" placeholder goes here after the columns are measured
+            loaded[(style, name)] = None
+            continue
         before = set(bpy.data.objects)
-        bpy.ops.import_scene.gltf(filepath=os.path.join(packs, f"zombie_cats_{style}", f"zc_{name}.glb"))
+        bpy.ops.import_scene.gltf(filepath=path)
         new = [o for o in bpy.data.objects if o not in before]
         tops = [o for o in new if o.parent not in new]
         for t in tops:
             t.rotation_euler.z += math.radians(-25)
         bpy.context.view_layer.update()
         pts = [o.matrix_world @ Vector(c) for o in new if o.type == "MESH" for c in o.bound_box]
-        loaded[(style, name)] = (tops, min(p.x for p in pts), max(p.x for p in pts))
-width = {n: max(loaded[(s_, n)][2] - loaded[(s_, n)][1] for s_ in STYLES) for n in ORDER}
+        loaded[(style, name)] = (tops, min(p.x for p in pts), max(p.x for p in pts), max(p.z for p in pts))
+width = {n: max(loaded[(s_, n)][2] - loaded[(s_, n)][1] for s_ in STYLES if loaded[(s_, n)]) for n in ORDER}
+height = {n: max(loaded[(s_, n)][3] for s_ in STYLES if loaded[(s_, n)]) for n in ORDER}
+ghost = bpy.data.materials.new("coming soon"); ghost.use_nodes = True
+gb = ghost.node_tree.nodes["Principled BSDF"]
+gb.inputs["Base Color"].default_value = (.55, .6, .7, 1)
+(gb.inputs.get("Emission Color") or gb.inputs["Emission"]).default_value = (.55, .6, .7, 1)
+gb.inputs["Emission Strength"].default_value = .6
 x = 0.0
 for name in ORDER:   # one column per asset, as wide as its widest style: the rows line up
     for r, style in enumerate(STYLES):
-        tops, lo, hi = loaded[(style, name)]
+        if loaded[(style, name)] is None:     # outline of the missing asset, sized like its other styles
+            y = (len(STYLES) - 1 - r) * row_gap
+            gw, gh = max(width[name] * .8, .75), max(height[name], .75)      # big enough to hold its label
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(x + width[name] / 2, y, gh / 2))
+            box = bpy.context.active_object
+            box.scale = (gw, .35, gh)
+            mod = box.modifiers.new("outline", "WIREFRAME"); mod.thickness, mod.use_even_offset = .012, False
+            box.data.materials.append(ghost)
+            bpy.ops.object.text_add(location=(x + width[name] / 2, y - .3, gh / 2))
+            tx = bpy.context.active_object
+            tx.data.body, tx.data.size, tx.data.align_x, tx.data.align_y = "coming\nsoon", .16, "CENTER", "CENTER"
+            tx.rotation_euler = (math.radians(58), 0, 0)
+            tx.data.materials.append(ghost)
+            continue
+        tops, lo, hi, top = loaded[(style, name)]
         for t in tops:
             t.location.x += x + width[name] / 2 - (lo + hi) / 2
             t.location.y += (len(STYLES) - 1 - r) * row_gap   # stylized at the back, realistic in front

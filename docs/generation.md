@@ -166,6 +166,10 @@ A style is more than words in the prompt: the kit engine enforces the look after
   crevices and near the ground (ambient occlusion and height), colour variation across surfaces and fine relief as a
   normal map. Texture sizes follow each tier's budget (PC 2048 px with a normal map, mobile-low 512 px without). The
   whole asset keeps one material. The AI is told to give every part a clean base colour and leave the dirt to the bake.
+- **Materials.** The bake knows what each colour is made of and draws it in real metres: wood grain, corrugated
+  cardboard, stone with thin cracks and moss on top faces and in crevices, brushed metal with rust patches, heavy rust,
+  woven fabric and rope, clumpy ground, porous bone. The material comes from the colour's name (`wood_dark`,
+  `cardboard_b`, `iron`, `moss_stone`…) or `mg.color(…, material="stone")`; the AI is asked to name colours that way.
 - **`stylized`, `toon`** keep clean palette colours and smooth shading.
 
 ![One cat tombstone, three styles: stylized, low-poly (faceted) and realistic (weathered textures)](img/styles-switch.gif)

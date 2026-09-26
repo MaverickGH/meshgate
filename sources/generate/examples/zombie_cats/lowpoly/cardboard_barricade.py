@@ -1,57 +1,68 @@
-"""zc_cardboard_barricade: stacked cardboard boxes with taped seams; a zombie cat hides in the top box."""
+"""Zombie-cat cardboard barricade: stacked taped boxes, cat ears + glowing eyes peek from the top box."""
 import math
 
 
 def build(mg):
-    mg.mirror_x = False  # asset is intentionally asymmetric (character in one box)
-    card = mg.color("card", "#a67c47", rough=0.85)
-    card2 = mg.color("card2", "#96703e", rough=0.85)
-    tape = mg.color("tape", "#6f5330", rough=0.7)
-    fur = mg.color("fur", "#54604f", rough=0.9)
-    ear_in = mg.color("ear_in", "#3a4438", rough=0.9)
-    eye = mg.color("eye", "#5cff4a", rough=0.3, glow=3.0)
+    # cardboard shades and packing tape
+    card_a = mg.color("cardboard_a", "#d8b381", rough=0.85, material="cardboard")
+    card_b = mg.color("cardboard_b", "#c9a06c", rough=0.85, material="cardboard")
+    card_c = mg.color("cardboard_c", "#e0bd8f", rough=0.85, material="cardboard")
+    tape = mg.color("cardboard_tape", "#b0854f", rough=0.7, material="cardboard")
+    fur = mg.color("fabric_catfur", "#5f7d4a", rough=0.8, material="fabric")
+    fur_dk = mg.color("fabric_catfur_dark", "#47613a", rough=0.8, material="fabric")
+    eye = mg.color("eye_glow", (0.45, 1.0, 0.25), rough=0.4, glow=3.5, material="plain")
 
+    shades = [card_a, card_b, card_c]
+
+    def box(parts, cx, cy, cz, w, d, h, main, yaw=0.0):
+        parts.append(mg.part("cube", main, loc=(cx, cy, cz), scale=(w, d, h),
+                             rot=(0, 0, yaw), bevel=0.025))
+        # horizontal packing-tape seam around the middle
+        parts.append(mg.part("cube", tape, loc=(cx, cy, cz), scale=(w + 0.01, d + 0.01, 0.07),
+                             rot=(0, 0, yaw)))
+        if mg.at_least("mobile-mid"):
+            # tape strip closing the top flaps
+            parts.append(mg.part("cube", tape, loc=(cx, cy, cz + h / 2), scale=(0.05, d + 0.01, 0.012),
+                                 rot=(0, 0, yaw)))
+        if mg.at_least("mobile-high"):
+            # short vertical tape tab down the front seam
+            parts.append(mg.part("cube", tape, loc=(cx, cy - d / 2, cz + h / 4), scale=(0.05, 0.012, 0.2),
+                                 rot=(0, 0, yaw)))
+
+    w, d, h = 0.62, 0.55, 0.6
     parts = []
 
-    def box(loc, scale, col=card, rot=(0, 0, 0), tape_on=True):
-        w, d, h = scale
-        parts.append(mg.part("cube", col, loc=loc, scale=scale, rot=rot, bevel=0.02))
-        if tape_on:
-            # seam of tape across the top
-            parts.append(mg.part("cube", tape,
-                                  loc=(loc[0], loc[1], loc[2] + h / 2),
-                                  scale=(w + 0.006, 0.09, 0.02), rot=rot))
-            if mg.at_least("mobile-mid"):
-                # a band wrapping the upper front
-                parts.append(mg.part("cube", tape,
-                                     loc=(loc[0], loc[1] - d / 2, loc[2] + h * 0.18),
-                                     scale=(w + 0.008, 0.02, 0.07), rot=rot))
+    # bottom row of three boxes
+    box(parts, -0.60, 0.02, 0.30, w, d, h, shades[0], yaw=mg.rng.uniform(-0.04, 0.04))
+    box(parts, 0.00, -0.04, 0.30, w, d, h, shades[1], yaw=mg.rng.uniform(-0.04, 0.04))
+    box(parts, 0.60, 0.02, 0.30, w, d, h, shades[2], yaw=mg.rng.uniform(-0.04, 0.04))
 
-    # ---- bottom row -------------------------------------------------------
-    box((-0.60, 0.02, 0.30), (0.60, 0.60, 0.60), col=card)
-    box((0.06, -0.06, 0.32), (0.72, 0.66, 0.64), col=card2, rot=(0, 0, 0.02))
-    box((0.66, 0.06, 0.28), (0.55, 0.55, 0.56), col=card, rot=(0, 0, -0.03))
+    # top-left stacked box (tallest column)
+    box(parts, -0.58, 0.02, 0.90, w, d, h, shades[1], yaw=mg.rng.uniform(-0.05, 0.05))
 
-    # ---- top row ----------------------------------------------------------
-    box((-0.50, -0.02, 0.90), (0.60, 0.60, 0.62), col=card2, rot=(0, 0, -0.02))
+    # top-right box that hides the cat
+    cx, cy, cz = 0.52, -0.03, 0.90
+    box(parts, cx, cy, cz, w, d, h, shades[0], yaw=mg.rng.uniform(-0.03, 0.03))
 
-    # cat box (top right)
-    cx, cy, cz = 0.40, -0.08, 0.92
-    cw, cd, ch = 0.56, 0.56, 0.60
-    box((cx, cy, cz), (cw, cd, ch), col=card, rot=(0, 0, 0.02))
+    # cat ears: two pointed cones peeking from the top of the box
+    top = cz + h / 2
+    for ex in (-0.15, 0.15):
+        parts.append(mg.part("cone", fur, loc=(cx + ex, cy + 0.02, top + 0.12),
+                             scale=(0.15, 0.15, 0.26), vertices=8))
+        if mg.at_least("mobile-mid"):
+            parts.append(mg.part("cone", fur_dk, loc=(cx + ex, cy - 0.03, top + 0.10),
+                                 scale=(0.09, 0.09, 0.16), vertices=8))
 
     barricade = mg.join("zc_cardboard_barricade", parts)
 
-    # ---- zombie cat hiding inside the top box -----------------------------
-    cat = []
-    top_z = cz + ch / 2
-    front_y = cy - cd / 2
-    for ex in (cx - 0.13, cx + 0.13):
-        cat.append(mg.part("cone", fur, loc=(ex, cy + 0.02, top_z + 0.02),
-                           scale=(0.14, 0.14, 0.30)))
-        cat.append(mg.part("cone", ear_in, loc=(ex, cy - 0.02, top_z + 0.03),
-                           scale=(0.07, 0.07, 0.22)))
-    for ex in (cx - 0.08, cx + 0.08):
-        cat.append(mg.part("sphere", eye, loc=(ex, front_y - 0.01, cz + 0.06),
-                           scale=(0.05, 0.05, 0.05), segments=10, ring_count=8))
-    mg.join("zombie_cat", cat)
+    # glowing green eyes on the front face of the cat box
+    ez = cz + 0.05
+    for ex in (-0.13, 0.13):
+        mg.part("cyl", eye, loc=(cx + ex, cy - d / 2 - 0.01, ez),
+                scale=(0.09, 0.09, 0.05), rot=(math.pi / 2, 0, 0), vertices=10)
+    eyes = mg.join("zc_cat_eyes", [p for p in [mg.part("cyl", eye,
+                   loc=(cx - 0.13, cy - d / 2 - 0.02, ez), scale=(0.09, 0.09, 0.04),
+                   rot=(math.pi / 2, 0, 0), vertices=10),
+                   mg.part("cyl", eye, loc=(cx + 0.13, cy - d / 2 - 0.02, ez),
+                   scale=(0.09, 0.09, 0.04), rot=(math.pi / 2, 0, 0), vertices=10)]])
+    mg.join("zc_cardboard_barricade_full", [barricade, eyes])

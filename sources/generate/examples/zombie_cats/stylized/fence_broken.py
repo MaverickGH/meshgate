@@ -1,74 +1,66 @@
-"""Broken wooden garden fence section: dark posts & rails, tan pickets with cat-ear tops, snapped and crooked ones."""
+"""zc_fence_broken: broken wooden garden fence, cat-ear pickets, some snapped, one hanging crooked."""
 import math
 
 
 def build(mg):
-    dark = mg.color("wood_dark", "#4a2c17", rough=0.85)
-    tan = mg.color("wood_light", "#a9763f", rough=0.8)
-    tan2 = mg.color("wood_light2", "#946334", rough=0.82)
-    nail_c = mg.color("nail", (0.22, 0.2, 0.19), rough=0.5, metal=1.0)
+    wood_l = mg.color("wood_light", "#d8a45f", rough=0.7, material="wood")
+    wood_d = mg.color("wood_dark", "#7a4a28", rough=0.78, material="wood")
+    rust = mg.color("rust_nail", "#3f2c1c", rough=0.8, metal=0.2, material="rust")
+
+    w, th, yf = 0.16, 0.03, -0.05          # picket width, thickness, front plane
+    sh, notch, peak, h = 0.82, 0.88, 1.02, 1.02
+
+    def ears(width, shoulder, valley, tip):
+        return [(-width / 2, 0), (width / 2, 0), (width / 2, shoulder),
+                (width * 0.25, tip), (0, valley), (-width * 0.25, tip), (-width / 2, shoulder)]
 
     parts = []
 
-    # --- posts (two ends) ---
-    post_h = 1.1
-    for sx in (-1, 1):
-        px = 0.92 * sx
-        parts.append(mg.part("cube", dark, loc=(px, 0, post_h / 2),
-                             scale=(0.1, 0.1, post_h), bevel=0.012, taper=0.9))
-    # a little broken notch chip on the right post
-    parts.append(mg.part("cube", dark, loc=(0.86, -0.04, 0.62),
-                         scale=(0.04, 0.05, 0.12), bevel=0.005))
+    # --- intact cat-ear pickets ---
+    tall_x = [-0.80, -0.55, -0.30, 0.60]
+    base = mg.extrude(ears(w, sh, notch, peak), th, wood_l, loc=(tall_x[0], yf, 0), bevel=0.006)
+    parts.append(base)
+    for x in tall_x[1:]:
+        parts.append(mg.copy(base, loc=(x, yf, 0)))
 
-    # --- rails (two horizontal beams) ---
-    rail_len = 1.9
-    for rz in (0.72, 0.36):
-        parts.append(mg.part("cube", dark, loc=(0, 0, rz),
-                             scale=(rail_len, 0.07, 0.09), bevel=0.012))
+    # one hanging crooked from a single nail (tilted picket)
+    crooked = mg.copy(base, loc=(-0.04, yf - 0.03, 0.04), rot=(0.05, 0.0, 0.42))
+    parts.append(crooked)
 
-    # --- picket builders ---
-    def eared_outline(w, body_h, ear_h):
-        return [(-w / 2, 0), (-w / 2, body_h), (-w / 4, body_h + ear_h),
-                (0, body_h + ear_h * 0.35), (w / 4, body_h + ear_h),
-                (w / 2, body_h), (w / 2, 0)]
+    # --- two pickets snapped short with jagged broken tops ---
+    jag = [(-w / 2, 0), (w / 2, 0), (w / 2, 0.40), (w * 0.15, 0.55),
+           (-0.02, 0.36), (-w * 0.30, 0.50), (-w / 2, 0.42)]
+    short = mg.extrude(jag, th, wood_l, loc=(0.18, yf, 0), bevel=0.005)
+    parts.append(short)
+    parts.append(mg.copy(short, loc=(0.42, yf, 0), rot=(0, 0, -0.06)))
 
-    def snapped_outline(w, h):
-        return [(-w / 2, 0), (-w / 2, h), (-w / 6, h + 0.05),
-                (w / 6, h - 0.03), (w / 2, h + 0.02), (w / 2, 0)]
+    # a fallen broken shard leaning at the base
+    shard = [(-w / 2, 0), (w / 2, 0), (w / 2, 0.26), (0.0, 0.34), (-w / 2, 0.24)]
+    parts.append(mg.extrude(shard, th, wood_l, loc=(0.30, yf - 0.02, 0.0), rot=(0, 0, 1.3)))
 
-    pw, pt = 0.13, 0.03
-    py = -0.075
+    # --- horizontal rails ---
+    rail_len = 1.86
+    for rz in (0.28, 0.74):
+        parts.append(mg.part("cube", wood_d, loc=(0, 0.01, rz),
+                             scale=(rail_len, 0.06, 0.12), bevel=0.01))
 
-    # eared full pickets
-    for x, col in ((-0.72, tan), (-0.45, tan2), (-0.18, tan), (0.60, tan2)):
-        parts.append(mg.extrude(eared_outline(pw, 0.9, 0.13), pt, col,
-                                loc=(x, py, 0.06), bevel=0.006, smooth=False))
+    # --- end posts ---
+    for px in (-0.92, 0.92):
+        parts.append(mg.part("cube", wood_d, loc=(px, 0.01, 0.55),
+                             scale=(0.11, 0.11, 1.1), bevel=0.012, taper=0.9))
 
-    # two snapped short pickets
-    for x, h, col in ((0.12, 0.52, tan2), (0.36, 0.66, tan)):
-        parts.append(mg.extrude(snapped_outline(pw, h), pt, col,
-                                loc=(x, py, 0.06), bevel=0.006, smooth=False))
-    # snapped-off fallen tip lying near the ground front
-    parts.append(mg.part("cube", tan, loc=(0.2, -0.12, 0.07),
-                         scale=(0.11, 0.03, 0.3), rot=(0, 0.9, 0), bevel=0.005))
+    # --- rusty nails on pickets and posts ---
+    def nail(x, y, z):
+        parts.append(mg.part("cyl", rust, loc=(x, y, z), scale=(0.036, 0.036, 0.02),
+                             rot=(math.pi / 2, 0, 0), vertices=8, bevel=0.004))
 
-    # crooked picket hanging from a single nail on the lower rail
-    crook = mg.extrude(eared_outline(pw, 0.8, 0.11), pt, tan2,
-                       loc=(0, 0, 0), bevel=0.006, smooth=False)
-    mg.pivot(crook, (0, py - 0.02, 0.62))
-    crook = mg.copy(crook, loc=(0.30, py - 0.02, 0.62), rot=(0, 0.42, 0))
-    parts.append(crook)
-
-    # nails / bolts on richer tiers
-    if mg.at_least("mobile-high"):
-        for x in (-0.72, -0.45, -0.18, 0.60):
-            for rz in (0.72, 0.36):
-                parts.append(mg.part("cyl", nail_c, loc=(x + 0.03, py - 0.02, rz),
-                                     scale=(0.03, 0.03, 0.02),
-                                     rot=(math.pi / 2, 0, 0), vertices=8))
-        # the single nail the crooked picket hangs from
-        parts.append(mg.part("cyl", nail_c, loc=(0.30, py + 0.01, 0.62),
-                             scale=(0.035, 0.035, 0.03),
-                             rot=(math.pi / 2, 0, 0), vertices=8))
+    for x in tall_x:
+        nail(x, yf - 0.03, 0.51)
+    nail(-0.02, yf - 0.06, 0.55)      # the single nail the crooked picket hangs on
+    nail(0.18, yf - 0.03, 0.30)
+    nail(0.42, yf - 0.03, 0.30)
+    for px in (-0.92, 0.92):
+        nail(px, -0.06, 0.30)
+        nail(px, -0.06, 0.74)
 
     mg.join("zc_fence_broken", parts)

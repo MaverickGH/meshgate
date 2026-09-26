@@ -37,7 +37,9 @@ def import_root(path):
 
 if os.path.isdir(src):
     lib = bpy.data.collections.new("lib")   # sources, hidden; the street uses collection instances
-    for name in sorted({n for n, _, _ in LAYOUT}):
+    present = {n for n, _, _ in LAYOUT if os.path.exists(os.path.join(src, n + ".glb"))}   # planned assets are left out
+    LAYOUT = [item for item in LAYOUT if item[0] in present]
+    for name in sorted(present):
         tops, new = import_root(os.path.join(src, name + ".glb"))
         coll = bpy.data.collections.new(name)
         for o in new:
