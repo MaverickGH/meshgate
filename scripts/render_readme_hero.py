@@ -2,7 +2,7 @@
 
 blender -b -t 6 --python scripts/render_readme_hero.py -- --preview
 blender -b -t 6 --python scripts/render_readme_hero.py
-ffmpeg -framerate 16 -i out/hero-frames/frame-%03d.png -filter_complex '[0:v] split [a][b];[a] palettegen=max_colors=192:stats_mode=diff [p];[b][p] paletteuse=dither=bayer:bayer_scale=3' -loop 0 docs/img/meshgate-hero.gif
+ffmpeg -framerate 16 -i out/hero-frames/frame-%03d.png -filter_complex '[0:v] split [a][b];[a] palettegen=max_colors=192:stats_mode=diff [p];[b][p] paletteuse=dither=bayer:bayer_scale=3' -loop 0 docs/img/meshgate-hero-v2.gif
 """
 import bpy
 import math
