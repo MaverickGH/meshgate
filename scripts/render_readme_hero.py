@@ -2,7 +2,7 @@
 
 blender -b -t 6 --python scripts/render_readme_hero.py -- --preview
 blender -b -t 6 --python scripts/render_readme_hero.py
-ffmpeg -framerate 16 -i out/hero-frames/frame-%03d.png -filter_complex '[0:v] split [a][b];[a] palettegen=max_colors=192:stats_mode=diff [p];[b][p] paletteuse=dither=bayer:bayer_scale=3' -loop 0 docs/img/meshgate-hero-v2.gif
+ffmpeg -framerate 16 -i out/hero-frames/frame-%03d.png -filter_complex '[0:v] split [a][b];[a] palettegen=max_colors=192:stats_mode=diff [p];[b][p] paletteuse=dither=bayer:bayer_scale=3' -loop 0 docs/img/meshgate-hero-v3.gif
 """
 import bpy
 import math
@@ -87,6 +87,7 @@ def ring(name, points, y, width, depth, material, bevel=.025):
             for i,(a,b) in enumerate(zip(points, points[1:]))]
 
 # The icon's open, six-sided gate: nested architectural layers, separated in depth.
+gate_start = set(bpy.context.scene.objects)
 gate = [(-2.36,-1.38),(-2.36,1.11),(-1.60,1.88),(.21,1.88),(.98,1.11),(.98,-1.38)]
 ring('Structural gate',gate,.15,.30,.52,black,.065)
 ring('Machined face',gate,-.18,.245,.115,graphite,.027)
@@ -102,6 +103,16 @@ for i,(a,b) in enumerate(zip(gate,gate[1:])):
         p1=(a[0]*(1-u1)+b[0]*u1,-.31,a[1]*(1-u1)+b[1]*u1)
         beam(f'Gate armor {i:02d}-{j:02d}',p0,p1,.168,.075,
              silver if (i*12+j)%17==0 else graphite,.012)
+
+# Turn the entire portal toward the stream. The near jamb now makes the exit
+# legible in depth instead of looking like fragments appearing beside a flat icon.
+gate_root = bpy.data.objects.new('Angled portal assembly', None)
+scene.collection.objects.link(gate_root)
+gate_root.location = (-.7, 0, 0)
+for part in set(scene.objects) - gate_start - {gate_root}:
+    part.parent = gate_root
+    part.matrix_parent_inverse = gate_root.matrix_world.inverted()
+gate_root.rotation_euler.z = math.radians(24)
 
 # Centerpiece: a hand-built asymmetric low-poly crystal, the silhouette of the app icon.
 verts=[(-.71,-.35,-.11),(-.43,-.38,.64),(.27,-.35,.9),(.83,-.25,.27),(.68,-.31,-.65),
@@ -197,10 +208,14 @@ for frame in range(1 if PREVIEW else COUNT):
     for obj,base,phase,spread,size in fragments:
         p=(base+t)%1
         theta=phase+TAU*(1.15*p+t*.30)
-        center=1.05+4.05*p
-        radius=spread*(.38+.78*math.sin(math.pi*p))
-        obj.location=(center, -.4+radius*math.sin(theta), -.02+radius*math.cos(theta)*.9)
-        s=size*(.65+.65*math.sin(math.pi*p))
+        center=-.15+5.35*p
+        radius=spread*(.12+.95*math.sin(math.pi*p))
+        # Bend sharply toward the camera before crossing the near jamb.
+        # This visible foreground overlap is what makes the portal the source.
+        depth=-.70-1.45*(1-math.exp(-13*p))-.35*p
+        obj.location=(center, depth+radius*math.sin(theta)*.55,
+                      -.02+radius*math.cos(theta)*.85)
+        s=size*(.48+.85*math.sin(math.pi*p))
         obj.scale=(s*1.35,s*.72,s)
         obj.rotation_euler=(theta*.45,theta*.7,theta*.32)
     scene.render.filepath=str(OUT/('preview.png' if PREVIEW else f'frame-{frame:03d}.png'))

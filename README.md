@@ -5,7 +5,7 @@
 > Make a game-ready 3D model from a description or a picture — or bring your own from Blender — and get checked files
 > for the web, Unity, Godot and Unreal, one per quality level.
 
-![Metal fragments form a rotating 3D asset inside the MeshGate portal](docs/img/meshgate-hero-v2.gif)
+![Metal fragments form a rotating 3D asset inside the MeshGate portal](docs/img/meshgate-hero-v3.gif)
 
 ## What it does
 
