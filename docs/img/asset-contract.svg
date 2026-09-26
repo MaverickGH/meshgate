@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14">
+  <title>The MeshGate asset contract: meters, Y-up with the front along +Z, the origin at the bottom centre, scale 1, PBR materials, clean names, within the tier budget</title>
+  <style>
+    .card { fill: #f7f6f4; stroke: #d8d5d0; stroke-width: 1.2; }
+    .t { fill: #1d1f22; font-weight: 600; } .m { fill: #6b6e73; font-size: 12px; } .k { fill: #b0602c; font-weight: 600; font-size: 13px; }
+    .top { fill: #e9c9a8; } .left { fill: #c98a55; } .right { fill: #a86d3e; } .edge { stroke: #6e4526; stroke-width: 1.4; fill: none; stroke-linejoin: round; }
+    .plank { stroke: #6e4526; stroke-width: .8; opacity: .45; }
+    .ax { stroke: #d07d45; stroke-width: 2; fill: none; marker-end: url(#h); } .axh { stroke: #d07d45; stroke-width: 1.4; stroke-dasharray: 4 4; }
+    .dim { stroke: #8a8d92; stroke-width: 1.2; } .hid { stroke: #6e4526; stroke-width: 1.2; stroke-dasharray: 4 4; fill: none; opacity: .7; } .num { fill: #d07d45; font-weight: 700; font-size: 13px; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #1c1e21; stroke: #34363a; } .t { fill: #ededed; } .m { fill: #a2a4a8; } .k { fill: #e09460; }
+      .top { fill: #8c6444; } .left { fill: #6f4b30; } .right { fill: #573922; } .edge { stroke: #d2a47a; } .plank { stroke: #d2a47a; }
+      .dim { stroke: #7d8085; } .hid { stroke: #d2a47a; }
+    }
+  </style>
+  <defs>
+    <marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d07d45"/></marker>
+  </defs>
+
+  <!-- the crate, 1 m, in isometric view: origin at the bottom centre -->
+  <!-- hidden edges and the base, seen through the slightly translucent crate -->
+  <path class="hid" d="M105 300L200 245L295 300M200 245V135M200 245L200 355M105 300L295 300"/>
+  <polygon class="top" points="200,135 295,190 200,245 105,190"/>
+  <polygon class="left" points="105,190 200,245 200,355 105,300" fill-opacity=".86"/>
+  <polygon class="right" points="200,245 295,190 295,300 200,355" fill-opacity=".86"/>
+  <path class="plank" d="M105 226.7L200 281.7M105 263.3L200 318.3M200 281.7L295 226.7M200 318.3L295 263.3"/>
+  <path class="edge" d="M200 135L295 190L295 300L200 355L105 300L105 190Z M105 190L200 245L295 190 M200 245V355"/>
+  <path class="ax" d="M200 135V92"/>
+  <text class="k" x="212" y="100">Y up</text>
+  <path class="ax" d="M295 300L338 325"/>
+  <text class="k" x="344" y="334">X</text>
+  <path class="ax" d="M105 300L62 325"/>
+  <text class="k" x="20" y="348">+Z front</text>
+  <text class="m" x="20" y="366">(−Y in Blender)</text>
+  <circle cx="200" cy="300" r="6" fill="#d07d45" stroke="#ffffff" stroke-width="1.5"/>
+  <text class="m" x="212" y="386">origin: bottom centre, on the ground</text>
+  <path class="dim" d="M322 190V300M316 190H328M316 300H328"/>
+  <text class="num" x="332" y="250">1 m</text>
+
+  <!-- the rules -->
+  <rect class="card" x="420" y="24" width="250" height="104" rx="10"/>
+  <text class="t" x="438" y="54">Meters</text>
+  <text class="m" x="438" y="78">1 glTF unit = 1 meter; sizes that</text><text class="m" x="438" y="96">look like mm or cm are flagged</text>
+
+  <rect class="card" x="690" y="24" width="250" height="104" rx="10"/>
+  <text class="t" x="708" y="54">Y-up, front along +Z</text>
+  <text class="m" x="708" y="78">Blender's Z-up is converted on</text><text class="m" x="708" y="96">export; engines turn it their way</text>
+
+  <rect class="card" x="420" y="146" width="250" height="104" rx="10"/>
+  <text class="t" x="438" y="176">Scale 1, rotation 0</text>
+  <text class="m" x="438" y="200">transforms applied on every mesh,</text><text class="m" x="438" y="218">the pivot where it attaches</text>
+
+  <rect class="card" x="690" y="146" width="250" height="104" rx="10"/>
+  <text class="t" x="708" y="176">PBR materials</text>
+  <text class="m" x="708" y="200">metallic-roughness, textures packed,</text><text class="m" x="708" y="218">power-of-two sizes</text>
+
+  <rect class="card" x="420" y="268" width="250" height="104" rx="10"/>
+  <text class="t" x="438" y="298">Clean names</text>
+  <text class="m" x="438" y="322">ASCII, no spaces: runtime code</text><text class="m" x="438" y="340">finds parts and clips by name</text>
+
+  <rect class="card" x="690" y="268" width="250" height="104" rx="10"/>
+  <text class="t" x="708" y="298">Within the tier</text>
+  <text class="m" x="708" y="322">triangles, texture size, materials</text><text class="m" x="708" y="340">and megabytes of each tier</text>
+</svg>

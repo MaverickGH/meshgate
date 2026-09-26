@@ -6,6 +6,8 @@ A single set of rules under which one GLB opens predictably in the web and in al
 engines. The validator (`core/validate_glb.py`) checks what is visible from the file;
 the rest are conventions on the export side.
 
+![The contract at a glance: meters, Y-up with the front along +Z, the origin at the bottom centre, scale 1, PBR, clean names, within the tier](img/asset-contract.svg)
+
 ## Geometry and transforms
 - **Units are meters.** 1 glTF unit = 1 meter. In Blender the scene is in meters; in Maya, set the working units to meters before exporting.
 - **Axes.** glTF is Y-up, right-handed. The Blender exporter converts from Z-up; in Maya (Y-up) no conversion is needed. The result is always Y-up.

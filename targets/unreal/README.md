@@ -15,6 +15,8 @@ targets/unreal/MeshGate/
 tests/unreal/check_api.py                  the API check (no Unreal needed)
 ```
 
+![What the plugin makes of each file: GLB → Static Meshes with PBR and clips; unreal.fbx → Static Mesh with UCX collision; a character FBX → Skeletal Mesh retargeted to the Mannequin; a tier → scalability](../../docs/img/unreal-import.svg)
+
 ## Prepare the asset in Blender
 
 In the MeshGate add-on panel tick **Unreal**. For precise collision select meshes and press **Engine extras → Add collision** (convex hull or box). Export then writes:
@@ -22,6 +24,8 @@ In the MeshGate add-on panel tick **Unreal**. For precise collision select meshe
 - `<name>.glb` — for Interchange (PBR materials, animations, skeletons);
 - `<name>.fbx` — for Skeletal Meshes and editors that prefer FBX;
 - `<name>.unreal.fbx` — when collision proxies exist: meshes named `UCX_<Mesh>_NN`, **parented to their render mesh** (UE 5.5 Interchange otherwise imports UCX meshes as visible geometry, UE-239476).
+
+![Balls bounce off the barricade's convex hull: the UCX_ mesh becomes its simple collision in Unreal](../../docs/img/engine-collision.gif)
 
 ## Install
 

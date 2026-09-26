@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 350" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14">
+  <title>What the MeshGate plugin makes in Unreal from each file: GLB through Interchange to Static Meshes with PBR materials and clips; unreal.fbx to Static Meshes with UCX collision; a character FBX to a Skeletal Mesh retargeted to the UE5 Mannequin; each quality tier to a scalability level</title>
+  <style>
+    .card { fill: #f7f6f4; stroke: #d8d5d0; stroke-width: 1.2; }
+    .file { fill: #fbefe5; stroke: #d07d45; stroke-width: 1.4; }
+    .t { fill: #1d1f22; font-weight: 600; } .m { fill: #6b6e73; font-size: 12px; } .f { fill: #b0602c; font-weight: 600; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+    .cap { fill: #8a8d92; font-size: 11px; letter-spacing: .12em; font-weight: 600; }
+    .a { stroke: #d07d45; stroke-width: 1.6; fill: none; marker-end: url(#h); }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #1c1e21; stroke: #34363a; } .file { fill: #2a2119; stroke: #e09460; }
+      .t { fill: #ededed; } .m { fill: #a2a4a8; } .f { fill: #e09460; } .cap { fill: #8f9296; }
+    }
+  </style>
+  <defs>
+    <marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d07d45"/></marker>
+  </defs>
+
+  <text class="cap" x="20" y="28">MESHGATE FILE</text>
+  <text class="cap" x="330" y="28">IMPORTED WITH</text>
+  <text class="cap" x="640" y="28">IN UNREAL</text>
+
+  <rect class="file" x="20" y="44" width="260" height="58" rx="10"/>
+  <text class="f" x="36" y="69">name.glb</text><text class="m" x="36" y="89">props, scenes, animated parts</text>
+  <path class="a" d="M280 73H328"/>
+  <rect class="card" x="330" y="44" width="280" height="58" rx="10"/>
+  <text class="t" x="346" y="69">Interchange</text><text class="m" x="346" y="89">+ the MeshGate pipeline</text>
+  <path class="a" d="M610 73H638"/>
+  <rect class="card" x="640" y="44" width="300" height="58" rx="10"/>
+  <text class="t" x="656" y="69">Static Mesh per part</text><text class="m" x="656" y="89">PBR material instances · AnimSequence per clip</text>
+
+  <rect class="file" x="20" y="120" width="260" height="58" rx="10"/>
+  <text class="f" x="36" y="145">name.unreal.fbx</text><text class="m" x="36" y="165">static props that need collision</text>
+  <path class="a" d="M280 149H328"/>
+  <rect class="card" x="330" y="120" width="280" height="58" rx="10"/>
+  <text class="t" x="346" y="145">FBX import</text><text class="m" x="346" y="165">Interchange in 5.5+, legacy in 5.3–5.4</text>
+  <path class="a" d="M610 149H638"/>
+  <rect class="card" x="640" y="120" width="300" height="58" rx="10"/>
+  <text class="t" x="656" y="145">Static Mesh + collision</text><text class="m" x="656" y="165">UCX_ convex hulls become simple collision</text>
+
+  <rect class="file" x="20" y="196" width="260" height="58" rx="10"/>
+  <text class="f" x="36" y="221">name.fbx</text><text class="m" x="36" y="241">characters, Humanoid bone names</text>
+  <path class="a" d="M280 225H328"/>
+  <rect class="card" x="330" y="196" width="280" height="58" rx="10"/>
+  <text class="t" x="346" y="221">Skeletal Mesh</text><text class="m" x="346" y="241">IK Rig chains map by bone name</text>
+  <path class="a" d="M610 225H638"/>
+  <rect class="card" x="640" y="196" width="300" height="58" rx="10"/>
+  <text class="t" x="656" y="221">Retargeted to the Mannequin</text><text class="m" x="656" y="241">IK Retargeter; clips play on UE5 characters</text>
+
+  <rect class="file" x="20" y="272" width="260" height="58" rx="10"/>
+  <text class="f" x="36" y="297">quality tier</text><text class="m" x="36" y="317">mobile low · mid · high · PC</text>
+  <path class="a" d="M280 301H328"/>
+  <rect class="card" x="330" y="272" width="280" height="58" rx="10"/>
+  <text class="t" x="346" y="297">apply_quality(tier)</text><text class="m" x="346" y="317">and import_pack(folder, profile=…)</text>
+  <path class="a" d="M610 301H638"/>
+  <rect class="card" x="640" y="272" width="300" height="58" rx="10"/>
+  <text class="t" x="656" y="297">Scalability Low → Epic</text><text class="m" x="656" y="317">screen %, shadows, AO, bloom, MSAA per tier</text>
+</svg>

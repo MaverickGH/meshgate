@@ -4,6 +4,8 @@
 
 One asset pipeline, four device tiers. [`core/profiles.json`](../core/profiles.json) is the single source of truth; the validator, the Blender add-on, the web viewer, Unity, Godot and Unreal all read or mirror it, and `python3 tests/check_profiles.py` fails if any copy drifts.
 
+![The same zombie cat at every tier: the wireframe thins from 52,026 triangles on PC to 1,288 on mobile low](img/quality-tiers.gif)
+
 | Tier | Devices | Asset budget (per file) | Scene budget | Rendering |
 |---|---|---|---|---|
 | `mobile-low` | budget/old phones, ≤ 3 GB RAM | 8k tris, 512 px, 4 MB textures, 2 materials, 50 bones, 2 influences, 2 MB | 60k tris, 60 draw calls | 0.75× resolution, no shadows, no MSAA, no post |

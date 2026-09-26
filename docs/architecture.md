@@ -2,13 +2,7 @@
 
 # MeshGate architecture — "hub and spokes"
 
-```
-  Blender ─┐                              ┌─→ Web (Three.js)
-  Maya ────┤→  normalized GLB  ───────────┤─→ Unity (glTFast)
-  (…)      │   (asset contract)           ├─→ Godot (native)
-           │   + validator                └─→ Unreal (native/Interchange)
-  sources                                    targets
-```
+![Sources (Blender, text, picture, any mesh; Maya planned) → one canonical GLB per quality tier, checked by the validator → web, Unity, Godot, Unreal](img/architecture.svg)
 
 **The core** is a canonical glTF 2.0 (GLB) per the asset contract + a validator. The core
 knows nothing about any specific editor or any specific engine.

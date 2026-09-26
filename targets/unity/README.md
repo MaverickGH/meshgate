@@ -91,6 +91,16 @@ The demo scene places `meshgate_hero` behind the crates: on the left an FBX that
 
 Your own character: run it through `sources/blender/animate_humanoid.py` (see `samples/README.md`) — it finds Mixamo/Rigify/UE bones and outputs a GLB + FBX per the contract.
 
+## Tiers and LODs
+
+![The camera pulls back and a Unity LOD Group switches the realistic toxic can from LOD0 (12,040 triangles) to LOD2 (889)](../../docs/img/unity-lods.gif)
+
+Two ways to keep a scene light. At runtime a scene-wide **MeshGateQuality** makes every `MeshGateAsset` load
+`<name>.<tier>.glb` for the chosen tier. In the editor `<name>.unity.fbx` carries `_LOD0…_LODn` meshes, and Unity builds
+a LOD Group that swaps them by distance, as above.
+
+![The Zombie Cats street in Unity at mobile-low (left) and PC (right): no shadows and a lower resolution against soft shadows](../../docs/img/tiers-unity-low-pc.png)
+
 ## Contract → Unity: what to know
 
 - **Meters and Y-up** match Unity. glTF is right-handed, Unity is left-handed — glTFast mirrors along X; names, hierarchy and scale 1 are preserved (a test checks `localScale == 1` on all nodes).

@@ -15,6 +15,8 @@ targets/unreal/MeshGate/
 tests/unreal/check_api.py                  проверка API (Unreal не нужен)
 ```
 
+![Что плагин делает из каждого файла: GLB → Static Mesh с PBR и клипами; unreal.fbx → Static Mesh с коллизией UCX; FBX персонажа → Skeletal Mesh с ретаргетом на Mannequin; уровень → scalability](../../docs/img/unreal-import.svg)
+
 ## Подготовка ассета в Blender
 
 В панели аддона MeshGate включи **Unreal**. Для точных коллизий выдели меши и нажми **Для движков → Добавить коллизию** (выпуклая оболочка или коробка). Экспорт тогда пишет:
@@ -22,6 +24,8 @@ tests/unreal/check_api.py                  проверка API (Unreal не н�
 - `<name>.glb` — для Interchange (PBR-материалы, анимации, скелеты);
 - `<name>.fbx` — для Skeletal Mesh и редакторов, которым удобнее FBX;
 - `<name>.unreal.fbx` — если есть прокси коллизий: меши `UCX_<Mesh>_NN`, **дочерние к своему рендер-мешу** (иначе Interchange в UE 5.5 импортирует UCX как видимую геометрию, UE-239476).
+
+![Шары отскакивают от выпуклой оболочки баррикады: меш UCX_ становится её простой коллизией в Unreal](../../docs/img/engine-collision.gif)
 
 ## Установка
 

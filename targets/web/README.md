@@ -4,6 +4,8 @@
 
 Web runtime for the canonical GLB. Two layers:
 
+![The demo page: the gallery of samples and packs on the left, the demo crate in the middle, the tier, draw calls and triangles at the top, keyboard hints at the bottom](../../docs/img/web-viewer.png)
+
 | File | What it is |
 |---|---|
 | `meshgate-viewer.js` | A UI-less **library**: scene, lights, environment, GLB loading (Draco / KTX2 / meshopt), interaction, animations, drag-and-drop. Embeds into any website. |

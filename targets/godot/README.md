@@ -53,6 +53,14 @@ The check fails if the crate has the wrong nodes/extents/clips or the lid does n
 | `MeshGateOrbitCamera` (Camera3D) | LMB — orbit, RMB — pan, wheel — zoom, `F` — frame; frames the asset by itself after loading. |
 | `MeshGateHud` (CanvasLayer) | Asset passport, name under the cursor, `Space` — pause, `1..9` — clip selection. |
 
+## Collision
+
+![Balls fall on the barricade and bounce off its convex hull — the shape a -convcolonly node becomes in Godot](../../docs/img/engine-collision.gif)
+
+The editor importer turns every `<mesh>…-convcolonly` node of `<name>.godot.glb` into a `StaticBody3D` with that convex
+shape, so static props collide right after import. At runtime `MeshGateAsset` builds BOX, CONVEX or TRIMESH collision
+itself.
+
 ## Contract → Godot
 
 - Meters and Y-up match, and Godot's forward is -Z like glTF's — nothing gets rotated or scaled.

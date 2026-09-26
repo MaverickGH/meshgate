@@ -168,6 +168,8 @@ A style is more than words in the prompt: the kit engine enforces the look after
   whole asset keeps one material. The AI is told to give every part a clean base colour and leave the dirt to the bake.
 - **`stylized`, `toon`** keep clean palette colours and smooth shading.
 
+![One cat tombstone, three styles: stylized, low-poly (faceted) and realistic (weathered textures)](img/styles-switch.gif)
+
 ![The same eleven Zombie Cats assets in three styles](img/zc-styles-lineup.jpg)
 
 `--finish` picks one by hand; with `--colors vertex` there is nothing to bake into, so `weathered` falls back to none.

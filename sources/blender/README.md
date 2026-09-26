@@ -37,6 +37,8 @@ Russian UI: Preferences → Interface → Translation → Русский (tick �
 3. **Fix** next to an issue, or **Fix all** (Ctrl+Z undoes it). Fixes: meters, apply scale, transliterate and clean names, Smart UV unwrap, default PBR material, pack textures, resize to a power of two (≤ 4096), put the asset on Z = 0, rename bones to Unity Humanoid, weight stray vertices to the nearest bone and normalize (≤ 4 per vertex), push actions to NLA. Baking procedural materials is the one thing left to you.
 4. **Export.** Writes the files below and runs the validator on each; the report appears in the panel. **Preview in browser** serves the folder from Blender on localhost and opens the MeshGate web viewer (needs internet for Three.js from the CDN).
 
+![Check → Fix all: a crate in centimetres, lying on its side and floating gets scale 1, stands up, lands on the ground and gets its origin at the bottom centre](../../docs/img/blender-fix.gif)
+
 | File | When | For |
 |---|---|---|
 | `<name>.glb` | always | canonical asset: web, Unity (glTFast), Godot, Unreal (Interchange) |
