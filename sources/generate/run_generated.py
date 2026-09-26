@@ -53,7 +53,10 @@ def _args():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--colors", default="texture", choices=["texture", "vertex"], help="palette textures or vertex colours")
     ap.add_argument("--caps", default="", help="your triangle limits per tier: mobile-low=300,pc=2000")
-    ap.add_argument("--finish", default="none", choices=["none", "faceted", "weathered"],
+    ap.add_argument("--texture", type=int, default=0, help="baked texture size in px (1024…8192); tiers still cap it, "
+                    "a size above the PC tier also writes <name>.master.glb")
+    ap.add_argument("--topology", default="tri", choices=["tri", "quad"], help="FBX and .blend topology (GLB is always triangles)")
+    ap.add_argument("--finish", default="none", choices=["none", "faceted", "weathered", "clean"],
                     help="faceted: low-poly look enforced (flat, few segments); weathered: dirt, variation and relief baked into textures")
     return ap.parse_args(argv)
 
@@ -70,10 +73,13 @@ def _trace(exc: BaseException) -> str:
 
 
 def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: str, colors: str = "texture",
-               finish_: str = "none") -> dict:
-    """Fresh scene → build(mg) at the tier's detail → finalize → contract fixes. Returns notes and in-Blender issues."""
+               finish_: str = "none", texture: int = 0, topology: str = "tri", budget_override: dict | None = None,
+               save_high: str | None = None, high: str | None = None) -> dict:
+    """Fresh scene → build(mg) at the tier's detail → finalize → contract fixes. Returns notes and in-Blender issues.
+    save_high = write this (PC) build's geometry to a .blend; high = such a .blend: a lighter tier bakes its normal map
+    from that detailed model (high → low, as an artist bakes a sculpt onto a game mesh)."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
-    budget = export.load_profiles()["profiles"][tier]["asset"]
+    budget = {**export.load_profiles()["profiles"][tier]["asset"], **(budget_override or {})}
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
                        finish=finish_)
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
@@ -81,13 +87,19 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     g["build"](kit)
     notes = kit._finalize()
     ctx = bpy.context
-    if finish_ == "weathered":
-        notes += finish.weathered(ctx, budget, tier, tmp, name)
+    if topology == "quad":
+        notes += finish.quads(ctx)
+    if save_high:
+        finish.save_high(ctx, save_high)
+    if finish_ in ("weathered", "clean"):
+        hi = finish.load_high(ctx, high) if high and os.path.exists(high) else []
+        notes += finish.weathered(ctx, budget, tier, tmp, name, want=texture or None, clean=finish_ == "clean", high=hi)
     if collision != "none":
         static = [o for o in ctx.scene.objects if o.type == "MESH" and not o.animation_data
                   and not (o.parent and o.parent.animation_data)]
         if static:
             tools.add_collision(ctx, static, collision.upper())
+    checks.MAX_TEXTURE = max(4096, budget["max_texture"])   # the 8K master keeps its size
     before = [i for i in checks.run_checks(ctx) if i.severity != checks.INFO]
     fixed = checks.fix_all(ctx) if any(i.fix for i in before) else []
     after = [i for i in checks.run_checks(ctx) if i.severity != checks.INFO]
@@ -171,12 +183,17 @@ def main() -> int:
     code_obj = compile(code, "<generated>", "exec")
 
     # weathered textures are photo-like: JPEG, as for the mesh engine's bakes; the flat palette stays lossless
-    image_format = "JPEG" if args.finish == "weathered" else "AUTO"
+    baked = args.finish in ("weathered", "clean")
+    image_format = "JPEG" if baked else "AUTO"
+    export.FBX_TRIANGLES = args.topology == "tri"
     with tempfile.TemporaryDirectory() as tmp:
+        high = os.path.join(tmp, "high.blend") if baked and "pc" in tiers and len(tiers) > 1 else None
         for tier in tiers:
             is_canon = tier == canonical
             try:
-                info = build_tier(code_obj, name, tier, args.seed, tmp, args.collision, args.colors, args.finish)
+                info = build_tier(code_obj, name, tier, args.seed, tmp, args.collision, args.colors, args.finish,
+                                  args.texture, args.topology, save_high=high if tier == "pc" else None,
+                                  high=high if tier != "pc" else None)
             except Exception as exc:  # noqa: BLE001 — every failure goes back to the AI as feedback
                 report["problems"].append(f"build(mg) failed at tier {tier}:\n{_trace(exc)}")
                 return done(1)
@@ -208,7 +225,7 @@ def main() -> int:
                 glb = os.path.join(out, f"{name}.{tier}.glb")
                 tier_notes: list = []
                 export.export_tier(bpy.context, glb, tier, notes=tier_notes, max_tris=caps.get(tier),
-                                   image_format=image_format if args.finish == "weathered" else None)
+                                   image_format=image_format if baked else None)
                 entry["notes"] += [f"{n} (your cap)" if caps.get(tier) else n for n in tier_notes]
                 rep = export.validate_file(glb, profile=tier)
                 report["files"].append(os.path.basename(glb))
@@ -241,6 +258,19 @@ def main() -> int:
                   + (f"  clips {', '.join(info['clips'])}" if info["clips"] else ""), flush=True)
             for n in entry["notes"]:
                 print(f"      · {n}", flush=True)
+        pc_max = export.load_profiles()["profiles"]["pc"]["asset"]["max_texture"]
+        if args.texture > pc_max and baked and "pc" in tiers:
+            # above the PC tier's limit: one more PC build baked at the full size, for renders and film
+            build_tier(code_obj, name, "pc", args.seed, tmp, "none", args.colors, args.finish, args.texture, args.topology,
+                       budget_override={"max_texture": args.texture, "max_texture_mb": 4096})
+            master = os.path.join(out, f"{name}.master.glb")
+            export.export_asset(bpy.context, master, targets=(), fbx=False, validate=False, image_format=image_format)
+            report["files"].append(os.path.basename(master))
+            report["master"] = {"file": os.path.basename(master), "texture": args.texture}
+            print(f"  ✓ master       {args.texture} px textures, beyond the PC tier  {os.path.basename(master)}", flush=True)
+        elif args.texture and not baked:
+            report["advice"].append("the texture size applies to baked textures: the realistic style, or --pbr for the "
+                                    "others (their flat palette needs no more than 256 px)")
 
     canon = report["tiers"][canonical]
     if args.size > 0:

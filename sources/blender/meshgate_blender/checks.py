@@ -77,6 +77,9 @@ class Issue:
 # scope
 # ----------------------------------------------------------------------------
 
+# largest texture the contract accepts; a master build beyond the PC tier (--texture 8k) raises it for its run
+MAX_TEXTURE = 4096
+
 def export_objects(context, selection_only: bool = False) -> list[bpy.types.Object]:
     """Objects the exporter will write: renderable meshes, armatures and empties (and their children)."""
     pool = context.selected_objects if selection_only else context.scene.objects
@@ -205,9 +208,9 @@ def run_checks(context, selection_only: bool = False, targets: set[str] | None =
     npot = [f"{i.name} {i.size[0]}×{i.size[1]}" for i in images if i.size[0] and (not _pow2(i.size[0]) or not _pow2(i.size[1]))]
     if npot:
         issues.append(Issue("NPOT", WARNING, "Textures not power of two", "pow2", npot))
-    huge = [f"{i.name} {i.size[0]}×{i.size[1]}" for i in images if max(i.size) > 4096]
+    huge = [f"{i.name} {i.size[0]}×{i.size[1]}" for i in images if max(i.size) > MAX_TEXTURE]
     if huge:
-        issues.append(Issue("HUGE_TEX", WARNING, "Textures larger than 4096", "pow2", huge))
+        issues.append(Issue("HUGE_TEX", WARNING, f"Textures larger than {MAX_TEXTURE}", "pow2", huge))
 
     for arm in [o for o in objs if o.type == "ARMATURE"]:
         mapping = humanoid_map(arm)
@@ -349,8 +352,8 @@ def fix_pow2(context, objs):
         w, h = img.size
         if not w:
             continue
-        nw = min(4096, 1 << max(0, round(math.log2(w))))
-        nh = min(4096, 1 << max(0, round(math.log2(h))))
+        nw = min(MAX_TEXTURE, 1 << max(0, round(math.log2(w))))
+        nh = min(MAX_TEXTURE, 1 << max(0, round(math.log2(h))))
         if (nw, nh) != (w, h):
             img.scale(nw, nh)
             if img.packed_file or img.source == "GENERATED":

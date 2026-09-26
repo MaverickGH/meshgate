@@ -20,18 +20,21 @@ MAX_PX = 2048
 MARGIN = 2   # bake margin in pixels
 
 
-def texture_plan(budget: dict, tier: str, glow: bool) -> tuple[int, int, int, int]:
-    """(colour, orm, emissive, normal) sizes in px within the tier's texture size and memory (RGBA, +1/3 for mips)."""
+def texture_plan(budget: dict, tier: str, glow: bool, want: int | None = None,
+                 normal_map: bool = True) -> tuple[int, int, int, int]:
+    """(colour, orm, emissive, normal) sizes in px within the tier's texture size and memory (RGBA, +1/3 for mips).
+    want: the texture size asked for (--texture 1k…8k); the tier's own limit still caps it."""
     mb = lambda px: px * px * 4 * 4 / 3 / 2 ** 20 if px else 0.0   # noqa: E731
-    colour = min(budget.get("max_texture", 1024), MAX_PX)
+    colour = min(budget.get("max_texture", 1024), want or MAX_PX)
     while True:
-        orm, emissive = colour // 2, (colour // 2 if glow else 0)
+        # roughness-metallic and glow need less detail than colour; the memory saved goes to the normal map
+        orm, emissive = min(colour // 2, 1024), (min(colour // 2, 1024) if glow else 0)
         base = mb(colour) + mb(orm) + mb(emissive)
         if base <= budget.get("max_texture_mb", 64) or colour <= 256:
             break
         colour //= 2
     normal = 0
-    if tier != "mobile-low":
+    if tier != "mobile-low" and normal_map:
         for n in (colour, colour // 2, colour // 4):
             if base + mb(n) <= budget.get("max_texture_mb", 64):
                 normal = n
@@ -68,8 +71,47 @@ def _palette_images(mat) -> dict:
     return out
 
 
-def _bake_material(pal: dict, size: float):
-    """A temporary material that computes the weathered maps from the palette (sampled through the old UVMap)."""
+def quads(ctx) -> list[str]:
+    """Quad topology for editors and further modelling: n-gons are split, then triangles are paired into quads wherever
+    the shape allows. (GLB stays triangles — glTF stores nothing else; FBX and .blend keep the quads.)"""
+    import bmesh
+    total = quad = 0
+    for o in ctx.scene.objects:
+        if o.type != "MESH" or o.get("meshgate_collision_for") or o.data.shape_keys:
+            continue
+        if o.data.users > 1:
+            o.data = o.data.copy()
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+        bmesh.ops.join_triangles(bm, faces=bm.faces, angle_face_threshold=math.radians(40),
+                                 angle_shape_threshold=math.radians(40), cmp_seam=False, cmp_sharp=False,
+                                 cmp_uvs=False, cmp_vcols=False, cmp_materials=True)
+        total += len(bm.faces)
+        quad += sum(1 for f in bm.faces if len(f.verts) == 4)
+        bm.to_mesh(o.data)
+        o.data.update()
+        bm.free()
+    return [f"quad topology: {quad * 100 // max(total, 1)} % quads"]
+
+
+def _occlusion(nt, socket):
+    """Wire an ambient-occlusion value into the glTF exporter's 'glTF Material Output' group (the occlusion slot)."""
+    g = bpy.data.node_groups.get("glTF Material Output")
+    if g is None:
+        g = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+        if hasattr(g, "interface"):      # Blender 4.0+
+            g.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+        else:
+            g.inputs.new("NodeSocketFloat", "Occlusion")
+    node = nt.nodes.new("ShaderNodeGroup")
+    node.node_tree = g
+    nt.links.new(socket, node.inputs["Occlusion"])
+
+
+def _bake_material(pal: dict, size: float, clean: bool = False):
+    """A temporary material that computes the weathered maps from the palette (sampled through the old UVMap).
+    clean: the exact palette colours plus ambient occlusion, no weathering (full PBR for stylized looks)."""
     m = bpy.data.materials.new("meshgate_weather_bake")
     m.use_nodes = True
     nt = m.node_tree
@@ -172,6 +214,20 @@ def _bake_material(pal: dict, size: float):
     def shade(c, fac):
         return mix(1.0, c, fac, "MULTIPLY")
 
+    if clean:   # exact colours; ambient occlusion goes to the ORM red, the glTF occlusion channel
+        ao = nodes.new("ShaderNodeAmbientOcclusion")
+        ao.samples = 16
+        ao.inputs["Distance"].default_value = max(size * 0.08, 0.02)
+        orm_out = nodes.new("ShaderNodeCombineColor")
+        links.new(ao.outputs["AO"], orm_out.inputs[0])
+        links.new(rough, orm_out.inputs[1])
+        links.new(metal, orm_out.inputs[2])
+        emit, bsdf, out = nodes.new("ShaderNodeEmission"), nodes.new("ShaderNodeBsdfPrincipled"), nodes.new("ShaderNodeOutputMaterial")
+        outs = {"colour": base.outputs["Color"], "orm": orm_out.outputs[0]}
+        if "emissive" in pal:
+            outs["emissive"] = emi.outputs["Color"]
+        return m, emit, bsdf, out, outs
+
     # colour variation: broad blotches and finer mottling, about ±20 %, less on bare metal
     var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.78, 1.14),
                 maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.88, 1.08))
@@ -243,7 +299,7 @@ def _bake_material(pal: dict, size: float):
     # roughness: dirt is duller; relief: fine noise, stronger on rough surfaces, none on polished metal
     rough_out = math_("MINIMUM", math_("ADD", math_("ADD", rough, math_("MULTIPLY", dirt, 0.25)), rough_extra), 1.0)
     orm_out = nodes.new("ShaderNodeCombineColor")
-    orm_out.inputs[0].default_value = 1.0
+    links.new(ao.outputs["AO"], orm_out.inputs[0])   # ambient occlusion: the glTF occlusion channel
     links.new(rough_out, orm_out.inputs[1])
     links.new(metal, orm_out.inputs[2])
     bump = nodes.new("ShaderNodeBump")
@@ -263,10 +319,54 @@ def _bake_material(pal: dict, size: float):
     return m, emit, bsdf, out, outs
 
 
-def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
-    """Bake the weathered look into one texture set for every mesh of the asset. Returns notes."""
+def save_high(ctx, path: str) -> None:
+    """Write the built model's meshes, in world space, to a .blend: the high model lighter tiers bake normals from."""
+    ctx.view_layer.update()
+    objs = []
+    for o in ctx.scene.objects:
+        if o.type == "MESH" and not o.get("meshgate_collision_for"):
+            me = o.data.copy()
+            me.transform(o.matrix_world)
+            objs.append(bpy.data.objects.new(f"mg_high_{o.name}", me))
+    bpy.data.libraries.write(path, set(objs), fake_user=True)
+    for o in objs:
+        me = o.data
+        bpy.data.objects.remove(o)
+        bpy.data.meshes.remove(me)
+
+
+def load_high(ctx, path: str) -> list:
+    """Append the high model written by save_high into the scene (marked; removed again after the bake)."""
+    with bpy.data.libraries.load(path) as (src, dst):
+        dst.objects = [n for n in src.objects if n.startswith("mg_high_")]
+    objs = [o for o in dst.objects if o is not None]
+    for o in objs:
+        ctx.scene.collection.objects.link(o)
+        o["meshgate_high"] = True
+        o.use_fake_user = False
+    return objs
+
+
+def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | None = None, clean: bool = False,
+              high: list | None = None) -> list[str]:
+    """Bake the weathered look (or, clean, the exact colours) into one full PBR texture set for every mesh of the asset:
+    base colour, occlusion-roughness-metallic, emission and a normal map. want = texture size asked for. high = meshes
+    of the detailed (PC) build: the normal map is baked from them onto this lighter model. Returns notes."""
     scene = ctx.scene
-    meshes = [o for o in scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")]
+    high = list(high or [])
+    try:
+        return _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high)
+    finally:
+        for o in high:
+            me = o.data
+            bpy.data.objects.remove(o)
+            if me and me.users == 0:
+                bpy.data.meshes.remove(me)
+
+
+def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[str]:
+    meshes = [o for o in scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
+              and not o.get("meshgate_high")]
     mats = {s.material for o in meshes for s in o.material_slots if s.material}
     if len(mats) != 1:
         return [f"weathered finish skipped: needs the one palette material (found {len(mats)})"]
@@ -279,7 +379,7 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
     ctx.view_layer.update()
     pts = [o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
     size = max(max(p[i] for p in pts) - min(p[i] for p in pts) for i in range(3))
-    colour_px, orm_px, emi_px, normal_px = texture_plan(budget, tier, peak > 0)
+    colour_px, orm_px, emi_px, normal_px = texture_plan(budget, tier, peak > 0, want, normal_map=not clean or bool(high))
     smallest = min(px for px in (colour_px, orm_px, emi_px, normal_px) if px)
     # gaps between UV islands wider than the bake margin on the smallest map, so no colour or glow bleeds across
     island_margin = min(0.02, 2.5 * MARGIN / smallest)
@@ -301,16 +401,15 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
         for layer in o.data.uv_layers:
             layer.active_render = layer.name == "bake"
 
-    bake_mat, emit, bsdf, out, outs = _bake_material(pal, size)
-    for o in meshes:
-        o.material_slots[0].material = bake_mat
-        for slot in o.material_slots[1:]:
+    bake_mat, emit, bsdf, out, outs = _bake_material(pal, size, clean)
+    for o in meshes + high:
+        for slot in o.material_slots:
             slot.material = bake_mat
     nt = bake_mat.node_tree
     target = nt.nodes.new("ShaderNodeTexImage")
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
-    scene.cycles.samples = 16
+    scene.cycles.samples = 16 if colour_px <= 2048 else 6    # at 4K and 8K a pixel is tiny: noise does not show
     images = {}
 
     def bake(kind, px, non_color, source=None):
@@ -331,11 +430,15 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
                 nt.links.remove(link)
             nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
             btype = "NORMAL"
+        from_high = btype == "NORMAL" and bool(high)
         for i, o in enumerate(meshes):   # one object at a time into the shared image; clear only before the first
             for x in ctx.view_layer.objects:
-                x.select_set(x is o)
+                x.select_set(x is o or (from_high and x in high))
             ctx.view_layer.objects.active = o
-            bpy.ops.object.bake(type=btype, normal_space="TANGENT", margin=MARGIN, use_clear=(i == 0), target="IMAGE_TEXTURES")
+            extra = {"use_selected_to_active": True, "cage_extrusion": size * 0.01, "max_ray_distance": size * 0.04} \
+                if from_high else {}
+            bpy.ops.object.bake(type=btype, normal_space="TANGENT", margin=MARGIN, use_clear=(i == 0),
+                                target="IMAGE_TEXTURES", **extra)
         _pack(img, tmp)
         images[kind] = img
 
@@ -365,6 +468,7 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
     mnt.links.new(r.outputs["Color"], sep.inputs[0])
     mnt.links.new(sep.outputs[1], pb.inputs["Roughness"])
     mnt.links.new(sep.outputs[2], pb.inputs["Metallic"])
+    _occlusion(mnt, sep.outputs[0])
     if "emissive" in images:
         e = tex(images["emissive"])
         mnt.links.new(e.outputs["Color"], compat.socket(pb, "Emission Color"))
@@ -384,5 +488,6 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str) -> list[str]:
         uvs.active = uvs["UVMap"]
         uvs["UVMap"].active_render = True
     bpy.data.materials.remove(bake_mat)
-    parts = [f"colour {colour_px}"] + ([f"normal {normal_px}"] if normal_px else [])
-    return [f"weathered finish baked ({', '.join(parts)} px)"]
+    parts = [f"colour {colour_px} px"] + ([f"normal {normal_px} px" + (" from the PC model" if high else "")]
+                                          if normal_px else []) + ["occlusion"]
+    return [f"{'clean PBR' if clean else 'weathered finish'} baked ({', '.join(parts)})"]

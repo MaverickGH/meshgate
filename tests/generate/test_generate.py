@@ -4,6 +4,7 @@
     python3 tests/generate/test_generate.py
 """
 
+import re
 import sys
 from pathlib import Path
 for _s in (sys.stdout, sys.stderr):   # Windows consoles default to cp1252; the checks print ✓ and ✗
@@ -62,6 +63,11 @@ step("finish follows the style: lowpoly → faceted, realistic → weathered, ve
      and generate.resolve_finish("faceted", "stylized", "texture") == "faceted")
 _w = generate.build_prompt("a crate", name="crate", style="realistic", size=0.5, tiers=["pc"], finish="weathered")
 step("the prompt tells the AI that weathering is baked on top", "do not model dirt" in _w)
+step("--pbr bakes a clean full PBR set for flat styles, never with vertex colours",
+     generate.resolve_finish("auto", "stylized", "texture", True) == "clean"
+     and generate.resolve_finish("auto", "realistic", "texture", True) == "weathered"
+     and generate.resolve_finish("auto", "stylized", "vertex", True) == "none"
+     and generate.TEXTURES["8k"] == 8192)
 _a = generate.parse_anims("open: the lid opens; idle: the lamp sways\nкрутятся лопасти")
 step("animation requests become named clips", _a == [("open", "the lid opens"), ("idle", "the lamp sways"), ("clip_3", "крутятся лопасти")])
 step("the prompt lists the requested clips", "| `open` | the lid opens |" in generate.build_prompt(
@@ -87,8 +93,9 @@ step("prompt carries the description, size and tiers", "a wooden crate" in promp
      and "| mobile-low | 8,000 |" in prompt and "mobile-mid (not built)" in prompt)
 step("prompt lists every public kit method", all(f"mg.{m}(" in prompt for m in (
     "part", "lathe", "tube", "extrude", "mirror_x", "copy", "join", "pivot", "attach", "group", "animate", "color",
-    "seg", "at_least"))) and "mg._" not in prompt
-step("prompt has no unfilled placeholders", "{" not in prompt.split("# Example")[0].replace("{prompt_file}", ""))
+    "seg", "at_least", "blob", "skin", "cut", "bend", "twist", "sculpt"))) and "mg._" not in prompt
+step("prompt has no unfilled placeholders",   # dict literals in the kit docs are fine; {name} fields are not
+     not re.search(r"\{[a-z_]+\}", prompt.split("# Example")[0].replace("{prompt_file}", "")))
 fb = generate.feedback_block("def build(mg):\n    pass\n", ["tier pc: boom"], ["detail: more"])
 step("feedback block quotes code and problems", "tier pc: boom" in fb and "def build(mg)" in fb)
 

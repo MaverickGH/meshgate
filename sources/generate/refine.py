@@ -35,7 +35,7 @@ from mathutils import Matrix, Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "blender"))
-from meshgate_blender import checks, compat, export, tools  # noqa: E402
+from meshgate_blender import checks, compat, export, finish, tools  # noqa: E402
 from meshgate_blender.modeling import TIERS  # noqa: E402
 
 # Share of each tier's triangle budget a single generated prop gets by default: neural meshes carry little real detail
@@ -62,6 +62,9 @@ def _args():
     ap.add_argument("--cpu", action="store_true", help="force the CPU even with --gpu (the fallback after a crash)")
     ap.add_argument("--colors", default="texture", choices=["texture", "vertex"], help="baked textures or vertex colours")
     ap.add_argument("--caps", default="", help="your triangle limits: mobile-low=300,pc=2000 (below the tier defaults)")
+    ap.add_argument("--texture", type=int, default=0, help="baked texture size in px (tiers still cap it; above PC → master.glb)")
+    ap.add_argument("--topology", default="tri", choices=["tri", "quad"], help="quad: QuadriFlow remesh per tier instead of decimation")
+    ap.add_argument("--pbr", action="store_true", help="also bake ambient occlusion into the glTF occlusion slot")
     ap.add_argument("--preview", action="store_true")
     return ap.parse_args(argv)
 
@@ -304,9 +307,10 @@ def colour_source(src, vertex_srgb: bool = False) -> str:
 # per tier
 # ----------------------------------------------------------------------------
 
-def texture_plan(budget: dict, tier: str) -> tuple[int, int]:
-    """(colour px, normal px or 0) within the tier's texture size and memory (RGBA × 4/3 for mipmaps)."""
-    colour = min(budget["max_texture"], MAX_BAKE)
+def texture_plan(budget: dict, tier: str, want: int | None = None) -> tuple[int, int]:
+    """(colour px, normal px or 0) within the tier's texture size and memory (RGBA × 4/3 for mipmaps).
+    want: the texture size asked for (--texture); the tier's limit still caps it."""
+    colour = min(budget["max_texture"], want or MAX_BAKE)
     mb = lambda px: px * px * 4 * 4 / 3 / 2 ** 20   # noqa: E731
     if tier == "mobile-low":
         return colour, 0
@@ -381,8 +385,52 @@ def bake(kind: str, src, low, node, size: float, to_vertices: bool = False):
     bpy.ops.object.bake(**kwargs)
 
 
+def quad_remesh(obj, target_tris: int) -> bool:
+    """Clean quad topology at the tier's density (QuadriFlow, built into Blender). False when it cannot (non-manifold)."""
+    select_only([obj])
+    before = len(obj.data.polygons)
+    try:
+        with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+            res = bpy.ops.object.quadriflow_remesh(target_faces=max(60, target_tris // 2), use_mesh_symmetry=False,
+                                                   use_preserve_sharp=False, use_preserve_boundary=False,
+                                                   smooth_normals=False, seed=0)
+    except Exception:  # noqa: BLE001
+        return False
+    polys = obj.data.polygons
+    quads = sum(1 for p in polys if len(p.vertices) == 4)
+    return "FINISHED" in res and len(polys) != before and quads >= .9 * len(polys)   # it really remeshed
+
+
+def voxel_quads(obj, target_tris: int) -> float:
+    """All-quad topology at the tier's density when QuadriFlow declines: a voxel remesh (like ZBrush DynaMesh) sized
+    from the surface area; the details voxels smooth away come back through the normal map baked from the source."""
+    area = sum(p.area for p in obj.data.polygons)
+    mod = obj.modifiers.new("voxel quads", "REMESH")
+    mod.mode, mod.adaptivity = "VOXEL", 0.0
+    mod.voxel_size = max(1.15 * (area / max(target_tris / 2, 60)) ** .5, 1e-4)   # 1.15: voxels land ~30 % denser
+    with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    polys = obj.data.polygons
+    return sum(1 for p in polys if len(p.vertices) == 4) / max(len(polys), 1)
+
+
+def pair_quads(obj) -> float:
+    """Pair triangles into quads wherever the shape allows (after decimation). Returns the share of quads."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.join_triangles(bm, faces=bm.faces, angle_face_threshold=math.radians(40),
+                             angle_shape_threshold=math.radians(40), cmp_seam=False, cmp_sharp=False,
+                             cmp_uvs=False, cmp_vcols=False, cmp_materials=True)
+    share = sum(1 for f in bm.faces if len(f.verts) == 4) / max(len(bm.faces), 1)
+    bm.to_mesh(obj.data)
+    obj.data.update()
+    bm.free()
+    return share
+
+
 def build_tier(src, name: str, tier: str, budget: dict, detail: float, tmp: str, size: float,
-               colors: str = "texture", cap: int | None = None) -> dict:
+               colors: str = "texture", cap: int | None = None, texture: int = 0, topology: str = "tri",
+               pbr: bool = False) -> dict:
     """Decimated, unwrapped, baked copy of the source for one tier. Returns info for the report.
     colors="vertex": the colour is baked into the vertices of the light copy (no textures, no normal map).
     cap: your own triangle limit for this tier, below the default share."""
@@ -395,13 +443,20 @@ def build_tier(src, name: str, tier: str, budget: dict, detail: float, tmp: str,
     bpy.context.collection.objects.link(low)
     low.name = low.data.name = name
     low.hide_render = False
-    if src_tris > target:
+    quad = topology == "quad" and quad_remesh(low, target)
+    quad_share = 1.0 if quad else 0.0
+    if topology == "quad" and not quad:   # QuadriFlow declined (it refuses many scanned or generated meshes)
+        quad_share = voxel_quads(low, target)
+        quad = quad_share > .9
+    if src_tris > target and not quad:
         mod = low.modifiers.new("decimate", "DECIMATE")
         mod.decimate_type = "COLLAPSE"
         mod.ratio = target / src_tris
         mod.use_collapse_triangulate = True
         with bpy.context.temp_override(object=low, active_object=low, selected_objects=[low]):
             bpy.ops.object.modifier_apply(modifier=mod.name)
+    if topology == "quad" and not quad:   # neither worked: pair what decimation left
+        quad_share = pair_quads(low)
     for layer in list(low.data.uv_layers):
         low.data.uv_layers.remove(layer)
     attrs = getattr(low.data, "color_attributes", None)
@@ -414,7 +469,7 @@ def build_tier(src, name: str, tier: str, budget: dict, detail: float, tmp: str,
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    colour_px, normal_px = texture_plan(budget, tier) if colors != "vertex" else (0, 0)
+    colour_px, normal_px = texture_plan(budget, tier, texture or None) if colors != "vertex" else (0, 0)
     mat = bpy.data.materials.new(f"{name}_{tier}")
     mat.use_nodes = True
     mat.use_backface_culling = True
@@ -451,10 +506,17 @@ def build_tier(src, name: str, tier: str, budget: dict, detail: float, tmp: str,
         nmap = nt.nodes.new("ShaderNodeNormalMap")
         nt.links.new(n_node.outputs["Color"], nmap.inputs["Color"])
         nt.links.new(nmap.outputs["Normal"], b.inputs["Normal"])
+    if pbr:   # ambient occlusion from the dense source, into the glTF occlusion slot
+        ao_img = new_image(f"{name}_{tier}_occlusion", max(256, colour_px // 2), True)
+        ao_node = nt.nodes.new("ShaderNodeTexImage")
+        ao_node.image = ao_img
+        bake("AO", src, low, ao_node, size)
+        pack(ao_img, tmp)
+        finish._occlusion(nt, ao_node.outputs["Color"])
     nt.nodes.active = c_node   # Workbench previews and the Blender viewport show the active image: the colour
     for p in low.data.polygons:
         p.use_smooth = True
-    return {"low": low, "target": target, "colour_px": colour_px, "normal_px": normal_px}
+    return {"low": low, "target": target, "colour_px": colour_px, "normal_px": normal_px, "quads": quad_share}
 
 
 def render_preview(path: str):
@@ -473,6 +535,7 @@ def main() -> int:
     canonical = tiers[-1]
     targets = [t.strip() for t in args.targets.split(",") if t.strip()]
     table = export.load_profiles()["profiles"]
+    export.FBX_TRIANGLES = args.topology == "tri"
     report = {"name": name, "canonical": canonical, "tiers": {}, "files": [], "ok": False, "problems": [], "advice": [],
               "preview": None, "blend": None, "engine": "mesh", "source": os.path.basename(args.src)}
     report_path = os.path.join(out, f"{name}.report.json")
@@ -513,7 +576,8 @@ def main() -> int:
             budget = table[tier]["asset"]
             src.hide_render = False   # Cycles bakes only from objects visible to render
             try:
-                info = build_tier(src, name, tier, budget, args.detail, tmp, size, args.colors, caps.get(tier))
+                info = build_tier(src, name, tier, budget, args.detail, tmp, size, args.colors, caps.get(tier),
+                                  args.texture, args.topology, args.pbr)
             except Exception as exc:  # noqa: BLE001
                 traceback.print_exc()
                 report["problems"].append(f"tier {tier}: {type(exc).__name__}: {exc}")
@@ -541,7 +605,7 @@ def main() -> int:
                      "max_texture": rep.get("max_texture"), "size_mb": rep.get("size_mb"), "errors": rep.get("errors", []),
                      "warnings": rep.get("warnings", []), "fits": rep.get("fits", []), "dims_m": rep.get("dims_m"), "clips": [],
                      "notes": notes if tier == canonical else [], "textures": {"basecolor": info["colour_px"], "normal": info["normal_px"]},
-                     "cap": caps.get(tier), "colors": args.colors}
+                     "cap": caps.get(tier), "colors": args.colors, "topology": f"quad {round(info['quads'] * 100)} %" if info.get("quads") else "tri"}
             report["tiers"][tier] = entry
             for e in entry["errors"] + entry["warnings"]:
                 report["problems"].append(f"tier {tier}: {e}")
@@ -549,11 +613,27 @@ def main() -> int:
                   f"{entry['max_tris'] or 0:,}  {entry['file']}  "
                   + (f"textures {info['colour_px']}" + (f" + normal {info['normal_px']}" if info["normal_px"] else "")
                      if info["colour_px"] else "vertex colours, no textures")
-                  + (f"  (your cap {caps[tier]:,})" if tier in caps else ""), flush=True)
+                  + (f"  (your cap {caps[tier]:,})" if tier in caps else "")
+                  + (f"  quads {round(info['quads'] * 100)} %" if info.get("quads") else ""), flush=True)
             if tier != canonical:
                 for img in {n.image for n in low.data.materials[0].node_tree.nodes if getattr(n, "image", None)}:
                     bpy.data.images.remove(img)
                 bpy.data.objects.remove(low, do_unlink=True)
+        pc_max = table["pc"]["asset"]["max_texture"] if "pc" in table else 4096
+        if args.texture > pc_max and args.colors != "vertex" and "pc" in tiers:
+            # above the PC tier's limit: one more PC copy baked at the full size, for renders and film
+            src.hide_render = False
+            info = build_tier(src, f"{name}_master", "pc", {**table["pc"]["asset"], "max_texture": args.texture,
+                                                            "max_texture_mb": 4096}, args.detail, tmp, size, args.colors,
+                              None, args.texture, args.topology, args.pbr)
+            src.hide_render = True
+            master = os.path.join(out, f"{name}.master.glb")
+            select_only([info["low"]])
+            export.export_asset(bpy.context, master, selection=True, validate=False, image_format="JPEG")
+            report["files"].append(os.path.basename(master))
+            report["master"] = {"file": os.path.basename(master), "texture": args.texture}
+            print(f"  ✓ master       {args.texture} px textures, beyond the PC tier  {os.path.basename(master)}", flush=True)
+            bpy.data.objects.remove(info["low"], do_unlink=True)
         bpy.data.objects.remove(src, do_unlink=True)
         blend = os.path.join(out, f"{name}.blend")
         bpy.ops.wm.save_as_mainfile(filepath=blend, compress=True, copy=True)

@@ -20,6 +20,8 @@ KNOWN = {   # name → (what it unlocks, where to get it)
     "MESHY_API_KEY": ("Meshy: text or picture → 3D in the cloud", "https://www.meshy.ai/api"),
     "TRIPO_API_KEY": ("Tripo: text or picture → 3D in the cloud", "https://platform.tripo3d.ai"),
     "FAL_KEY": ("fal.ai: TRELLIS / Hunyuan3D / TripoSR, FLUX text → picture", "https://fal.ai/dashboard/keys"),
+    "SKETCHFAB_API_TOKEN": ("Sketchfab: download free CC0 / CC-BY models that are not in the Objaverse mirror",
+                            "https://sketchfab.com/settings/password"),
 }
 
 

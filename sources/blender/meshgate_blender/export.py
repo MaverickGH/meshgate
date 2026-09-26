@@ -103,6 +103,11 @@ def _gltf(path: str, *, selection: bool, animations: bool, draco: bool, draco_le
     return dropped
 
 
+# FBX topology: True triangulates for engines (--topology tri), False keeps quads (--topology quad), None leaves the
+# exporter's default (n-gons as they are). GLB is always triangles: glTF stores nothing else.
+FBX_TRIANGLES: bool | None = None
+
+
 def _fbx(path: str, *, objects: list[bpy.types.Object], animations: bool) -> list[str]:
     for o in bpy.context.view_layer.objects:
         o.select_set(False)
@@ -115,6 +120,7 @@ def _fbx(path: str, *, objects: list[bpy.types.Object], animations: bool) -> lis
         use_mesh_modifiers=True, mesh_smooth_type="FACE", use_tspace=True, colors_type="NONE",
         add_leaf_bones=False, bake_anim=animations, bake_anim_use_nla_strips=True, bake_anim_use_all_actions=False,
         bake_anim_force_startend_keying=True, bake_anim_simplify_factor=0.0, path_mode="COPY", embed_textures=True,
+        **({} if FBX_TRIANGLES is None else {"use_triangles": FBX_TRIANGLES}),
     )
     bpy.ops.export_scene.fbx(**kwargs)
     return dropped

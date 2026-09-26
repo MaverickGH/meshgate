@@ -332,6 +332,7 @@ def _check_web() -> int:
     code = cmd_validate(argparse.Namespace(files=[str(p) for p in sorted(SAMPLES.glob("*.glb"))], strict=True, json=False))
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "check_profiles.py")]))   # tiers identical everywhere
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_generate.py")]))   # gen: safety, prompt
+    code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_library.py")]))   # free-model library
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "studio" / "test_server.py")]))   # studio: token, host, paths
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_providers.py")]))   # cloud generators
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "check_links.py")]))   # docs: links + translations
@@ -510,6 +511,8 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_vertex_and_caps(exe, work)
     ok &= _check_hidden(exe, work)
     ok &= _check_finish(exe, work)
+    ok &= _check_sculpt(exe, work)
+    ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
         r = subprocess.run([sys.executable, str(ROOT / "tests" / "studio" / "test_cancel.py"), "--blender", exe],
@@ -603,6 +606,28 @@ def _check_hidden(exe: str, work: Path) -> bool:
     return good
 
 
+def _check_sculpt(exe: str, work: Path) -> bool:
+    """The artist tools (blob, skin, cut, bend, twist, sculpt) build on every tier, lighter on phones, with the bend in
+    the right place; the realistic finish bakes the phone tier's normal map from the PC model (high → low)."""
+    out = work / "sculpt"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "sculpt_tools.py"),
+                        "--name", "sculpt", "--style", "realistic", "--tiers", "pc,mobile-mid,mobile-low", "--blender", exe,
+                        "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        t = g["report"]["tiers"]
+        pc, mid, low = t["pc"], t["mobile-mid"], t["mobile-low"]
+        good = (g["ok"] and pc["tris"] > mid["tris"] > low["tris"] and abs(pc["dims_m"][0] - 0.97) < 0.03
+                and abs(pc["dims_m"][2] - 0.82) < 0.03
+                and any("from the PC model" in n for n in mid["notes"]) and all(x["within_budget"] for x in t.values()))
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ sculpt tools: {exc}")
+    if not good:
+        print("  ✗ sculpt tools: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
 def _check_finish(exe: str, work: Path) -> bool:
     """The style's finish: lowpoly is faceted with fewer triangles than stylized; realistic bakes weathered textures
     (colour at the tier's size plus a normal map) and keeps one material."""
@@ -633,6 +658,44 @@ def _check_finish(exe: str, work: Path) -> bool:
     if not good:
         print(f"  ✗ finish: lowpoly {got['lowpoly'][1].get('tris')} vs stylized {got['stylized'][1].get('tris')} tris; "
               f"realistic {got['realistic'][1]}")
+    return good
+
+
+def _glb_json(path: Path) -> dict:
+    with open(path, "rb") as f:
+        head = f.read(20)
+        return json.loads(f.read(int.from_bytes(head[12:16], "little")))
+
+
+def _check_quality(exe: str, work: Path) -> bool:
+    """--pbr bakes a full PBR set with an occlusion map (within the tier's texture limit); --topology quad gives the
+    mesh engine all-quad topology."""
+    runs = {"pbr": ["--code", str(ROOT / "sources" / "generate" / "examples" / "toxic_can.py"), "--style", "stylized",
+                    "--pbr", "--texture", "2k", "--tiers", "mobile-mid"],
+            "quad": ["--mesh", str(ROOT / "sources" / "generate" / "examples" / "hydrant_triposr_raw.glb"), "--size", "0.8",
+                     "--topology", "quad", "--tiers", "mobile-low"]}
+    got = {}
+    for name, extra in runs.items():
+        out = work / f"quality_{name}"
+        r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", *extra, "--name", f"q_{name}", "--blender", exe,
+                            "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
+        try:
+            got[name] = json.load(open(out / "gen.json"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ quality {name}: {exc}\n" + (r.stdout + r.stderr)[-800:])
+            return False
+    try:
+        pbr = got["pbr"]["report"]["tiers"]["mobile-mid"]
+        mats = _glb_json(work / "quality_pbr" / pbr["file"]).get("materials", [])
+        quad = got["quad"]["report"]["tiers"]["mobile-low"]
+        good = (got["pbr"]["finish"] == "clean" and pbr["max_texture"] == 1024 and pbr["within_budget"]
+                and any("occlusionTexture" in m for m in mats) and str(quad.get("topology", "")).startswith("quad")
+                and quad["within_budget"])
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ quality: {exc}")
+    if not good:
+        print(f"  ✗ quality: pbr {got.get('pbr', {}).get('report', {}).get('tiers')} quad {got.get('quad', {}).get('report', {}).get('tiers')}")
     return good
 
 
@@ -732,6 +795,10 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):   # Windows consoles and pipes default to cp1252; MeshGate prints ✓ and —
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+    if len(sys.argv) > 1 and sys.argv[1] == "library":   # its own parser: sources/generate/library.py
+        sys.path.insert(0, str(ROOT / "sources" / "generate"))
+        import library
+        return library.main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "gen":   # its own parser: sources/generate/generate.py
         return cmd_gen(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "studio":   # its own parser: apps/studio/server.py
@@ -773,6 +840,7 @@ def main() -> int:
     p.set_defaults(fn=cmd_samples)
 
     sub.add_parser("gen", help="generate an asset from a text description through an AI CLI (meshgate.py gen --help)")
+    sub.add_parser("library", help="find and download free CC0 / CC-BY models to refine (meshgate.py library --help)")
     sub.add_parser("studio", help="open MeshGate Studio, the local app for generation (meshgate.py studio --help)")
 
     p = sub.add_parser("check", help="run the engine checks headless")

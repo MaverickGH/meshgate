@@ -54,6 +54,13 @@ def _linear(c: float) -> float:
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+def _seg_distance(p, a, b) -> float:
+    """Distance from point p to the segment a–b (sculpt crease)."""
+    ab = b - a
+    t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
 def material_code(material: str) -> float:
     """The palette's ORM red for a material: the middle of its 1/16 band (finish.py reads it back)."""
     return (MATERIALS.index(material) + .5) / 16
@@ -400,7 +407,270 @@ class Kit:
         bpy.context.scene.frame_end = max(bpy.context.scene.frame_end, self._frame_end)
         return obj
 
-    # ------------------------------------------------------------------ runner side (not for build code)
+    # ------------------------------------------------------------------ sculpting: organic shapes
+
+    def blob(self, shapes, color, *, blend: float = 1.0, detail: float = 1.0, smooth: bool = True):
+        """Soft clay: balls, capsules and ellipsoids that melt into one smooth surface (Blender metaballs) — animal
+        bodies and heads, paws, snouts, noses, cushions, rocks, clouds, dough. shapes = a list of dicts:
+          {"ball": (x, y, z), "r": 0.2}                                   a sphere, r = its radius in meters
+          {"capsule": ((x1, y1, z1), (x2, y2, z2)), "r": 0.08}            a rounded rod from point to point
+          {"ellipsoid": (x, y, z), "size": (sx, sy, sz), "rot": (rx, ry, rz)}   half-sizes in meters, rot optional
+        Add "cut": True to a shape to carve it away instead (eye sockets, a mouth, a hollow). Sizes are the visible sizes
+        of each shape alone; where shapes touch or overlap they melt together — blend = how softly (0.5 tight … 2 very
+        soft). Returns one smooth closed mesh whose density follows the tier (detail multiplies it). Refine it with
+        sculpt(); keep hard-surface parts (a collar, a buckle, eyes) as ordinary parts."""
+        import mathutils
+        shapes = list(shapes)
+        if not shapes:
+            raise ModelError("blob() needs at least one shape")
+        stiffness = min(10.0, max(0.5, 2.0 / max(blend, 0.05)))
+        threshold = 0.6
+        k = math.sqrt(1 - (threshold / stiffness) ** (1 / 3)) if threshold < stiffness else 0.5   # visible / field radius
+        self._blobs = getattr(self, "_blobs", 0) + 1
+        mb = bpy.data.metaballs.new(f"mgblob{self._blobs}")   # a unique base name: metaball families merge by name
+        mb.threshold = threshold
+        pts = []
+        for sh in shapes:
+            if "ball" in sh:
+                el = mb.elements.new(type="BALL")
+                el.co, el.radius = Vector(sh["ball"]), float(sh["r"]) / k
+                pts += [Vector(sh["ball"]) + Vector((d, d, d)) * float(sh["r"]) for d in (-1, 1)]
+            elif "capsule" in sh:
+                a, b = (Vector(v) for v in sh["capsule"])
+                el = mb.elements.new(type="CAPSULE")
+                el.co, el.radius = (a + b) / 2, float(sh["r"]) / k
+                el.size_x = max((b - a).length / 2, 1e-4)   # absolute half-length (the tube's straight part)
+                el.rotation = (b - a).to_track_quat("X", "Z") if (b - a).length > 1e-6 else mathutils.Quaternion()
+                pts += [a - Vector((sh["r"],) * 3), b + Vector((sh["r"],) * 3), a + Vector((sh["r"],) * 3), b - Vector((sh["r"],) * 3)]
+            elif "ellipsoid" in sh:
+                sx, sy, sz = (float(v) for v in sh["size"])
+                m = max(sx, sy, sz, 1e-4)
+                el = mb.elements.new(type="ELLIPSOID")
+                el.co, el.radius = Vector(sh["ellipsoid"]), m / k
+                el.size_x, el.size_y, el.size_z = sx / m, sy / m, sz / m
+                el.rotation = mathutils.Euler(sh.get("rot", (0, 0, 0))).to_quaternion()
+                pts += [Vector(sh["ellipsoid"]) + Vector((d * m,) * 3) for d in (-1, 1)]
+            else:
+                raise ModelError(f"blob shape {sh!r}: use a dict with 'ball', 'capsule' or 'ellipsoid'")
+            el.stiffness = stiffness
+            el.use_negative = bool(sh.get("cut"))
+        extent = max((max(p[i] for p in pts) - min(p[i] for p in pts)) for i in range(3))
+        cells = {0: 16, 1: 26, 2: 38, 3: 56}[self.level] * max(0.25, float(detail)) * (0.6 if self._faceted else 1.0)
+        mb.resolution = mb.render_resolution = max(extent / cells, 0.002)
+        obj = bpy.data.objects.new(f"mgblob{self._blobs}", mb)
+        bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        me = bpy.data.meshes.new_from_object(obj.evaluated_get(dg))
+        bpy.data.objects.remove(obj)
+        bpy.data.metaballs.remove(mb)
+        if not me.polygons:
+            raise ModelError("blob() made no surface — shapes too small, or all of them cut")
+        out = bpy.data.objects.new(f"blob{self._blobs}", me)
+        bpy.context.collection.objects.link(out)
+        self._fix_normals(out)
+        self._finish_piece(out, color, smooth)
+        return out
+
+    def skin(self, points, radii, color, *, edges=None, smooth: bool = True):
+        """An organic body grown around a skeleton — limbs, tails, tentacles, necks, roots, branches, horns, snakes.
+        points = [(x, y, z), …] in meters; radii = one radius per point (or a single number); edges = [(i, j), …]
+        joining points (default: one chain in order). Branches are fine: a point may join three or more edges (a trunk
+        forking into branches, a body with four legs). The result is smooth and closed; its density follows the tier."""
+        pts = [Vector(p) for p in points]
+        if len(pts) < 2:
+            raise ModelError("skin() needs at least two points")
+        rs = [float(radii)] * len(pts) if isinstance(radii, (int, float)) else [float(r) for r in radii]
+        if len(rs) != len(pts):
+            raise ModelError("skin(): give one radius per point")
+        edges = [tuple(e) for e in (edges or [(i, i + 1) for i in range(len(pts) - 1)])]
+        me = bpy.data.meshes.new("skin")
+        me.from_pydata([tuple(p) for p in pts], edges, [])
+        obj = bpy.data.objects.new("skin", me)
+        bpy.context.collection.objects.link(obj)
+        sk = obj.modifiers.new("skin", "SKIN")
+        sk.use_smooth_shade = True
+        for i, v in enumerate(me.skin_vertices[0].data):
+            v.radius = (rs[i], rs[i])
+            v.use_root = i == 0
+        sub = obj.modifiers.new("smooth", "SUBSURF")
+        sub.levels = sub.render_levels = 0 if self._faceted else {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
+        self._apply_modifiers(obj)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, smooth)
+        return obj
+
+    def cut(self, target, cutter):
+        """Carve `cutter` out of `target` (a boolean difference) — eye sockets, a paw print pressed into stone, windows,
+        a notch, a broken edge. The cutter is any piece (part, blob, extrude…) and is used up: do not also put it in
+        your parts list. Returns `target`."""
+        self._bake(target)
+        self._bake(cutter)
+        mod = target.modifiers.new("cut", "BOOLEAN")
+        mod.operation, mod.object = "DIFFERENCE", cutter
+        if hasattr(mod, "solver"):
+            mod.solver = "EXACT"
+        self._apply_modifiers(target)
+        data = cutter.data
+        bpy.data.objects.remove(cutter)
+        if data and data.users == 0:
+            bpy.data.meshes.remove(data)
+        return target
+
+    def bend(self, obj, angle: float, along: str = "Z", toward: str = "-Y"):
+        """Bend a whole piece from its base — a curling tail, a drooping ear, a leaning trunk, a curved horn, a banana.
+        along = the axis the piece's length runs along ("X", "Y", "Z", or "-Z" etc.: the base is at the low end of
+        along, the tip at the high end); toward = where the tip curls ("-Y" = toward the front); angle = how far the
+        tip turns, in radians (math.pi/2 = a right angle, math.pi = a U-turn). Extra rings are added so it bends
+        smoothly. Returns the piece."""
+        return self._deform(obj, "BEND", angle, along, toward)
+
+    def twist(self, obj, angle: float, along: str = "Z"):
+        """Twist a whole piece about its length — twisted horns, rope, wrung cloth, a gnarled trunk, a drill bit.
+        angle = total turn from one end to the other in radians. Extra rings are added. Returns the piece."""
+        return self._deform(obj, "TWIST", angle, along, None)
+
+    def sculpt(self, obj, brush: str, *, at=None, radius: float = 0.1, amount: float = 0.02, to=None, path=None,
+               scale: float = 12.0):
+        """Shape a smooth piece like a sculpting brush — best on blob(), skin() or subdivided parts (many vertices):
+          "grab"    move the surface near `at` by the vector `to` = (x, y, z), fading out over `radius` (pull a snout)
+          "inflate" push the surface near `at` out along its normals by `amount` (negative dents: cheeks, dimples)
+          "crease"  press a groove `amount` deep and `radius` wide along `path` = [(x, y, z), …] (eyelids, folds, bark)
+          "noise"   roughen the surface by `amount` at `scale` bumps per meter, near `at` or everywhere (stone, bark)
+          "smooth"  relax the surface near `at`, or everywhere without `at`.
+        All positions in world meters. Returns the piece."""
+        import bmesh
+        from mathutils import noise as mnoise
+        self._bake(obj)
+        self._refine(obj, radius / 3 if brush != "noise" or at is not None else 0.3 / max(scale, 1e-3))
+        me = obj.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bm.normal_update()
+        mw = Matrix.Translation(obj.location)   # after _bake only the location is left (matrix_world may be stale)
+        inv = mw.inverted()
+        centre = Vector(at) if at is not None else None
+
+        def fall(d):
+            u = max(0.0, 1.0 - d / max(radius, 1e-6))
+            return u * u * (3 - 2 * u)
+
+        if brush == "grab":
+            if centre is None or to is None:
+                raise ModelError("sculpt('grab') needs at= and to=")
+            move = inv.to_3x3() @ Vector(to)
+            for v in bm.verts:
+                w = fall(((mw @ v.co) - centre).length)
+                if w:
+                    v.co += move * w
+        elif brush in ("inflate", "noise"):
+            for v in bm.verts:
+                wp = mw @ v.co
+                w = 1.0 if centre is None else fall((wp - centre).length)
+                if w:
+                    h = amount if brush == "inflate" else amount * mnoise.noise(wp * scale)
+                    v.co += v.normal * h * w
+        elif brush == "crease":
+            line = [Vector(p) for p in (path or [])]
+            if len(line) < 2:
+                raise ModelError("sculpt('crease') needs path= with at least two points")
+            for v in bm.verts:
+                wp = mw @ v.co
+                d = min(_seg_distance(wp, a, b) for a, b in zip(line, line[1:]))
+                w = fall(d)
+                if w:
+                    v.co -= v.normal * amount * w
+        elif brush == "smooth":
+            new = {}
+            for v in bm.verts:
+                w = 1.0 if centre is None else fall(((mw @ v.co) - centre).length)
+                if w and v.link_edges:
+                    avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
+                    new[v] = v.co.lerp(avg, 0.6 * w)
+            for v, co in new.items():
+                v.co = co
+        else:
+            raise ModelError(f"sculpt brush '{brush}' — use grab, inflate, crease, noise or smooth")
+        bm.to_mesh(me)
+        me.update()
+        bm.free()
+        return obj
+
+    @staticmethod
+    def _axis(name):
+        name = str(name).upper().strip()
+        v = {"X": Vector((1, 0, 0)), "Y": Vector((0, 1, 0)), "Z": Vector((0, 0, 1))}.get(name.lstrip("+-"))
+        if v is None:
+            raise ModelError(f"axis '{name}' — use X, Y, Z, -X, -Y or -Z")
+        return -v if name.startswith("-") else v
+
+    def _vert_cap(self) -> int:
+        return {0: 1500, 1: 5000, 2: 15000, 3: 50000}[self.level]
+
+    def _refine(self, obj, max_edge: float, rounds: int = 5):
+        """Split edges longer than max_edge (sculpt needs vertices to move), within the tier's vertex cap."""
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        for _ in range(rounds):
+            long = [e for e in bm.edges if e.calc_length() > max_edge]
+            if not long or len(bm.verts) + len(long) > self._vert_cap():
+                break
+            bmesh.ops.subdivide_edges(bm, edges=long, cuts=1, use_grid_fill=True)
+        bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+    def _slice(self, obj, axis: Vector, lo: float, hi: float, n: int):
+        """Cut n rings across the piece along axis (world coordinates) so a deform bends smoothly."""
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        loc = obj.location
+        for i in range(1, n):
+            co = axis * (lo + (hi - lo) * i / n) - loc
+            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+            bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=axis)
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+    def _deform(self, obj, method, angle, along, toward):
+        self._bake(obj)
+        ax = self._axis(along)
+        mw = Matrix.Translation(obj.location)   # after _bake only the location is left (matrix_world may be stale)
+        vals = [(mw @ v.co).dot(ax) for v in obj.data.vertices]
+        if not vals:
+            return obj
+        lo, hi = min(vals), max(vals)
+        self._slice(obj, ax, lo, hi, max(8, self.seg(24)))
+        centre = sum((mw @ v.co for v in obj.data.vertices), Vector()) / len(obj.data.vertices)
+        base = centre + ax * (lo - centre.dot(ax))
+        if method == "BEND":
+            up = self._axis(toward)
+            up = (up - ax * up.dot(ax))
+            if up.length < 1e-6:
+                raise ModelError("bend(): toward must be across the piece, not along it")
+            up.normalize()
+            # canonical frame for Blender's bend: length along +X, curling toward +Y, around Z
+            rot = Matrix((ax, up, ax.cross(up))).transposed().to_4x4()
+            origin_m = Matrix.Translation(base) @ rot
+        else:
+            z = ax
+            x = Vector((1, 0, 0)) if abs(z.x) < 0.9 else Vector((0, 1, 0))
+            x = (x - z * x.dot(z)).normalized()
+            origin_m = Matrix.Translation(base) @ Matrix((x, z.cross(x), z)).transposed().to_4x4()
+        empty = bpy.data.objects.new("mg_deform_origin", None)
+        bpy.context.collection.objects.link(empty)
+        empty.matrix_world = origin_m
+        mod = obj.modifiers.new(method.lower(), "SIMPLE_DEFORM")
+        mod.deform_method, mod.angle, mod.origin = method, float(angle), empty
+        mod.deform_axis = "Z"
+        bpy.context.view_layer.update()
+        self._apply_modifiers(obj)
+        bpy.data.objects.remove(empty)
+        return obj
 
     def _finalize(self) -> list[str]:
         """After build(): palette textures, one root named after the asset, grounded and centred. Returns notes."""

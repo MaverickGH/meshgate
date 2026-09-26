@@ -175,6 +175,12 @@ class Studio:
                 cmd += ["--tris", ",".join(pairs)]
         if req.get("concept") in {"sheet", "single"} and not image_path:
             cmd += ["--concept", req["concept"]]
+        if req.get("texture") in generate.TEXTURES and req.get("texture") != "auto":
+            cmd += ["--texture", req["texture"]]
+        if req.get("topology") in {"tri", "quad"}:
+            cmd += ["--topology", req["topology"]]
+        if req.get("pbr") is True:
+            cmd.append("--pbr")
         if str(req.get("anim") or "").strip():
             cmd += ["--anim", str(req["anim"]).strip()[:1000]]
         if req.get("image_provider") in mesh.images.PROVIDERS:

@@ -36,10 +36,13 @@ const STRINGS = {
     provider: "Mesh generator", auto_pick: "first ready", detail: "Detail ×", turn: "Turn, °", not_ready: "not ready",
     concept: "Draw a concept picture first (Codex, OpenAI or fal), then build from it",
     concept_none: "no picture generator — install Codex (ChatGPT sign-in) or add an OpenAI / fal key",
+    texture_size: "Texture size", topology: "Topology", topo_tri: "Triangles", topo_quad: "Quads",
+    pbr: "Full PBR maps for every style (colour, occlusion, roughness, metallic, normal)",
+    quality_hint: "Textures are baked for the realistic style and with full PBR; the phone tiers keep their own limits, 8K also writes a master file. Quads go into FBX and .blend — GLB is always triangles.",
     anim: "Animations", anim_ph: "open: the lid opens and closes\nidle: the lantern sways",
     anim_hint: "One clip per line, name: what happens. The code engine gives moving parts their own clips.",
     pictures: "Pictures from text", colors: "Colours", colors_opts: { texture: "Textures", vertex: "Vertex colours" },
-    tris_hint: "The number field is your own triangle limit for that tier — leave it empty for the default.",
+    tris_hint: "One slider for the triangle count. The ticks are the tier budgets: crossing one changes the tier. Every tier up to it is built; the top one gets your number as its limit.", tiers_built: "Built",
     need_input: "Describe the model or add a picture.", uploading: "Uploading the picture…", engine_label: "engine",
     setup_triposr: "Install TripoSR — local, free, ~3 GB",
     connect: "Status & AI", connect_title: "Status & connections", connect_tools: "Blender and game engines", refresh: "Refresh",
@@ -74,10 +77,13 @@ const STRINGS = {
     provider: "Генератор сетки", auto_pick: "первый готовый", detail: "Детализация ×", turn: "Поворот, °", not_ready: "не готов",
     concept: "Сначала нарисовать концепт (Codex, OpenAI или fal) и строить по нему",
     concept_none: "нет генератора картинок — поставь Codex (вход через ChatGPT) или добавь ключ OpenAI / fal",
+    texture_size: "Размер текстур", topology: "Топология", topo_tri: "Треугольники", topo_quad: "Квады",
+    pbr: "Полный набор PBR-карт для любого стиля (цвет, затенение, шероховатость, металличность, нормали)",
+    quality_hint: "Текстуры запекаются в стиле «реализм» и с полным PBR; уровни для телефонов держат свои лимиты, 8K ещё пишет мастер-файл. Квады идут в FBX и .blend — GLB всегда из треугольников.",
     anim: "Анимации", anim_ph: "open: крышка открывается и закрывается\nidle: фонарь покачивается",
     anim_hint: "По клипу в строке, имя: что происходит. Движок кода делает подвижные части отдельными клипами.",
     pictures: "Картинки по тексту", colors: "Цвета", colors_opts: { texture: "Текстуры", vertex: "В вершинах" },
-    tris_hint: "Число у уровня — твой лимит треугольников для него; пусто — по умолчанию.",
+    tris_hint: "Один ползунок — число треугольников. Риски — бюджеты уровней: перешёл риску — сменился уровень. Строятся все уровни до него, верхний получает твоё число как лимит.", tiers_built: "Строим",
     need_input: "Опиши модель или добавь картинку.", uploading: "Загружаю картинку…", engine_label: "движок",
     setup_triposr: "Установить TripoSR — локально, бесплатно, ~3 ГБ",
     connect: "Статус и ИИ", connect_title: "Статус и подключения", connect_tools: "Blender и игровые движки", refresh: "Обновить",
@@ -157,13 +163,46 @@ function renderAi() {
   sel.value = keep && status.ai[keep] ? keep : firstInstalled || "claude";
   $("ai-hint").textContent = firstInstalled ? "" : `${t("ai")}: ${t("not_installed")} — ${Object.values(status.ai_urls).join(" · ")}`;
 }
+// One slider for the triangle count, on a log scale from 200 up to the PC budget. The tier the number falls in is
+// named next to it and changes as the slider crosses a tier's budget (the ticks); every tier up to it is built, and
+// that top tier gets the number as its own limit (at a tier's full budget: no limit).
+const TRI_MIN = 200;
+let triValue = null;   // null = the PC budget (everything, no own limit)
+function tierScale() {
+  const tiers = ["mobile-low", "mobile-mid", "mobile-high", "pc"].map((id) => status.tiers.find((x) => x.id === id)).filter(Boolean);
+  const max = tiers[tiers.length - 1].max_tris;
+  const pos = (n) => Math.log(n / TRI_MIN) / Math.log(max / TRI_MIN) * 1000;
+  const val = (p) => { const n = TRI_MIN * (max / TRI_MIN) ** (p / 1000); const q = 10 ** Math.floor(Math.log10(n) - 1); return Math.min(max, Math.round(n / q) * q); };
+  const tierOf = (n) => tiers.find((x) => n <= x.max_tris) || tiers[tiers.length - 1];
+  return { tiers, max, pos, val, tierOf };
+}
+function tierPlan() {
+  const { tiers, max, tierOf } = tierScale();
+  const n = triValue ?? max, top = tierOf(n), upto = tiers.slice(0, tiers.indexOf(top) + 1);
+  return { n, top, tiers: upto.map((x) => x.id), tris: n < top.max_tris ? { [top.id]: n } : {} };
+}
 function renderTiers() {
-  $("tiers").replaceChildren(...status.tiers.map((tier) => {
-    const l = document.createElement("label"); l.className = "check"; l.title = tier.devices;
-    l.innerHTML = `<input type="checkbox" value="${tier.id}" checked> ${tier.label} <em>≤ ${tier.max_tris.toLocaleString()}</em>`
-      + `<input class="cap" type="number" min="12" step="50" data-tier="${tier.id}" placeholder="${t("auto")}" title="${t("tris_hint")}">`;
-    return l;
-  }));
+  const { tiers, max, pos, val } = tierScale();
+  const box = $("tiers");
+  box.className = "tri-slider";
+  box.innerHTML = `<div class="tri-head"><span class="tri-tier"></span><input class="cap" type="number" min="${TRI_MIN}" max="${max}" step="100" title="${t("tris_hint")}"><span class="tri-unit">${t("tris")}</span></div>`
+    + `<div class="tri-track"><input class="cap-range" type="range" min="0" max="1000" step="1" aria-label="${t("tiers")}">`
+    + tiers.slice(0, -1).map((x) => `<span class="tick" style="left:${pos(x.max_tris) / 10}%" title="${x.label} ≤ ${x.max_tris.toLocaleString()}">`
+      + `<i>${x.max_tris >= 1000 ? `${x.max_tris / 1000}k` : x.max_tris}</i></span>`).join("") + `</div>`
+    + `<div class="tri-built"></div>`;
+  const range = box.querySelector(".cap-range"), num = box.querySelector("input.cap");
+  const show = () => {
+    const plan = tierPlan();
+    range.value = pos(plan.n); num.value = plan.n;
+    range.style.setProperty("--fill", `${range.value / 10}%`);
+    box.querySelector(".tri-tier").textContent = plan.top.label;
+    box.querySelector(".tri-tier").title = plan.top.devices;
+    box.querySelector(".tri-built").textContent = `${t("tiers_built")}: ${plan.tiers.map((id) => tiers.find((x) => x.id === id).label).join(" · ")}`
+      + (Object.keys(plan.tris).length ? "" : ` — ${t("auto")}`);
+  };
+  range.oninput = () => { const v = val(+range.value); triValue = v >= max ? null : v; show(); };
+  num.onchange = () => { const v = parseInt(num.value, 10); triValue = !Number.isFinite(v) || v >= max ? null : Math.max(TRI_MIN, v); show(); };
+  show();
   $("targets").replaceChildren(...["web", "unity", "godot", "unreal"].map((id) => {
     const l = document.createElement("label"); l.className = "check";
     l.innerHTML = `<input type="checkbox" value="${id}" checked> ${id[0].toUpperCase() + id.slice(1)}`;
@@ -478,9 +517,10 @@ $("form").onsubmit = async (e) => {
     image: picture, engine, provider: $("provider").value, fal_model: $("fal_model").value, colors,
     concept: $("concept").checked && !picture ? (engine === "mesh" ? "single" : "sheet") : "none",
     anim: $("anim-on").checked ? $("anim").value.trim() : "",
-    tris: Object.fromEntries([...document.querySelectorAll("#tiers input.cap")].filter((i) => i.value).map((i) => [i.dataset.tier, parseInt(i.value, 10)])),
+    texture: $("texture").value, topology: $("topology").value, pbr: $("pbr").checked,
+    tris: tierPlan().tris,
     detail: parseFloat($("detail").value) || 1, turn: parseFloat($("turn").value) || 0,
-    tiers: checked("tiers"), targets: checked("targets"), ai: $("ai").value, model: $("model").value,
+    tiers: tierPlan().tiers, targets: checked("targets"), ai: $("ai").value, model: $("model").value,
     ai_cmd: $("ai_cmd").value, attempts: parseInt($("attempts").value, 10) || 3, collision: $("collision").value,
   };
   $("log").replaceChildren(); $("code").textContent = "";

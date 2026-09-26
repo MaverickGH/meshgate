@@ -81,11 +81,21 @@
             <input id="size" type="number" min="0" step="0.05" data-i18n-placeholder="auto" placeholder="auto"></label>
         </div>
 
+        <div class="row2">
+          <label class="field"><span data-i18n="texture_size">Texture size</span>
+            <select id="texture"><option value="auto" data-i18n="auto">auto</option><option value="1k">1K</option>
+              <option value="2k">2K</option><option value="4k">4K</option><option value="8k">8K</option></select></label>
+          <label class="field"><span data-i18n="topology">Topology</span>
+            <select id="topology"><option value="tri" data-i18n="topo_tri">Triangles</option>
+              <option value="quad" data-i18n="topo_quad">Quads</option></select></label>
+        </div>
+        <label class="check"><input type="checkbox" id="pbr"> <span data-i18n="pbr">Full PBR maps for every style (colour, occlusion, roughness, metallic, normal)</span></label>
+        <small data-i18n="quality_hint">Textures are baked for the realistic style and with full PBR; the phone tiers keep their own limits, 8K also writes a master file. Quads go into FBX and .blend — GLB is always triangles.</small>
+
         <fieldset class="field">
           <legend data-i18n="tiers">Quality tiers</legend>
           <div id="tiers" class="checks"></div>
-          <small data-i18n="tiers_hint">The same model is built once per tier, with as much detail as the tier affords.</small>
-          <small data-i18n="tris_hint">The number field is your own triangle limit for that tier — leave it empty for the default.</small>
+          <small data-i18n="tris_hint">One slider for the triangle count. The ticks are the tier budgets: crossing one changes the tier. Every tier up to it is built; the top one gets your number as its limit.</small>
         </fieldset>
 
         <fieldset class="field">

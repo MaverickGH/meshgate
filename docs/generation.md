@@ -138,6 +138,7 @@ their mean to the object in the photo.
 | `--image-provider` | first ready | Who draws pictures from text: `codex` (ChatGPT sign-in, no key), `openai` or `fal` |
 | `--concept` | `none` | `sheet`: draw a front/side/back/top turnaround first and build from it; `single`: one 3/4 view |
 | `--mesh` | — | Refine an existing mesh file instead of generating one |
+| `--library` | — | A free CC0 / CC-BY model from Sketchfab by id: downloaded with its credit, then refined like `--mesh` |
 | `--detail` / `--turn` / `--no-upright` | `1` / `0` / off | Mesh engine: triangle share multiplier, front rotation, keep the tilt |
 | `--vertex-srgb` | auto | Mesh engine: vertex colours are picture values (auto for TripoSR and trimesh files) |
 | `--ai` | `claude` | Kit engine: `claude`, `codex`, `gemini` or `ollama` |
@@ -149,6 +150,9 @@ their mean to the object in the photo.
 | `--tris` | tier defaults | Your own triangle limits: `800` for every tier, or `low=150,mid=400,high=900,pc=2000` |
 | `--colors` | `texture` | `vertex` puts the colours into the vertices: no textures at all, 1–3 materials |
 | `--anim` | — | Kit: clips to make, `open: the lid opens; idle: the lamp sways` (or one per line). Moving parts become separate, pivoted meshes; a missing clip goes back to the AI as a problem. Studio: **Animations** |
+| `--texture` | `auto` | Baked texture size for the PC file: `1k`, `2k`, `4k`, `8k`. Phone tiers keep their own limits; `8k` also writes `<name>.master.glb` |
+| `--pbr` | off | Kit: bake a full PBR set (colour, occlusion-roughness-metallic, normal, emission) for every style, not only realistic |
+| `--topology` | `tri` | `quad`: FBX and .blend keep quads; the mesh engine rebuilds all-quad topology per tier. GLB is always triangles |
 | `--finish` | `auto` | Kit: `faceted` (flat shading, few segments), `weathered` (baked dirt, colour variation, relief), `none`; `auto` takes it from the style |
 | `--targets` | all engines | Engine variants of the canonical file |
 | `--collision` | `none` | `box` or `convex` proxies (Unreal `UCX_`, Godot `-convcolonly`) |
@@ -177,6 +181,59 @@ A style is more than words in the prompt: the kit engine enforces the look after
 ![The same eleven Zombie Cats assets in three styles](img/zc-styles-lineup.jpg)
 
 `--finish` picks one by hand; with `--colors vertex` there is nothing to bake into, so `weathered` falls back to none.
+
+## Texture quality, full PBR and topology
+
+- **Texture size** (`--texture 1k|2k|4k|8k`, Studio: *Texture size*) sets the baked textures of the PC file. Each phone
+  tier keeps its own limit (mobile-low 512 px, mobile-mid 1024, mobile-high 2048), so one run still serves every device.
+  Above the PC limit (4096), `8k` bakes one more PC copy into `<name>.master.glb` for renders and film; it is not held to
+  a tier. Big bakes take minutes on the CPU; MeshGate gives them the time.
+- **Full PBR** (`--pbr`, Studio: *Full PBR maps*): base colour, occlusion-roughness-metallic (glTF ORM, the ambient
+  occlusion in the glTF occlusion slot), a normal map and emission. Realistic models always get it; `--pbr` bakes it for
+  stylized, toon and low-poly models too, with their exact colours and no weathering. Roughness and emission maps stay at
+  up to 1024 px so the normal map keeps its detail within the tier's memory.
+- **Topology** (`--topology tri|quad`, Studio: *Topology*). `quad` is for editors and further modelling: the kit pairs
+  its triangles into quads (about 90 %), the mesh engine rebuilds each tier as all-quad topology — QuadriFlow where it
+  accepts the mesh, otherwise a voxel remesh sized to the tier's triangle budget, with the source's detail baked back in
+  the normal map. FBX and `.blend` keep the quads; `tri` triangulates the FBX for engines. **GLB is always triangles**:
+  glTF stores nothing else, and every engine triangulates on import anyway.
+
+## Sculpting: organic shapes like an artist
+
+Primitives make good furniture and machines but stiff animals. For creatures, plants, rocks and food the kit sculpts,
+the way an artist works in Blender, and the prompt tells the AI when to:
+
+| Tool | What it does | For |
+|---|---|---|
+| `mg.blob(shapes, colour)` | Balls, capsules and ellipsoids melt into one smooth surface (metaballs); `"cut": True` carves | bodies, heads, paws, snouts, cushions, clouds |
+| `mg.skin(points, radii, colour)` | A smooth body grown around a skeleton of points, branches allowed | limbs, tails, tentacles, roots, branches |
+| `mg.cut(target, cutter)` | Boolean difference | eye sockets, a paw print in stone, windows |
+| `mg.bend` / `mg.twist` | Bend a piece from its base, twist it about its length (rings are added) | curling tails, drooping ears, horns, rope |
+| `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` along a path, `noise`, `smooth` | snouts, cheeks, eyelids, folds, bark, stone |
+
+Density follows the tier like everything else. With a baked finish (realistic or `--pbr`) the lighter tiers bake their
+normal map **from the PC model** (high → low), so a phone model keeps the sculpted detail as shading.
+
+## Free models library
+
+Sometimes the best start is a model someone already made. `meshgate.py library` finds free models on Sketchfab and
+downloads them with their credit; `gen --library` then refines one like any `--mesh` file:
+
+```bash
+python3 meshgate.py library search "tree stump" --max-faces 200000
+python3 meshgate.py gen --library 7a0f2d413b5846f591b40580f783c53c --size 0.6 --style realistic
+```
+
+- **Only licences you may use in a commercial game, changed:** CC0 (no credit needed) and CC-BY (credit the author).
+  CC-BY-SA works when you add `--license by-sa`, and your changed model is then CC-BY-SA too. NonCommercial, NoDerivs,
+  Editorial and store licences are refused, and the licence is checked again right before every download.
+- **Credit travels with the asset:** `credit.json` next to the download, `credit` in `gen.json`, and `CREDITS.txt` next
+  to the generated files with the line CC-BY asks for (title, author, link, licence, "changed").
+- **Where it downloads from:** the [Objaverse](https://huggingface.co/datasets/allenai/objaverse) mirror on Hugging Face
+  (about 800,000 Sketchfab models, no account; a 20 MB index is fetched once) when the model is in it. Newer models come
+  from Sketchfab with your API token (`SKETCHFAB_API_TOKEN`, Studio → Keys; sketchfab.com → Settings → Password & API).
+- Downloads stay in `~/.meshgate/library`, never in the repository. Check each model yourself before you ship it:
+  a licence is only as good as the uploader's right to give it.
 
 ## Own triangle limits and vertex colours
 

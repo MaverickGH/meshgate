@@ -100,11 +100,16 @@ def parse_anims(text: str | None) -> list[tuple[str, str]]:
     return out[:8]
 
 
-def resolve_finish(finish: str, style: str, colors: str) -> str:
-    """auto → the style's finish (low-poly: faceted, realistic: weathered). Weathering bakes textures, so it needs
-    texture colours; with vertex colours it falls back to none."""
+TEXTURES = {"auto": 0, "1k": 1024, "2k": 2048, "4k": 4096, "8k": 8192}
+
+
+def resolve_finish(finish: str, style: str, colors: str, pbr: bool = False) -> str:
+    """auto → the style's finish (low-poly: faceted, realistic: weathered). pbr asks for a baked full PBR set on the
+    other styles too (clean: exact colours + occlusion). Baking needs texture colours; with vertex colours it is off."""
     f = FINISHES.get(style, "none") if finish == "auto" else finish
-    return "none" if f == "weathered" and colors == "vertex" else f
+    if pbr and f == "none":
+        f = "clean"
+    return "none" if f in ("weathered", "clean") and colors == "vertex" else f
 
 
 SYSTEM = ("You write Python build code for the MeshGate modeling kit. Reply with exactly one ```python code block "
@@ -432,8 +437,10 @@ def run_blender(cmd: list[str], *, timeout: int, on_line=None) -> tuple[dict, st
 
 def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, tiers: list[str], targets: str,
                    collision: str, size: float, preview: bool, seed: int, timeout: int = 600,
-                   on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none") -> tuple[dict, str]:
+                   on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
+                   texture: int = 0, topology: str = "tri") -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
+           "--texture", str(texture), "--topology", topology,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
            "--targets", targets, "--collision", collision, "--size", str(size or 0), "--seed", str(seed),
            "--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items())]
@@ -463,6 +470,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "(the kit engine's AI builds from it), single = one 3/4 view (for image → 3D)")
     ap.add_argument("--mesh-cmd", help='your own generator: "cmd {image} --out {out}" ({prompt}, {out_dir} also work)')
     ap.add_argument("--mesh", help="refine an existing mesh file (GLB/OBJ/FBX/PLY/STL) — no generation")
+    ap.add_argument("--library", metavar="UID", help="a free CC0 / CC-BY model from Sketchfab (meshgate.py library search): "
+                                                   "downloaded with its credit, then refined like --mesh")
+    ap.add_argument("--license", default="cc0,by", help="--library: licences you accept (cc0,by; add by-sa to allow it)")
     ap.add_argument("--turn", type=float, default=0.0, help="mesh: degrees to turn so the front faces the viewer")
     ap.add_argument("--detail", type=float, default=1.0, help="mesh: multiplier for the per-tier triangle share")
     ap.add_argument("--no-upright", action="store_true", help="mesh: keep the source tilt (no automatic standing up)")
@@ -475,6 +485,12 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tris", help="your own triangle limits: 800 (every tier) or low=150,mid=400,high=900,pc=2000")
     ap.add_argument("--colors", default="texture", choices=["texture", "vertex"],
                     help="texture = palette / baked textures; vertex = colours in the vertices, no textures at all")
+    ap.add_argument("--texture", default="auto", choices=list(TEXTURES),
+                    help="baked texture size for the PC file (tiers still cap it); 8k also writes <name>.master.glb")
+    ap.add_argument("--pbr", action="store_true", help="kit: bake a full PBR set (colour, occlusion-roughness-metallic, "
+                    "normal) for every style, not only realistic")
+    ap.add_argument("--topology", default="tri", choices=["tri", "quad"],
+                    help="quad: FBX and .blend keep quads; the mesh engine remeshes to clean quads (GLB is always triangles)")
     ap.add_argument("--anim", help="kit: animation clips to make — 'open: the lid opens; idle: the lamp sways'")
     ap.add_argument("--finish", default="auto", choices=["auto", "none", "faceted", "weathered"],
                     help="kit: auto = from the style (lowpoly → faceted, realistic → weathered textures)")
@@ -501,7 +517,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_refine(blender: str, src: str, *, name: str, out_dir: Path, tiers: list[str], targets: str, collision: str,
                size: float, turn: float, detail: float, preview: bool, upright: bool = True, vertex_srgb: bool = False,
                timeout: int = 1800, on_line=None, cpu: bool = False, colors: str = "texture",
-               caps: dict | None = None) -> tuple[dict, str]:
+               caps: dict | None = None, texture: int = 0, topology: str = "tri", pbr: bool = False) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(REFINE), "--", "--src", src,
            "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers), "--targets", targets,
            "--collision", collision, "--size", str(size or 0), "--turn", str(turn or 0), "--detail", str(detail or 1)]
@@ -513,7 +529,8 @@ def run_refine(blender: str, src: str, *, name: str, out_dir: Path, tiers: list[
         cmd.append("--vertex-srgb")
     if cpu:
         cmd.append("--cpu")
-    cmd += ["--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items())]
+    cmd += ["--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items()),
+            "--texture", str(texture), "--topology", topology] + (["--pbr"] if pbr else [])
     return run_blender(cmd, timeout=timeout, on_line=on_line)
 
 
@@ -539,6 +556,18 @@ def list_ready(events: bool) -> int:
     return 0
 
 
+def library_credit(mesh_path: str, out_dir: Path) -> dict | None:
+    """A library model's author and licence → gen.json and CREDITS.txt next to the asset (CC-BY asks for credit)."""
+    import library
+    c = library.credit_for(mesh_path)
+    if not c:
+        return None
+    line = library.credit_line(c)
+    (out_dir / "CREDITS.txt").write_text(f"{line}\n", encoding="utf-8")
+    return {k: c.get(k) for k in ("uid", "name", "author", "author_url", "url", "license", "license_name", "license_url",
+                                  "via")} | {"line": line}
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):   # Windows consoles and pipes default to cp1252; MeshGate prints ✓ and —
         if hasattr(stream, "reconfigure"):
@@ -558,6 +587,14 @@ def main(argv: list[str] | None = None) -> int:
         return components.COMPONENTS[args.setup].setup(log=lambda t: say(t, stage="setup"))
     if args.list_ai:
         return list_ready(events)
+    if args.library:
+        import library
+        try:
+            args.mesh = str(library.get(args.library, licenses=tuple(x.strip() for x in args.license.split(",") if x.strip()),
+                                        log=lambda t: say(t, stage="library")))
+        except (library.LibraryError, mesh.ProviderError, OSError) as exc:
+            say(f"✗ {exc}", stage="error")
+            return 1
     if not (args.description or args.code or args.image or args.mesh):
         build_parser().print_usage()
         print("meshgate gen: give a description, --image PICTURE, --mesh FILE or --code FILE")
@@ -575,7 +612,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         args.caps_parsed = parse_caps(args.tris, tiers)
-        args.finish_resolved = resolve_finish(args.finish, args.style, args.colors)
+        args.finish_resolved = resolve_finish(args.finish, args.style, args.colors, args.pbr)
         args.anims = parse_anims(args.anim)
     except ValueError as exc:
         print(f"meshgate gen: {exc}")
@@ -632,6 +669,7 @@ def main(argv: list[str] | None = None) -> int:
               "name": name, "description": args.description, "style": args.style, "size": args.size, "tiers": tiers,
               "colors": args.colors, "caps": args.caps_parsed, "finish": args.finish_resolved if engine == "kit" else None,
               "anims": [{"clip": n, "what": w} for n, w in args.anims] or None,
+              "texture": args.texture, "pbr": args.pbr, "topology": args.topology,
               "engine": engine, "input_image": reference.name if reference else None, "out_dir": str(out_dir)}
     if engine == "mesh":
         report, extra = generate_mesh(args, name, out_dir, tiers, blender, str(reference) if reference else None, say)
@@ -644,6 +682,10 @@ def main(argv: list[str] | None = None) -> int:
         summary = {**common, "ai": None if args.code else (args.ai_cmd or args.ai), "model": args.model,
                    "ok": report.get("ok", False), "attempts": history, "seconds": round(time.time() - started),
                    "report": report, "code": f"{name}.py" if report.get("ok") and code else None}
+    credit = library_credit(args.mesh, out_dir) if args.mesh else None
+    if credit:
+        summary["credit"] = credit
+        say(f"  credit: {credit['line']}", stage="credit")
     (out_dir / "gen.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     if report.get("ok"):
         files = ", ".join(report.get("files", []))
@@ -719,7 +761,8 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
                              preview=not args.no_preview, upright=not args.no_upright,
                              vertex_srgb=args.vertex_srgb or srgb_vertex_colours(raw, extra["provider"]),
                              on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress")),
-                             colors=args.colors, caps=args.caps_parsed)
+                             colors=args.colors, caps=args.caps_parsed, texture=TEXTURES[args.texture],
+                             topology=args.topology, pbr=args.pbr)
     if any(p.startswith("Blender stopped without a report") for p in report.get("problems", [])):
         # A GPU bake can take Blender down without a word (seen with Metal on 5.2): once more on the CPU
         say("    Blender stopped during the bake — retrying on the CPU", stage="progress")
@@ -730,7 +773,8 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
                                  preview=not args.no_preview, upright=not args.no_upright,
                                  vertex_srgb=args.vertex_srgb or srgb_vertex_colours(raw, extra["provider"]),
                                  on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress")),
-                                 cpu=True, colors=args.colors, caps=args.caps_parsed)
+                                 cpu=True, colors=args.colors, caps=args.caps_parsed, texture=TEXTURES[args.texture],
+                                 topology=args.topology, pbr=args.pbr)
         if report.get("ok"):
             report.setdefault("advice", []).append("the GPU bake crashed once; the files were baked on the CPU")
     (out_dir / "refine.blender.log").write_text(log, encoding="utf-8")
@@ -776,11 +820,15 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
             report = {"ok": False, "problems": [f"safety: {p}" for p in problems], "advice": []}
         else:
             say(f"[{attempt}] building {', '.join(reversed(tiers))} in Blender…", stage="build", attempt=attempt)
-            report, log = run_in_blender(blender, code_path, name=name, out_dir=out_dir, tiers=tiers,
+            baking = args.finish_resolved in ("weathered", "clean")
+            tex = TEXTURES[args.texture]
+            limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0) + (2400 if baking and tex > 4096 else 0)
+            report, log = run_in_blender(blender, code_path, name=name, out_dir=out_dir, tiers=tiers, timeout=limit,
                                          targets=args.targets, collision=args.collision, size=args.size,
                                          preview=not args.no_preview, seed=args.seed,
                                          on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress", attempt=attempt)),
-                                         colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved)
+                                         colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
+                                         texture=TEXTURES[args.texture], topology=args.topology)
             (out_dir / f"attempt_{attempt}.blender.log").write_text(log, encoding="utf-8")
             missing = missing_clips(report, args.anims)
             if missing and not args.code:   # back to the AI like any other problem
