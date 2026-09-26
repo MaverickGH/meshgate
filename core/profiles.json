@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "doc": "MeshGate quality tiers — one source of truth. 'asset' = budget per exported file (validator + Blender tier variants), 'scene' = budget for a whole level/diorama, 'render' = runtime settings the web viewer, Unity, Godot and Unreal apply for the tier. Keep targets in sync: python3 tests/check_profiles.py.",
+  "order": ["mobile-low", "mobile-mid", "mobile-high", "pc"],
+  "profiles": {
+    "mobile-low": {
+      "label": "Mobile · low",
+      "devices": "budget and old phones: ≤ 3 GB RAM, ≤ 4 big cores, Mali-G52 / Adreno 610 class, GLES 3.0",
+      "asset": { "max_tris": 8000, "max_texture": 512, "max_texture_mb": 4, "max_materials": 2, "max_bones": 50, "max_influences": 2, "max_file_mb": 2, "image_format": "JPEG" },
+      "scene": { "max_tris": 60000, "max_draw_calls": 60 },
+      "render": { "pixel_ratio": 1.0, "render_scale": 0.75, "msaa": 0, "shadows": "off", "shadow_map": 0, "shadow_distance": 0, "ao": false, "bloom": false, "hdr": false, "lod_bias": 0.5, "texture_limit": 1, "anisotropy": 1 }
+    },
+    "mobile-mid": {
+      "label": "Mobile · mid",
+      "devices": "mainstream phones: 4–6 GB RAM, Mali-G68 / Adreno 6xx–7xx, Apple A12–A14",
+      "asset": { "max_tris": 25000, "max_texture": 1024, "max_texture_mb": 12, "max_materials": 4, "max_bones": 75, "max_influences": 4, "max_file_mb": 6, "image_format": "JPEG" },
+      "scene": { "max_tris": 150000, "max_draw_calls": 150 },
+      "render": { "pixel_ratio": 1.5, "render_scale": 0.9, "msaa": 2, "shadows": "hard", "shadow_map": 1024, "shadow_distance": 15, "ao": false, "bloom": false, "hdr": false, "lod_bias": 1.0, "texture_limit": 0, "anisotropy": 2 }
+    },
+    "mobile-high": {
+      "label": "Mobile · high",
+      "devices": "flagship phones and tablets: ≥ 8 GB RAM, Apple A15+ / M-series iPad, Adreno 7xx+, Immortalis",
+      "asset": { "max_tris": 60000, "max_texture": 2048, "max_texture_mb": 32, "max_materials": 8, "max_bones": 150, "max_influences": 4, "max_file_mb": 12, "image_format": "AUTO" },
+      "scene": { "max_tris": 300000, "max_draw_calls": 300 },
+      "render": { "pixel_ratio": 2.0, "render_scale": 1.0, "msaa": 4, "shadows": "soft", "shadow_map": 2048, "shadow_distance": 30, "ao": false, "bloom": true, "hdr": true, "lod_bias": 1.5, "texture_limit": 0, "anisotropy": 4 }
+    },
+    "pc": {
+      "label": "PC · high quality",
+      "devices": "desktops and laptops with a discrete or modern integrated GPU",
+      "asset": { "max_tris": 250000, "max_texture": 4096, "max_texture_mb": 128, "max_materials": 16, "max_bones": 256, "max_influences": 4, "max_file_mb": 25, "image_format": "AUTO" },
+      "scene": { "max_tris": 2000000, "max_draw_calls": 2000 },
+      "render": { "pixel_ratio": 2.0, "render_scale": 1.0, "msaa": 4, "shadows": "soft", "shadow_map": 4096, "shadow_distance": 80, "ao": true, "bloom": true, "hdr": true, "lod_bias": 2.0, "texture_limit": 0, "anisotropy": 16 }
+    }
+  }
+}

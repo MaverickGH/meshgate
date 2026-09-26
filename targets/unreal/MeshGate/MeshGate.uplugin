@@ -1,0 +1,22 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "0.4.0",
+  "FriendlyName": "MeshGate",
+  "Description": "Import canonical MeshGate GLB/FBX (meters, Y-up, PBR, names, Humanoid skeleton) into Unreal: editor Python scripts for Interchange/FBX, demo level builder, runtime recipe with glTFRuntime.",
+  "Category": "Importers",
+  "CreatedBy": "MeshGate",
+  "CreatedByURL": "https://github.com/MaverickGH/meshgate",
+  "DocsURL": "https://github.com/MaverickGH/meshgate/tree/main/targets/unreal",
+  "CanContainContent": true,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "EnabledByDefault": true,
+  "Plugins": [
+    { "Name": "PythonScriptPlugin", "Enabled": true },
+    { "Name": "EditorScriptingUtilities", "Enabled": true },
+    { "Name": "Interchange", "Enabled": true },
+    { "Name": "InterchangeEditor", "Enabled": true },
+    { "Name": "GLTFImporter", "Enabled": true, "Optional": true }
+  ]
+}

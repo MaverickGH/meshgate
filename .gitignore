@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+# Node
+node_modules/
+# Сборки/выгрузки
+dist/
+# generated assets (meshgate.py gen)
+out/
+# three.js copied for offline Studio (scripts/vendor_three.py)
+apps/studio/ui/vendor/
+*.blend1
+# ОС
+.DS_Store
+# Ассеты: в репозитории живут только демо-примеры (≈1.5 МБ каждый); свои держите вне репо
+samples/*.glb
+samples/*.gltf
+samples/*.blend
+samples/*.fbx
+!samples/meshgate_demo.blend
+!samples/meshgate_demo.glb
+!samples/meshgate_demo.draco.glb
+!samples/meshgate_demo.fbx
+samples/_local/
+!samples/meshgate_hero.blend
+!samples/meshgate_hero.glb
+!samples/meshgate_hero.fbx
+!samples/meshgate_lantern.blend
+!samples/meshgate_lantern.glb
+!samples/meshgate_lantern.fbx
+!samples/meshgate_barrel.blend
+!samples/meshgate_barrel.glb
+!samples/meshgate_barrel.fbx
+!samples/meshgate_drone.blend
+!samples/meshgate_drone.glb
+!samples/meshgate_drone.fbx
+# example packs: .blend + canonical GLB + FBX + engine variants + index.json are committed
+!samples/packs/
+!samples/packs/**

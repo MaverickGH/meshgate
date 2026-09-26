@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshGate Studio</title>
+<link rel="icon" type="image/png" href="/ui/meshgate-icon.png">
+<link rel="stylesheet" href="/ui/studio.css">
+<script type="importmap">
+{ "imports": {
+  "three": "/three/build/three.module.js",
+  "three/addons/": "/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><b>MeshGate</b> <span data-i18n="studio">Studio</span></div>
+  <div class="pills" id="pills"></div>
+  <button class="ghost" id="connect" data-i18n="connect">Status &amp; AI</button>
+  <button class="ghost" id="lang" title="Language">RU</button>
+</header>
+
+<main class="layout">
+  <form class="panel" id="form" autocomplete="off">
+    <div class="panel-heading"><h1 data-i18n="create_asset">Create asset</h1><p data-i18n="create_intro">Describe your idea and configure the game-ready build.</p></div>
+    <label class="field">
+      <span data-i18n="describe">Describe the model</span>
+      <textarea id="description" rows="4" data-i18n-placeholder="describe_ph"
+        placeholder="A wooden windmill with turning blades"></textarea>
+    </label>
+    <details class="examples-wrap"><summary data-i18n="examples_label">Prompt examples</summary><div class="chips" id="examples"></div></details>
+
+    <div class="field">
+      <span data-i18n="picture">Picture</span>
+      <label class="drop" id="drop" tabindex="0">
+        <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <img id="thumb" class="hidden" alt="">
+        <span id="drop-text" data-i18n="drop">Drop a picture or click — optional. With a picture you get image → 3D.</span>
+        <button type="button" class="ghost small hidden" id="unpick" data-i18n="remove">Remove</button>
+      </label>
+    </div>
+
+    <label class="check concept-row"><input type="checkbox" id="concept"> <span data-i18n="concept">Draw a concept picture first (Codex, OpenAI or fal), then build from it</span></label>
+    <label class="check concept-row"><input type="checkbox" id="anim-on"> <span data-i18n="anim">Animations</span></label>
+    <label class="field hidden" id="anim-box">
+      <textarea id="anim" rows="3" maxlength="1000" data-i18n-placeholder="anim_ph"
+        placeholder="open: the lid opens and closes&#10;idle: the lantern sways"></textarea>
+      <small data-i18n="anim_hint">One clip per line, name: what happens. The code engine gives moving parts their own clips.</small>
+    </label>
+
+    <div class="field">
+      <span data-i18n="engine">How to build</span>
+      <div class="seg three" id="engine"></div>
+      <small id="engine-hint"></small>
+    </div>
+
+    <div class="field">
+      <span data-i18n="colors">Colours</span>
+      <div class="seg two" id="colors"></div>
+    </div>
+
+    <div class="field">
+      <span data-i18n="style">Style</span>
+      <div class="seg" id="style"></div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="go" data-i18n="generate">Generate</button>
+      <button type="button" class="ghost hidden" id="cancel" data-i18n="cancel">Cancel</button>
+    </div>
+    <p class="hint" id="ai-hint"></p>
+
+    <details class="field output-settings">
+      <summary data-i18n="output_settings">Output settings</summary>
+      <div class="output-body">
+        <div class="row2">
+          <label class="field"><span data-i18n="name">Name</span>
+            <input id="name" data-i18n-placeholder="auto" placeholder="auto"></label>
+          <label class="field"><span data-i18n="size">Size, m</span>
+            <input id="size" type="number" min="0" step="0.05" data-i18n-placeholder="auto" placeholder="auto"></label>
+        </div>
+
+        <fieldset class="field">
+          <legend data-i18n="tiers">Quality tiers</legend>
+          <div id="tiers" class="checks"></div>
+          <small data-i18n="tiers_hint">The same model is built once per tier, with as much detail as the tier affords.</small>
+          <small data-i18n="tris_hint">The number field is your own triangle limit for that tier — leave it empty for the default.</small>
+        </fieldset>
+
+        <fieldset class="field">
+          <legend data-i18n="engines">Engines</legend>
+          <div class="checks inline" id="targets"></div>
+        </fieldset>
+      </div>
+    </details>
+
+    <details class="field adv">
+      <summary data-i18n="ai_settings">AI and advanced</summary>
+      <label class="field"><span data-i18n="provider">Mesh generator</span><select id="provider"></select></label>
+      <button type="button" class="ghost hidden" id="setup-triposr" data-i18n="setup_triposr">Install TripoSR — local, free, ~3 GB</button>
+      <label class="field hidden" id="fal-row"><span>fal model</span><select id="fal_model"></select></label>
+      <div class="row2">
+        <label class="field"><span data-i18n="detail">Detail ×</span>
+          <input id="detail" type="number" min="0.2" max="3" step="0.1" value="1"></label>
+        <label class="field"><span data-i18n="turn">Turn, °</span>
+          <input id="turn" type="number" min="0" max="359" step="15" value="0"></label>
+      </div>
+      <label class="field"><span data-i18n="ai">AI command line</span><select id="ai"></select></label>
+      <label class="field"><span data-i18n="model">Model</span>
+        <input id="model" data-i18n-placeholder="model_ph" placeholder="default of the CLI"></label>
+      <label class="field"><span data-i18n="ai_cmd">Custom command</span>
+        <input id="ai_cmd" placeholder="llm -m gpt-4o"></label>
+      <div class="row2">
+        <label class="field"><span data-i18n="attempts">Attempts</span>
+          <input id="attempts" type="number" min="1" max="6" value="3"></label>
+        <label class="field"><span data-i18n="collision">Collision</span>
+          <select id="collision"><option value="none" data-i18n="none">none</option><option value="box">box</option><option value="convex">convex</option></select></label>
+      </div>
+    </details>
+
+  </form>
+
+  <section class="stage">
+    <div class="stage-heading"><strong data-i18n="scene_preview">Scene preview</strong></div>
+    <div class="viewer" id="viewer">
+      <div class="empty" id="empty">
+        <p data-i18n="empty">Describe a model and press Generate. Results appear here, one file per quality tier.</p>
+      </div>
+      <img class="still hidden" id="still" alt="">
+    </div>
+    <div class="bar">
+      <div class="tabs" id="tier-tabs" role="tablist"></div>
+      <div class="bar-actions">
+        <button class="ghost" id="wire" data-i18n="wireframe">Wireframe</button>
+        <button class="ghost" id="reveal" data-i18n="reveal">Show files</button>
+      </div>
+    </div>
+    <div class="info" id="info"></div>
+  </section>
+
+  <aside class="side">
+    <div class="side-heading"><strong data-i18n="activity">Activity</strong></div>
+    <div class="tabs small" role="tablist">
+      <button class="on" data-pane="log" data-i18n="progress">Progress</button>
+      <button data-pane="code" data-i18n="code">Code</button>
+    </div>
+    <div class="pane" id="pane-log"><ol id="log"></ol></div>
+    <div class="pane hidden" id="pane-code"><pre id="code"></pre></div>
+  </aside>
+</main>
+
+<section class="library">
+  <h2 data-i18n="library">Library</h2>
+  <div class="cards" id="cards"></div>
+</section>
+
+<dialog id="connect-dialog">
+  <form method="dialog" class="dlg">
+    <header><h2 data-i18n="connect_title">Status &amp; connections</h2>
+      <span class="acts"><button type="button" class="ghost small" id="status-refresh" data-i18n="refresh">Refresh</button>
+      <button class="ghost" value="close" aria-label="Close">✕</button></span></header>
+    <p class="hint" data-i18n="connect_intro">Text → 3D needs one AI command-line tool. Picture → 3D needs TripoSR (local) or a cloud key. You only do this once.</p>
+    <h3 data-i18n="connect_tools">Blender and game engines</h3>
+    <div id="tool-rows" class="rows"></div>
+    <h3 data-i18n="connect_cli">AI command line — writes the model's code</h3>
+    <div id="cli-rows" class="rows"></div>
+    <h3 data-i18n="connect_mesh">Picture → 3D</h3>
+    <div id="mesh-rows" class="rows"></div>
+    <h3 data-i18n="connect_components">Optional components — installed separately</h3>
+    <p class="hint" data-i18n="components_intro">Big local models, each in its own folder under ~/.cache/meshgate. Install them when you need them.</p>
+    <div id="component-rows" class="rows"></div>
+    <h3 data-i18n="connect_keys">API keys</h3>
+    <p class="hint" id="keys-where"></p>
+    <div id="key-rows" class="rows"></div>
+  </form>
+</dialog>
+
+<script type="module" src="/ui/studio.js"></script>
+</body>
+</html>

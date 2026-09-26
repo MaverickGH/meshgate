@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://meshgate_demo_pack_mid"]
+
+[ext_resource type="Script" path="res://demo_pack.gd" id="1_pack"]
+
+[node name="ZombieCats_mobile-mid" type="Node3D"]
+script = ExtResource("1_pack")
+tier = "mobile-mid"

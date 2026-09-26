@@ -1,0 +1,94 @@
+name: validate-assets
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Validate samples against the asset contract
+        run: python3 core/validate_glb.py samples/*.glb --strict
+      - name: Validate FBX (fallback path)
+        run: python3 core/validate_fbx.py samples/*.fbx --strict
+      - name: Quality tiers identical in profiles.json, web, Unity, Godot, Unreal
+        run: python3 tests/check_profiles.py
+      - name: Generation — guard rails, prompt, answer parsing; Studio server — token, host, paths
+        run: |
+          python3 tests/generate/test_generate.py
+          python3 tests/generate/test_providers.py
+          python3 tests/studio/test_server.py
+          python3 tests/check_links.py
+          python3 tests/studio/test_ui_strings.py
+      - name: Unreal — plugin against the UE 5.4/5.5/5.6 Python API stubs
+        run: |
+          python3 tests/unreal/check_api.py --download
+          python3 tests/unreal/test_pack_import.py
+      - name: Godot — headless contract check
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip -O godot.zip && unzip -q godot.zip && chmod +x Godot_v4.4.1-stable_linux.x86_64
+          targets/godot/sync_samples.sh
+          ./Godot_v4.4.1-stable_linux.x86_64 --headless --path targets/godot/MeshGateDemo --import || true
+          ./Godot_v4.4.1-stable_linux.x86_64 --headless --path targets/godot/MeshGateDemo -s tests/test_meshgate.gd
+      - name: Blender add-on on 4.2 LTS — plant problems, fix, export every engine variant, samples
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6 > /dev/null
+          wget -q https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz -O blender.tar.xz && tar -xf blender.tar.xz
+          python3 scripts/build_blender_addon.py
+          export BLENDER_USER_RESOURCES=$RUNNER_TEMP/blender-profile
+          ./blender-4.2.23-linux-x64/blender -b --factory-startup -P tests/blender/test_addon.py -- \
+            --zip dist/meshgate-blender-*.zip --out $RUNNER_TEMP/addon --samples samples
+      - name: Generation on Blender 4.2 — stand-in AI fixes its own error, animated chest per tier
+        run: |
+          B=./blender-4.2.23-linux-x64/blender
+          python3 meshgate.py gen "a fire hydrant" --name hydrant --ai-cmd "python3 tests/generate/fake_ai.py" --size 0.8 \
+            --blender $B --no-preview --out-dir $RUNNER_TEMP/gen/hydrant
+          python3 meshgate.py gen --code sources/generate/examples/treasure_chest.py --name chest --collision box \
+            --blender $B --no-preview --out-dir $RUNNER_TEMP/gen/chest
+          $B -b --factory-startup -P tests/generate/make_raw_mesh.py -- $RUNNER_TEMP/raw.glb
+          python3 meshgate.py gen --mesh $RUNNER_TEMP/raw.glb --name post --size 1.2 --blender $B --no-preview \
+            --out-dir $RUNNER_TEMP/gen/post
+          python3 tests/generate/check_bake.py $RUNNER_TEMP/gen/post/post.mobile-mid.glb --blender=$B
+          python3 meshgate.py gen --code sources/generate/examples/toxic_can.py --name can_vc --colors vertex \
+            --tris low=600,pc=4000 --blender $B --no-preview --out-dir $RUNNER_TEMP/gen/can_vc
+      - uses: actions/upload-artifact@v4
+        with: { name: meshgate-blender-addon, path: dist/meshgate-blender-*.zip }
+      - name: Python syntax
+        run: python3 -m py_compile meshgate.py core/*.py sources/blender/*.py sources/blender/meshgate_blender/*.py sources/generate/*.py sources/generate/mesh/*.py sources/generate/examples/*.py apps/studio/server.py tests/blender/*.py tests/unreal/*.py tests/generate/*.py tests/studio/*.py targets/web/serve.py scripts/*.py
+
+  windows:
+    # The same pipeline on Windows: paths, process trees, the Blender runners and the Studio server.
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"   # the test scripts print ✓ — make every Python UTF-8, as the MeshGate entry points already are
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Pure-Python checks (validator, tiers, generation, providers, Studio server)
+        run: |
+          python core/validate_glb.py samples/*.glb --strict
+          python tests/check_profiles.py
+          python tests/generate/test_generate.py
+          python tests/generate/test_providers.py
+          python tests/studio/test_server.py
+      - name: Blender 4.2 LTS portable
+        run: |
+          curl -sSL -o blender.zip https://download.blender.org/release/Blender4.2/blender-4.2.23-windows-x64.zip
+          7z x -y blender.zip > /dev/null
+          echo "MESHGATE_BLENDER=$PWD/blender-4.2.23-windows-x64/blender.exe" >> $GITHUB_ENV
+      - name: Add-on, kit generation and mesh refine on Windows
+        run: |
+          python scripts/build_blender_addon.py
+          export BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile"
+          "$MESHGATE_BLENDER" -b --factory-startup -P tests/blender/test_addon.py -- \
+            --zip "$(ls dist/meshgate-blender-*.zip)" --out "$RUNNER_TEMP/addon" --samples samples
+          python meshgate.py gen --code sources/generate/examples/treasure_chest.py --name chest --collision box \
+            --no-preview --out-dir "$RUNNER_TEMP/gen/chest"
+          "$MESHGATE_BLENDER" -b --factory-startup -P tests/generate/make_raw_mesh.py -- "$RUNNER_TEMP/raw.glb"
+          python meshgate.py gen --mesh "$RUNNER_TEMP/raw.glb" --name post --size 1.2 --no-preview \
+            --out-dir "$RUNNER_TEMP/gen/post"
+          python tests/generate/check_bake.py "$RUNNER_TEMP/gen/post/post.mobile-mid.glb" --blender="$MESHGATE_BLENDER"

@@ -1,0 +1,9 @@
+{
+  "name": "MeshGateSample.Tests",
+  "references": [ "MeshGate.Runtime", "UnityEngine.TestRunner", "UnityEditor.TestRunner" ],
+  "includePlatforms": [],
+  "precompiledReferences": [ "nunit.framework.dll" ],
+  "defineConstraints": [ "UNITY_INCLUDE_TESTS" ],
+  "overrideReferences": true,
+  "autoReferenced": false
+}

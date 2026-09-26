@@ -1,0 +1,22 @@
+[package]
+name = "meshgate-studio"
+version = "0.6.5"
+description = "MeshGate Studio — text to game-ready 3D assets, desktop shell"
+license = "LicenseRef-MeshGate-Proprietary"
+publish = false
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"

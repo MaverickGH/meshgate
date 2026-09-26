@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshGate Studio</title>
+<style>
+  :root { --bg: #0b0e17; --text: #e8ecf7; --muted: #8f9abb; --accent: #a78bfa; color-scheme: dark; }
+  @media (prefers-color-scheme: light) { :root { --bg: #f5f6fa; --text: #151a2c; --muted: #5d6685; --accent: #6d4ee8; color-scheme: light; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+  main { height: 100%; display: grid; place-items: center; text-align: center; padding: 16px; box-sizing: border-box; }
+  .logo { width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 18px; background: linear-gradient(135deg, #7c5cf0, #38bdf8); }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin: 0 3px; animation: b 1.2s infinite; }
+  .dot:nth-child(2) { animation-delay: .2s } .dot:nth-child(3) { animation-delay: .4s }
+  @keyframes b { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }
+  #error { display: none; max-width: 560px; text-align: left; }
+  #error pre { white-space: pre-wrap; background: rgba(127,127,127,.12); padding: 12px; border-radius: 8px; font-size: 13px; }
+  #error a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <div class="logo" aria-hidden="true"></div>
+    <div id="loading"><b>MeshGate Studio</b><p style="color:var(--muted)">Starting <span class="dot"></span><span class="dot"></span><span class="dot"></span></p></div>
+    <div id="error">
+      <h2>MeshGate Studio could not start</h2>
+      <pre id="error-text"></pre>
+      <p>Studio needs <a href="https://www.python.org/downloads/" target="_blank" rel="noopener">Python 3.9+</a> and
+        <a href="https://www.blender.org/download/" target="_blank" rel="noopener">Blender 3.5+</a>.
+        Set MESHGATE_PYTHON or MESHGATE_BLENDER if they are installed somewhere unusual, then restart the app.</p>
+    </div>
+  </div>
+</main>
+<script>
+  window.showError = (text) => {
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error-text").textContent = text;
+  };
+</script>
+</body>
+</html>

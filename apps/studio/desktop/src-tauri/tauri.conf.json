@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MeshGate Studio",
+  "version": "0.6.5",
+  "identifier": "dev.meshgate.studio",
+  "build": {
+    "frontendDist": "../splash",
+    "beforeBuildCommand": "node scripts/prepare.mjs"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MeshGate Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 620,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Text to game-ready 3D assets for web, Unity, Godot and Unreal",
+    "longDescription": "MeshGate Studio sends your description to an AI command-line tool (Claude Code, Codex, Gemini, Ollama or your own), builds the model in Blender once per quality tier and checks it against the MeshGate asset contract.",
+    "copyright": "© 2026 CYBER Department. All rights reserved.",
+    "licenseFile": "../../../../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../../../meshgate.py": "meshgate/meshgate.py",
+      "../../../../LICENSE": "meshgate/LICENSE",
+      "../../../../core/validate_glb.py": "meshgate/core/validate_glb.py",
+      "../../../../core/validate_fbx.py": "meshgate/core/validate_fbx.py",
+      "../../../../core/profiles.json": "meshgate/core/profiles.json",
+      "../../../../sources/blender/meshgate_blender/": "meshgate/sources/blender/meshgate_blender/",
+      "../../../../sources/generate/": "meshgate/sources/generate/",
+      "../../../../apps/studio/server.py": "meshgate/apps/studio/server.py",
+      "../../../../apps/studio/ui/": "meshgate/apps/studio/ui/",
+      "../../../../targets/web/meshgate-viewer.js": "meshgate/targets/web/meshgate-viewer.js",
+      "../../../../targets/unity/com.meshgate.unity/": "meshgate/targets/unity/com.meshgate.unity/",
+      "../../../../targets/godot/MeshGateDemo/addons/meshgate/": "meshgate/targets/godot/MeshGateDemo/addons/meshgate/",
+      "../../../../targets/unreal/MeshGate/": "meshgate/targets/unreal/MeshGate/",
+      "../../../../targets/web/index.html": "meshgate/targets/web/index.html",
+      "../../../../targets/web/app.js": "meshgate/targets/web/app.js",
+      "../../../../scripts/build_blender_addon.py": "meshgate/scripts/build_blender_addon.py",
+      "../../../../scripts/install_blender_addon.py": "meshgate/scripts/install_blender_addon.py"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}
