@@ -2,155 +2,168 @@
 
 # MeshGate
 
-> Шлюз ассетов: один экспорт из **Blender / Maya** → веб и игровые движки **Unity, Godot, Unreal**.
+> Сделай готовую для игры 3D-модель по описанию или по картинке — или возьми свою из Blender — и получи проверенные
+> файлы для веба, Unity, Godot и Unreal, по одному на каждый уровень качества.
 
-Документация доступна на английском и русском — на каждой странице вверху есть переключатель языка.
+![Одни и те же ассеты Котов-зомби, сгенерированные MeshGate в трёх стилях](docs/img/zc-styles-lineup.jpg)
 
-**Начни здесь → [С чего начать](docs/getting-started.ru.md):** что поставить, как подключить нейросеть и что важно
-знать для web, Unity, Godot и Unreal.
+## Что умеет
 
-MeshGate — тулкит, который приводит 3D-ассет из DCC-редактора к единому нормализованному **glTF/GLB** по строгому «контракту ассета», а затем доставляет его в любой рантайм: браузер (Three.js) и движки. Архитектура «ступица и спицы»: в центре — канонический GLB, вокруг — сменные адаптеры источников и целей. Добавить новый редактор или движок = добавить адаптер, не трогая ядро.
+- **Текст → 3D.** Опиши модель. ИИ-инструмент, которым ты уже пользуешься (Claude Code, Codex, Gemini или Ollama),
+  пишет короткую программу, собирающую её из простых деталей, а Blender её собирает.
+- **Картинка → 3D.** Брось картинку. TripoSR на твоём компьютере или облачный генератор превращает её в сетку;
+  MeshGate ставит её прямо, упрощает и запекает цвета.
+- **Свои модели.** Аддон для Blender проверяет модель, исправляет то, на чём спотыкаются движки, и экспортирует.
+- **Для любого устройства.** Каждая модель собирается под четыре уровня качества — PC, mobile high, mobile mid,
+  mobile low — в пределах бюджета треугольников и текстур каждого, в `.glb`, `.fbx` и вариантах для движков с
+  коллизиями и LOD. Каждый файл проверяется по правилам движков до того, как ты его увидишь.
+- **Три стиля, которые правда отличаются:** stylized, low-poly (гранёный, в разы легче) и realistic (грязь, разброс
+  цвета и рельеф, запечённые в текстуры).
 
-Это самостоятельный инструмент (весь код наш; проприетарная лицензия, см. [Лицензия](#лицензия)). Идея пайплайна (DCC → glTF → рантайм) — отраслевой стандарт; реализация оригинальная.
+Всё работает на твоём компьютере. Документация на английском и русском: на каждой странице есть переключатель языка.
 
-## Зачем
+## Скачать
 
-- Один ассет — везде: сделал в Blender или Maya, получил рабочую загрузку в вебе и в трёх движках.
-- Предсказуемость: «контракт ассета» (масштаб, оси, материалы, имена) убирает «у меня повёрнуто/огромное/чёрное».
-- Проверяемость: валидатор ловит проблемы до того, как ассет попал в движок.
+| Система | Файл со страницы [Releases](https://github.com/MaverickGH/meshgate/releases) |
+|---|---|
+| macOS (Apple Silicon) | `MeshGate.Studio_<версия>_aarch64.dmg` |
+| Windows 10/11 | `MeshGate.Studio_<версия>_x64-setup.exe` (или `.msi`) |
+| Linux или любая система без установки | `MeshGate-<версия>-portable.zip`, затем `python3 meshgate.py studio` |
 
-## Формат-обменник
+Сборки пока не подписаны: на macOS в первый раз нажми на приложение правой кнопкой → **«Открыть»**; на Windows —
+**«Подробнее» → «Выполнить в любом случае»**.
 
-Ядро — **glTF 2.0 (.glb)**: общий знаменатель для веба и реалтайма (Blender родной, Godot/Unreal родной импорт, Unity через glTFast, Web через Three.js). Для тяжёлых риг/сцен и Maya-происхождения предусмотрен запасной путь через FBX/USD (см. `docs/architecture.md`).
+## Установка за пять шагов
 
-## В Blender: аддон (без терминала)
+1. **MeshGate Studio** — из таблицы выше.
+2. **Python 3.9+** — обычно уже есть; если приложение пишет, что его нет, поставь с
+   [python.org](https://www.python.org/downloads/).
+3. **Blender 3.5+** с [blender.org](https://www.blender.org/download/). Потом в студии: **«Статус и ИИ»** → Blender →
+   **«Поставить аддон»**.
+4. **ИИ-инструмент** для текст → 3D: **«Статус и ИИ»** → Claude Code, Codex или Gemini → **«Установить»** →
+   **«Войти»**. Хватает входа по подписке.
+5. **TripoSR** для картинка → 3D: **«Статус и ИИ»** → «Дополнительные компоненты» → TripoSR → **«Установить»**
+   (~3 ГБ, бесплатно).
 
-Установи одной командой — `python3 meshgate.py install-blender` (сначала закрой Blender) — или вручную из `meshgate-blender-<версия>.zip`: Blender 4.2+ — перетащи zip в окно; Blender 3.5–4.1 — Preferences → Add-ons → Install. Дальше **N → MeshGate**: отметь цели, нажми **Проверить**, **Исправить всё**, **Экспорт**. Получишь проверенный GLB плюс FBX, коллизии `UCX_` для Unreal, `-convcolonly` для Godot и меши `_LOD` для Unity, результат откроется в браузере. Проверено на Blender 3.5, 4.2 LTS и 5.2 LTS — см. [sources/blender/README.ru.md](sources/blender/README.ru.md).
+**«Статус и ИИ»** в любой момент показывает, что найдено и чего не хватает. Все варианты, все системы и плагины для
+движков: **[Установка](docs/install.ru.md)**.
 
-## Пример пака: Коты-зомби в трёх стилях
+## Первая модель
 
-Одни и те же одиннадцать ассетов, сгенерированные MeshGate в трёх стилях. Одно описание на ассет и рендер собранного
-вручную оригинала ушли ИИ по разу на стиль; дальше движок kit закрепляет вид: **low-poly** — гранёный и в разы легче,
-**realistic** — с грязью, разбросом цвета и рельефом, запечёнными в текстуры. Каждый файл укладывается в бюджет каждого
-уровня. Пересобрать без ИИ — `python3 sources/generate/make_style_packs.py`
-([как это работает](docs/generation.ru.md#стили-которые-выглядят-по-разному)).
+1. Напиши описание — «ржавый уличный фонарь с фонарём в виде рыбы» — или брось картинку.
+2. Выбери стиль: **Стилизация**, **Low-poly** или **Реализм**.
+3. По желанию: **«Параметры экспорта»** — размер, уровни, свои лимиты треугольников, текстуры или цвет в вершинах;
+   **«Анимации»** — описать клипы вроде «open: крышка открывается».
+4. Нажми **«Сгенерировать»**. За одну–три минуты каждый уровень появится в 3D с числом треугольников.
+5. **«Показать файлы»** открывает папку с `.glb`, `.fbx` и файлами для движков.
 
-![Коты-зомби: stylized, low-poly и realistic](docs/img/zc-styles-lineup.jpg)
+![MeshGate Studio](docs/img/studio.png)
+
+## Как это работает
+
+![текст → код → Blender по уровням → проверенные файлы](docs/img/generation-flow.svg)
+
+ИИ пишет код на наборе для моделирования MeshGate, или нейросеть делает сетку. Blender в фоне собирает модель
+отдельно для каждого уровня, и каждый файл проходит валидатор: размер в метрах, оси, материалы, имена, бюджет уровня и
+то, что нужно каждому движку. Всё неправильное уходит ИИ вместе с его кодом, до трёх раз. Подробнее:
+[Генерация](docs/generation.ru.md) и [контракт ассета](docs/asset-contract.ru.md).
+
+## Файлы в движке
+
+| Движок | Плагин | Какой файл |
+|---|---|---|
+| Web (Three.js) | не нужен — [`meshgate-viewer.js`](targets/web/README.ru.md) сам выбирает уровень по устройству | `<имя>.glb` и `<имя>.<уровень>.glb` |
+| Unity 6 | glTFast + [`com.meshgate.unity`](targets/unity/README.ru.md) | `.glb` во время игры; `.fbx` для Humanoid; `.unity.fbx` с LOD |
+| Godot 4.4+ | аддон [`meshgate`](targets/godot/README.ru.md) | `.glb`; `.godot.glb` с коллизией |
+| Unreal 5.4–5.6 | плагин [`MeshGate`](targets/unreal/README.ru.md) | `.glb` через Interchange; `.unreal.fbx` с коллизией `UCX_` |
+
+У Web, Unity и Godot есть автоматические проверки, которые загружают каждый пример и каждый сгенерированный ассет
+(`meshgate.py check`); Unreal сверен с его Python API, живой запуск в редакторе — следующий шаг. Рекомендации по
+каждому движку: [С чего начать](docs/getting-started.ru.md#6-рекомендации-по-движкам).
+
+## Пример: Коты-зомби в трёх стилях
+
+Одиннадцать ассетов сверху, сгенерированные MeshGate по одному описанию на каждый и рендеру собранного вручную
+оригинала, по разу на стиль. Каждый файл укладывается в бюджет каждого уровня. Код сборки лежит в репозитории, поэтому
+`python3 sources/generate/make_style_packs.py` пересобирает все три пака без ИИ.
 
 | Stylized | Low-poly | Realistic |
 |---|---|---|
 | ![Диорама stylized](docs/img/zc-diorama-stylized.jpg) | ![Диорама low-poly](docs/img/zc-diorama-lowpoly.jpg) | ![Диорама realistic](docs/img/zc-diorama-realistic.jpg) |
 
-Исходный пак, собранный вручную: [`samples/packs/zombie_cats`](samples/packs/zombie_cats/README.ru.md) — 11 стилизованных ассетов и диорама (заборы со штакетником-ушками, фонари-рыбы, токсичная банка корма, риггованный кот-зомби на Humanoid), построенные одним скриптом Blender с одним материалом-палитрой, вариантами с коллизиями для Unreal и Godot и проверенные в веб-вьюере, Unity, Godot и по API Unreal.
+Собранный вручную оригинал с риггованным котом на Humanoid и вариантами с коллизиями, проверенный в Unity и Godot:
+[`samples/packs/zombie_cats`](samples/packs/zombie_cats/README.ru.md).
 
-![Коты-зомби в Unity](docs/img/pack-zombie-cats-unity.png)
+## В Blender, без студии
 
-## Быстрый старт (сквозняк Blender → Web)
+Поставь аддон (**«Статус и ИИ»** → **«Поставить аддон»**, или `python3 meshgate.py install-blender` при закрытом
+Blender), затем нажми **N** → **MeshGate**: отметь движки и уровни, **«Проверить»**, **«Исправить всё»**,
+**«Экспорт»**. Получишь проверенный GLB плюс FBX, коллизии для Unreal и Godot и LOD-меши для Unity, результат
+откроется в браузере. См. [sources/blender/README.ru.md](sources/blender/README.ru.md).
 
-```bash
-# 0. Ничего не экспортируя — посмотреть готовый пример:
-python3 targets/web/serve.py            # http://localhost:8770/targets/web/ → samples/meshgate_demo.glb
+## Командная строка
 
-# 1. Экспорт своего ассета из Blender по контракту (headless) + проверка сразу:
-blender -b твой.blend -P sources/blender/export_meshgate.py -- --out samples/asset.glb --validate
-#    флаги: --draco (сжатие геометрии), --fbx (плюс FBX для редактора Unity/Unreal), --no-animations, --selection, --image-format WEBP
-
-# 2. Отдельная проверка по контракту (stdlib, годится для CI):
-python3 core/validate_glb.py samples/asset.glb            # --strict: предупреждения = ошибки, --json: для машин
-
-# 3. Просмотр:
-python3 targets/web/serve.py --glb samples/asset.glb
-```
-
-Примеры в `samples/` — «сундук с маяком», фонарь (стекло, эмиссия), бочка (normal-карта), дрон (иерархия, роторы) и риггованный персонаж `meshgate_hero` (скелет Unity Humanoid, UV, анимации на костях); свой персонаж — `sources/blender/animate_humanoid.py`. Сундук: иерархия, крышка на петле, две анимации, PBR-текстуры, эмиссия, стекло, Draco-вариант. Он же — тест для всех адаптеров целей. Веб-вьюер: наведение/клик/фокус по объектам, дерево, анимации с таймлайном, HDRI, тени, Draco/KTX2/meshopt, drag-and-drop своих файлов — см. [targets/web/README.md](targets/web/README.ru.md).
-
-## Генерация по описанию или картинке
-
-- **Текст → 3D:** `python3 meshgate.py gen "деревянная мельница с вращающимися лопастями"` просит твой ИИ-инструмент
-  командной строки (Claude Code, Codex, Gemini, Ollama или любой другой) написать короткую функцию `build(mg)` на
-  наборе для моделирования MeshGate. Потом строит модель отдельно под каждый уровень качества и возвращает проблемы
-  ИИ, пока сборка не станет чистой.
-- **Картинка → 3D:** `python3 meshgate.py gen --image photo.jpg` запускает нейросеть. Это TripoSR на твоей машине (MIT,
-  ставится одной командой) или Meshy, Tripo, TRELLIS, Hunyuan3D в облаке. Потом MeshGate выпрямляет сетку, упрощает её
-  под каждый уровень, строит развёртку и запекает цвет и нормали.
-- **Любая сетка:** `--mesh file.glb` так же доводит до контракта скачанную модель.
-
-![Картинки через оба движка](docs/img/picture-to-3d.png)
-
-Подробности — [docs/generation.ru.md](docs/generation.ru.md).
-
-## MeshGate Studio: десктоп-приложение
-
-[MeshGate Studio](apps/studio/README.ru.md) — генерация в окне для macOS и Windows: описание, стиль, уровни, потом
-3D-просмотр каждого уровня, ход каждой попытки и библиотека всего сделанного. Запускается без установки командой
-`python3 meshgate.py studio` или собирается как приложение на Tauri (около 6 МБ).
-
-![MeshGate Studio](docs/img/studio.png)
-
-## Уровни качества: мобильные слабые / средние / мощные и PC
-
-Бюджеты и настройки рендера для четырёх уровней устройств лежат в [`core/profiles.json`](core/profiles.json): валидатор проверяет по ним файлы (`--profile all`), аддон Blender экспортирует `<name>.<уровень>.glb` в пределах бюджета, а веб-вьюер, Unity, Godot и Unreal берут файлы и рендер своего уровня (на PC — мягкие тени, AO, bloom). Подробно — [docs/quality-tiers.ru.md](docs/quality-tiers.ru.md).
-
-## Одна команда: `meshgate.py`
+То же без окна и в CI:
 
 ```bash
-python3 meshgate.py doctor                                   # какие инструменты найдены (Blender, Unity, Godot)
-python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # экспорт по контракту + проверка
-python3 meshgate.py character avatar.glb --out build/hero.glb        # риггованный гуманоид → контракт (+ idle/wave)
-python3 meshgate.py validate build/asset.glb build/asset.fbx --strict
-python3 meshgate.py serve --glb build/asset.glb              # веб-вьюер
-python3 meshgate.py samples                                  # пересобрать все демо-ассеты из их Blender-скриптов
-python3 meshgate.py check all                                # проверки web + Unity + Godot, headless
-python3 meshgate.py gen "чугунный пожарный гидрант" --size 0.8   # текст → ассет по уровням качества через ИИ-CLI
-python3 meshgate.py studio                                   # MeshGate Studio в браузере
+python3 meshgate.py doctor                                    # что установлено и чего не хватает
+python3 meshgate.py gen "деревянный сундук с сокровищами" --size 0.8  # текст → модель для каждого уровня
+python3 meshgate.py gen --image photo.jpg --size 0.8          # картинка → модель
+python3 meshgate.py studio                                    # MeshGate Studio в браузере
+python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # файл Blender → проверенный GLB (+ FBX)
+python3 meshgate.py validate build/asset.glb --strict         # проверить любой GLB или FBX
+python3 meshgate.py serve --glb build/asset.glb               # посмотреть в веб-вьюере
+python3 meshgate.py install-blender                           # поставить аддон Blender
+python3 meshgate.py check all                                 # все автоматические проверки: web, Blender, Unity, Godot, Unreal
 ```
 
-Пути к инструментам находятся сами; переопределить — `MESHGATE_BLENDER`, `MESHGATE_UNITY`, `MESHGATE_GODOT`.
+Параметры `gen` — стиль, лимиты треугольников, цвет в вершинах, анимации, картинки-концепты — в
+[docs/generation.ru.md](docs/generation.ru.md). Инструменты находятся сами; `MESHGATE_BLENDER`, `MESHGATE_UNITY`,
+`MESHGATE_GODOT` и `MESHGATE_UNREAL` указывают другие.
 
-## Навык для агента
+## Документация
 
-[`SKILL.ru.md`](SKILL.ru.md) превращает пайплайн в повторяемый навык для ИИ-агента (Claude Code, Codex): классифицировать вход → подготовить в Blender → экспортировать → каждое предупреждение валидатора превратить в правку → доставить в web/Unity/Godot/Unreal → проверить headless → отчитаться. Установка: `python3 scripts/install_skill.py` (`--codex` для Codex).
+| Страница | Что в ней |
+|---|---|
+| [Установка](docs/install.ru.md) | Все шаги для macOS, Windows и Linux, что нужно каждой части, где лежат файлы |
+| [С чего начать](docs/getting-started.ru.md) | От установки до модели в движке; рекомендации по движкам; если что-то не так |
+| [Генерация](docs/generation.ru.md) | Текст и картинка → 3D, стили, лимиты, цвета, анимации, ИИ-инструменты, генераторы |
+| [MeshGate Studio](apps/studio/README.ru.md) | Приложение: каждая панель и настройка |
+| [Уровни качества](docs/quality-tiers.ru.md) | Бюджеты и настройки рендера для PC и трёх мобильных уровней |
+| [Контракт ассета](docs/asset-contract.ru.md) | Правила, которым следует каждый файл, и что проверяет валидатор |
+| [Архитектура](docs/architecture.ru.md) | Почему glTF, как подключаются источники и движки |
+| [Роадмап](docs/roadmap.ru.md) | Что сделано и что дальше |
 
-## Целевые движки
+Для ИИ-агентов, пишущих код, [`SKILL.ru.md`](SKILL.ru.md) превращает конвейер в повторяемый навык (`python3 scripts/install_skill.py`).
 
-| Цель | Как | Статус |
-|---|---|---|
-| Web | `targets/web` — библиотека `meshgate-viewer.js` + демо-страница на Three.js | готово (v0.2) |
-| Unity 6 | `targets/unity` — UPM-пакет `com.meshgate.unity` поверх Unity glTFast, sample-проект, PlayMode-тесты; FBX как запасной путь для редактора | готово (v0.3) |
-| Godot 4 | `targets/godot` — аддон `meshgate` (рантайм-загрузка, анимации, коллизии, интерактив, орбита), демо-проект, headless-проверка | готово (v0.4) |
-| Unreal 5 | `targets/unreal` — content-only плагин: импорт через Interchange/старый FBX с пайплайном MeshGate, UCX-коллизии, демо-уровень, Humanoid→Mannequin, рецепт glTFRuntime | сверено с Python API UE 5.4/5.5/5.6; живого прогона ещё не было |
-
-## Структура
+<details>
+<summary>Устройство репозитория</summary>
 
 ```
-meshgate.py     CLI: doctor, export, character, validate, serve, samples, check, gen, studio
-SKILL.md        навык для агента (+ SKILL.ru.md), установка — scripts/install_skill.py
-core/           контракт ассета + валидаторы GLB и FBX (наш код, stdlib)
-sources/blender аддон Blender (проверка · исправление · экспорт, 3.5–5.x), набор для моделирования, headless-экспорт, генераторы демо
-sources/generate текст/картинка → ассет: промпт, адаптеры ИИ-CLI, ограждения, генераторы сеток, доводка, примеры
-apps/studio     MeshGate Studio: локальный сервер + интерфейс, оболочка Tauri для macOS и Windows
-sources/maya    пути из Maya (FBX→glTF / USD / плагин)
-samples/        демо-ассет: .blend, .glb, .draco.glb
-targets/web     библиотека-вьюер meshgate-viewer.js + демо-страница (Three.js, MIT)
-targets/unity   UPM-пакет поверх Unity glTFast + sample-проект с PlayMode-тестами
-targets/godot   аддон meshgate + демо-проект + headless-проверка
-targets/unreal  плагин MeshGate (Python-скрипты редактора) + рецепты
-docs/           контракт ассета, архитектура, видение, роадмап
-.github/        CI: валидация примеров по контракту (--strict)
+meshgate.py      командная строка: doctor, gen, studio, export, validate, serve, check, install-blender, …
+core/            контракт ассета, уровни качества, валидаторы GLB и FBX (только стандартная библиотека)
+sources/blender  аддон Blender, набор для моделирования, экспорт без интерфейса, генераторы демо
+sources/generate текст и картинка → модель: промпты, адаптеры ИИ-инструментов, защита, генераторы, refine, примеры
+sources/maya     второй источник, запланирован (v0.7)
+apps/studio      MeshGate Studio: локальный сервер и интерфейс, приложение Tauri для macOS и Windows
+targets/         веб-вьюер, пакет Unity, аддон Godot, плагин Unreal
+samples/         демо-ассеты и паки Коты-зомби и Generated
+docs/            документация (английский и русский)
+tests/           автоматические проверки; .github/ запускает их на Linux и Windows и собирает установщики
 ```
+
+</details>
 
 ## Статус
 
-v0.6.2. Генерация работает по описанию (код набора от любого ИИ-CLI) и по картинке (TripoSR локально или Meshy,
-Tripo, TRELLIS, Hunyuan3D), с проверенным файлом на каждый уровень качества; MeshGate Studio оборачивает её в
-приложение для macOS и Windows. Аддон Blender готов для всех
-(проверено на Blender 3.5, 4.2 LTS и 5.2 LTS). У Web, Unity и Godot общий API и автоматические проверки контракта;
-Unreal сверен с его Python API без установки движка. Сгенерированные ассеты проходят те же проверки движков, что и
-собранные вручную примеры. Дальше — живой прогон Unreal, Maya, публичные релизы; персонажи и перенос PBR-карт позже. Роадмап — `docs/roadmap.ru.md`.
+**v0.6.5.** Генерация по тексту и по картинке, три стиля, четыре уровня качества, MeshGate Studio для macOS, Windows
+и Linux (переносная версия). Проверено на Blender 3.5, 4.2 LTS и 5.2 LTS, Unity 6, Godot 4.7 и в веб-вьюере; при
+каждом изменении GitHub запускает проверки web, Blender, Godot и API Unreal на Linux и проверки web и Blender на
+Windows. Дальше: живой запуск Unreal, персонажи со скелетом, анимации по тексту (Kimodo), Maya, подписанные
+установщики — см. [роадмап](docs/roadmap.ru.md).
 
 ## Лицензия
 
 Проприетарная, все права защищены, см. [LICENSE](LICENSE) (текст на английском). Можно пользоваться официальными
-релизами и выпускать игры с плагинами; созданные ассеты принадлежат тебе. Копировать, распространять или менять код —
+релизами и выпускать игры с плагинами; созданные модели принадлежат тебе. Копировать, распространять или менять код —
 только с письменного разрешения. Сторонние компоненты сохраняют свои лицензии: [THIRD_PARTY_NOTICES.ru.md](THIRD_PARTY_NOTICES.ru.md).
-Версии, полученные раньше под MIT, остаются под MIT.

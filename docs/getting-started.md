@@ -4,7 +4,8 @@
 
 MeshGate takes a 3D asset — made in Blender, generated from a description or a picture, or downloaded — and delivers
 it to the web, Unity, Godot and Unreal as checked files, one per quality tier. This page gets you from a fresh clone to
-an asset in your engine.
+an asset in your engine. Every installation step for macOS, Windows and Linux, and where MeshGate keeps its files, is in
+[Installation](install.md).
 
 ## 1. What you need
 

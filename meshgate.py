@@ -58,7 +58,9 @@ def find_blender() -> str | None:
         "/Applications/Blender.app/Contents/MacOS/Blender",
         "~/Applications/Blender.app/Contents/MacOS/Blender",
         "/usr/bin/blender", "/snap/bin/blender", "/opt/blender*/blender",
+        "~/blender*/blender", "~/Applications/blender*/blender",   # Linux: the blender.org archive unpacked at home
         "C:/Program Files/Blender Foundation/Blender */blender.exe",
+        "C:/Program Files (x86)/Steam/steamapps/common/Blender/blender.exe",
     ])
 
 

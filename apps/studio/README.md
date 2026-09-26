@@ -67,7 +67,7 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
 **Security.** The server listens on the loopback address only. Every API call needs the session token, and the Host
 header must be the loopback address, so web pages and other machines cannot drive your AI CLI or Blender. The desktop
 shell passes the token through an environment variable, so it does not show in process lists. Generated code goes
-through the [guard rails](../../docs/generation.md#how-it-works) before it runs.
+through the [guard rails](../../docs/generation.md#kit-engine-code-written-by-an-ai) before it runs.
 
 **Offline viewer.** `scripts/vendor_three.py` copies the three.js modules the viewer uses into `ui/vendor`; the desktop
 build runs it. Without the copy, the server redirects those requests to the CDN.

@@ -145,7 +145,12 @@ fn start_server(app: AppHandle) {
     };
     let path = user_path();
     let Some(python) = find_python(&path) else {
-        return show_error(&app, "Python 3.9 or newer was not found.");
+        let how = if cfg!(windows) {
+            "Install Python from python.org (tick \"Add python.exe to PATH\") or the Microsoft Store, then open MeshGate Studio again."
+        } else {
+            "Install Python from python.org (or run xcode-select --install in Terminal), then open MeshGate Studio again."
+        };
+        return show_error(&app, &format!("Python 3.9 or newer was not found. {how}"));
     };
     let library = app
         .path()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Every relative link and image in the repository's Markdown points at a file that exists, and every English page has
-its Russian copy (and back). Pure stdlib.
+"""Every relative link and image in the repository's Markdown points at a file that exists, every #section link points
+at a heading that exists (GitHub's anchor rules), and every English page has its Russian copy (and back). Pure stdlib.
 
     python3 tests/check_links.py
 """
@@ -26,16 +26,32 @@ def pages():
         yield p
 
 
+def anchors(path: Path) -> set:
+    """GitHub's heading anchors: lower case, punctuation dropped (letters of any script kept), spaces to hyphens."""
+    out, seen = set(), {}
+    text = re.sub(r"```.*?```", "", path.read_text(encoding="utf-8"), flags=re.S)
+    for m in re.finditer(r"^#{1,6}\s+(.+?)\s*#*\s*$", text, flags=re.M):
+        heading = re.sub(r"`|\*\*|\[([^\]]*)\]\([^)]*\)", r"\1", m.group(1))
+        slug = re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+        n = seen.get(slug, 0)
+        seen[slug] = n + 1
+        out.add(slug if n == 0 else f"{slug}-{n}")
+    return out
+
+
 def main() -> int:
     bad, pairs = [], []
     for page in pages():
         text = re.sub(r"```.*?```", "", page.read_text(encoding="utf-8"), flags=re.S)
         for m in LINK.finditer(text):
-            target = m.group(1).split("#")[0]
-            if not target or re.match(r"^[a-z]+:", target):
+            target, _, anchor = m.group(1).partition("#")
+            if re.match(r"^[a-z]+:", target):
                 continue
-            if not (page.parent / target).resolve().exists():
+            dest = (page.parent / target).resolve() if target else page
+            if target and not dest.exists():
                 bad.append(f"{page.relative_to(ROOT)}: {m.group(1)}")
+            elif anchor and dest.suffix == ".md" and anchor not in anchors(dest):
+                bad.append(f"{page.relative_to(ROOT)}: {m.group(1)} (no such section)")
         name = page.name
         if name.endswith(".ru.md"):
             twin = page.with_name(name[:-6] + ".md")
