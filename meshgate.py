@@ -196,7 +196,8 @@ def cmd_doctor(_args) -> int:
         ("blender", blender, blender_version(blender) if blender else "needed for export, gen, samples"),
         ("unity", find_unity(), "check unity (6000.0+)"),
         ("godot", find_godot(), "check godot (4.4+)"),
-        ("node", shutil.which("node"), "optional, JS syntax check"),
+        ("unreal", find_unreal(), "UE 5.4–5.6, plugin in targets/unreal"),
+        ("node", shutil.which("node"), "npm installs the AI tools"),
     ]
     width = 16
     print("Tools:")
@@ -224,6 +225,14 @@ def cmd_doctor(_args) -> int:
         print(f"  {'✓' if info['ready'] else '·'} {('mesh: ' + pid).ljust(width)}{'ready' if info['ready'] else need}")
     for name, ok in images.items():
         print(f"  {'✓' if ok else '·'} {('image: ' + name).ljust(width)}{'ready' if ok else 'set ' + mesh.images.PROVIDERS[name]}")
+    import components
+    print("Optional components (installed separately):")
+    for cid, c in components.status().items():
+        if cid == "triposr":
+            continue
+        state = ("installed" + (f" — then {c['missing']}" if c["missing"] else "")) if c["installed"] else \
+            f"not installed — python3 meshgate.py gen --setup {cid} ({c['size']}, {c['gpu']})"
+        print(f"  {'✓' if c['installed'] and not c['missing'] else '·'} {cid.ljust(width)}{state}")
 
     tips = []
     if not blender:
