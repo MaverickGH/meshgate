@@ -50,6 +50,27 @@ Russian UI: Preferences → Interface → Translation → Русский (tick �
 
 **Engine extras** (sub-panel): **Add collision** creates a hidden convex-hull or box proxy for each selected mesh; **Make LODs** creates hidden decimated copies (50 % and 25 %). They never end up in the canonical GLB — only in the variant that needs them.
 
+## Kit panel: build from code, bring in free models
+
+Sidebar (N) → MeshGate → **Kit** puts the generation kit inside Blender:
+
+- **Build from code** — pick a `.py` file with `build(mg)` (written by you or an AI, or one of the
+  [examples](../generate/examples)), a tier and a look (palette, low-poly, realistic, clean PBR), press Build. Each build
+  gets its own scene, with the same guard rails as `meshgate.py gen`.
+- **Free models (CC0 / CC-BY)** — search Sketchfab or Objaverse's hand-labelled categories, then *Download and import*:
+  the model comes in at the 3D cursor, in its rest pose, at the size you set, with its author and licence stored on the
+  object (`meshgate_credit`). Licences that forbid commercial use or changes are never offered.
+- **Scripting** — the kit works on the open scene from the Python console or Text Editor, for you or an AI tool:
+
+```python
+from meshgate_blender import kit_ui        # installed from the zip, the package is "meshgate" (≤ 4.1) or "bl_ext.user_default.meshgate"
+mg = kit_ui.live_kit("pc")
+fur = mg.color("fur", "#7b8a6c", material="fur")
+body = mg.blob([{"ball": (0, 0, 0.3), "r": 0.2}, {"ball": (0, -0.18, 0.42), "r": 0.12}], fur)
+mg.sculpt(body, "crease", path=[(-0.05, -0.28, 0.45), (0.05, -0.28, 0.45)], radius=0.01, amount=0.005)
+kit_ui.live_palette(mg)
+```
+
 ## Headless (same code)
 
 ```bash

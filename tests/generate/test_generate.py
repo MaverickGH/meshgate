@@ -94,6 +94,12 @@ step("prompt carries the description, size and tiers", "a wooden crate" in promp
 step("prompt lists every public kit method", all(f"mg.{m}(" in prompt for m in (
     "part", "lathe", "tube", "extrude", "mirror_x", "copy", "join", "pivot", "attach", "group", "animate", "color",
     "seg", "at_least", "blob", "skin", "cut", "bend", "twist", "sculpt"))) and "mg._" not in prompt
+step("recipes picked by the description (en and ru)",
+     [r["name"] for r in generate.recipes_for("a zombie cat standing like a person")] == ["creature"]
+     and [r["name"] for r in generate.recipes_for("старый дуб с корнями")] == ["plant"]
+     and generate.recipes_for("plain thing") == [])
+_cat = generate.build_prompt("a zombie cat", name="zc", style="realistic", size=1.0, tiers=["pc"])
+step("creature prompt carries the recipe and the sculpted example", "How an artist builds this" in _cat and "mg.blob(" in _cat.split("# Example")[1])
 step("prompt has no unfilled placeholders",   # dict literals in the kit docs are fine; {name} fields are not
      not re.search(r"\{[a-z_]+\}", prompt.split("# Example")[0].replace("{prompt_file}", "")))
 fb = generate.feedback_block("def build(mg):\n    pass\n", ["tier pc: boom"], ["detail: more"])

@@ -18,6 +18,7 @@ from . import compat
 
 MAX_PX = 2048
 MARGIN = 2   # bake margin in pixels
+PAINT_ATTR = "mg_paint"   # Kit.paint's soft colour layer (removed after the bake, never exported)
 
 
 def texture_plan(budget: dict, tier: str, glow: bool, want: int | None = None,
@@ -214,6 +215,12 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     def shade(c, fac):
         return mix(1.0, c, fac, "MULTIPLY")
 
+    # soft paint (Kit.paint): a colour per vertex whose alpha fades out past each painted region, so patch edges
+    # blend instead of following the faces
+    painted = nodes.new("ShaderNodeAttribute")
+    painted.attribute_name = PAINT_ATTR
+    base_colour = mix(painted.outputs["Alpha"], base.outputs["Color"], painted.outputs["Color"])
+
     if clean:   # exact colours; ambient occlusion goes to the ORM red, the glTF occlusion channel
         ao = nodes.new("ShaderNodeAmbientOcclusion")
         ao.samples = 16
@@ -223,7 +230,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
         links.new(rough, orm_out.inputs[1])
         links.new(metal, orm_out.inputs[2])
         emit, bsdf, out = nodes.new("ShaderNodeEmission"), nodes.new("ShaderNodeBsdfPrincipled"), nodes.new("ShaderNodeOutputMaterial")
-        outs = {"colour": base.outputs["Color"], "orm": orm_out.outputs[0]}
+        outs = {"colour": base_colour, "orm": orm_out.outputs[0]}
         if "emissive" in pal:
             outs["emissive"] = emi.outputs["Color"]
         return m, emit, bsdf, out, outs
@@ -232,7 +239,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.78, 1.14),
                 maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.88, 1.08))
     var = mix(math_("MULTIPLY", metal, 0.7), var, 1.0)
-    col = mix(1.0, base.outputs["Color"], var, "MULTIPLY")
+    col = mix(1.0, base_colour, var, "MULTIPLY")
     ao = nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 16
     ao.inputs["Distance"].default_value = max(size * 0.08, 0.02)
@@ -256,6 +263,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     weave = math_("MULTIPLY", wave(obj, 80.0, "X", 0.0, 0), wave(obj, 80.0, "Z", 0.0, 0))
     clumps, small = noise_at(obj, 3.0, 6), noise_at(obj, 28.0, 4)
     pores = maprange(voronoi(70.0, "F1"), 0.0, 0.12, 1.0, 0.0)
+    strands, tufts = noise_at(mapped((1, 1, .07)), 260, 3), noise_at(obj, 18.0, 5)   # hair: fine streaks down the body
     looks = {   # material index: (colour, relief, extra roughness)
         1: (shade(col, maprange(grain, 0, 1, .7, 1.12)), math_("MULTIPLY", grain, .7), 0.0),                      # wood
         2: (shade(col, maprange(fibre, .3, .7, .9, 1.05)),
@@ -273,6 +281,8 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
             math_("ADD", math_("MULTIPLY", clumps, .8), math_("MULTIPLY", small, .4)), .1),                        # ground
         8: (mix(math_("MULTIPLY", crevice, .5), mix(math_("MULTIPLY", pores, .35), col, (.35, .3, .22, 1.0)), (.55, .45, .28, 1.0)),
             math_("MULTIPLY", pores, -.5), 0.0),                                                                     # bone
+        9: (shade(shade(col, maprange(strands, .3, .7, .78, 1.12)), maprange(tufts, .3, .7, .85, 1.1)),
+            math_("ADD", math_("MULTIPLY", strands, .9), math_("MULTIPLY", tufts, .5)), .08),                     # fur
     }
     relief, rough_extra = None, None
     for k, (c, h, r) in looks.items():
@@ -401,6 +411,11 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[s
         for layer in o.data.uv_layers:
             layer.active_render = layer.name == "bake"
 
+    if any(o.data.color_attributes.get(PAINT_ATTR) for o in meshes if hasattr(o.data, "color_attributes")):
+        for o in meshes:   # pieces without soft paint get a clear layer (a missing one would read as opaque)
+            if not o.data.color_attributes.get(PAINT_ATTR):
+                layer = o.data.color_attributes.new(PAINT_ATTR, "FLOAT_COLOR", "POINT")
+                layer.data.foreach_set("color", [0.0] * (4 * len(layer.data)))
     bake_mat, emit, bsdf, out, outs = _bake_material(pal, size, clean)
     for o in meshes + high:
         for slot in o.material_slots:
@@ -487,6 +502,9 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[s
         uvs["bake"].name = "UVMap"
         uvs.active = uvs["UVMap"]
         uvs["UVMap"].active_render = True
+        layer = o.data.color_attributes.get(PAINT_ATTR) if hasattr(o.data, "color_attributes") else None
+        if layer is not None:
+            o.data.color_attributes.remove(layer)
     bpy.data.materials.remove(bake_mat)
     parts = [f"colour {colour_px} px"] + ([f"normal {normal_px} px" + (" from the PC model" if high else "")]
                                           if normal_px else []) + ["occlusion"]

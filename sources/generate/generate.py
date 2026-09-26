@@ -44,6 +44,7 @@ MODELING = ROOT / "sources" / "blender" / "meshgate_blender" / "modeling.py"
 PROFILES = ROOT / "core" / "profiles.json"
 PROMPT = HERE / "prompts" / "model.md"
 EXAMPLE = HERE / "examples" / "treasure_chest.py"
+RECIPES = HERE / "prompts" / "recipes"   # artist know-how per kind of object, picked by the description
 RUNNER = HERE / "run_generated.py"
 REFINE = HERE / "refine.py"
 ORDER = ["mobile-low", "mobile-mid", "mobile-high", "pc"]
@@ -249,15 +250,37 @@ REFERENCE_SHEET = ("\n# Reference: turnaround sheet\n\n`{file}` in the working f
                    "description.\n")
 
 
+def recipes_for(text: str, limit: int = 2) -> list[dict]:
+    """The recipes (prompts/recipes/*.md) whose keywords appear in the description or name, best match first."""
+    words = set(re.findall(r"[a-zа-яё]+", text.lower()))
+    low = text.lower()
+    found = []
+    for f in sorted(RECIPES.glob("*.md")):
+        raw = f.read_text(encoding="utf-8")
+        head, _, body = raw.partition("\n---\n")
+        meta = dict(line.split(":", 1) for line in head.strip("-\n").splitlines() if ":" in line)
+        keys = [k.strip().lower() for k in meta.get("keywords", "").split(",") if k.strip()]
+        score = sum(1 for k in keys if (k in words if " " not in k else k in low))
+        if score:
+            found.append({"name": f.stem, "title": meta.get("title", f.stem).strip(), "example": meta.get("example", "").strip(),
+                          "body": body.strip(), "score": score})
+    return sorted(found, key=lambda r: -r["score"])[:limit]
+
+
 def build_prompt(description: str, *, name: str, style: str, size: float, tiers: list[str], feedback: str = "",
                  reference: str | None = None, caps: dict | None = None, reference_kind: str = "picture",
                  finish: str = "none", anims: list | None = None) -> str:
     profiles = json.loads(PROFILES.read_text(encoding="utf-8"))
-    example = EXAMPLE.read_text(encoding="utf-8").strip()
+    picked = recipes_for(f"{description} {name}")
+    ex_file = next((HERE / "examples" / r["example"] for r in picked if r["example"] and (HERE / "examples" / r["example"]).is_file()),
+                   EXAMPLE)
+    example = ex_file.read_text(encoding="utf-8").strip()
+    recipes = "".join(f"\n## {r['title']}\n\n{r['body']}\n" for r in picked)
+    recipes = f"\n# How an artist builds this\n{recipes}" if recipes else ""
     return PROMPT.read_text(encoding="utf-8").format(
         description=description.strip(), name=name, style=STYLES.get(style, style) + FINISH_NOTES.get(finish, ""),
         size=f"about {size:g} m in its largest dimension" if size else "use the real-world size of the object",
-        tiers=tiers_table(profiles, tiers, caps), built=", ".join(tiers), api=api_reference(), example=example,
+        tiers=tiers_table(profiles, tiers, caps), built=", ".join(tiers), api=api_reference(), example=example, recipes=recipes,
         feedback=feedback) + ((REFERENCE_SHEET.format(file=reference) if reference_kind == "sheet"
                                 else REFERENCE.format(file=reference, how=" in the working folder")) if reference else "") \
         + (ANIM_BLOCK.format(rows="\n".join(f"| `{n}` | {w.replace('|', '/')} |" for n, w in anims)) if anims else "")
@@ -686,6 +709,13 @@ def main(argv: list[str] | None = None) -> int:
     if credit:
         summary["credit"] = credit
         say(f"  credit: {credit['line']}", stage="credit")
+    elif report.get("credits"):   # kit code that reworked library models (mg.model)
+        import library
+        lines = [library.credit_line(c) for c in report["credits"]]
+        (out_dir / "CREDITS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        summary["credit"] = [{**c, "line": ln} for c, ln in zip(report["credits"], lines)]
+        for ln in lines:
+            say(f"  credit: {ln}", stage="credit")
     (out_dir / "gen.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     if report.get("ok"):
         files = ", ".join(report.get("files", []))

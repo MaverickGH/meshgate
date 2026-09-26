@@ -1,7 +1,6 @@
 """Zombie cat character standing upright on two legs like a person, about 1 m tall: grey-green fur, a stitched scar
 across its head, a torn ear, glowing green eyes, arms stretched forward like a zombie. Sculpted with the kit's clay
-(one blob body), painted in regions, creased and stitched; after the Zombie Cats concept art (docs/img).
-Stylized: the same sculpt with a smooth, clean coat."""
+(one blob body), painted in regions, creased and stitched; after the Zombie Cats concept art (docs/img)."""
 import math
 
 
@@ -53,6 +52,7 @@ def build(mg):
     mg.paint(body, flesh, at=(0.15, 0.03, 0.47), radius=0.045, rough=0.5, seed=6)
 
     # ---- sculpted detail: a mangy coat, the wound sunk in, a scar across the head, a mouth
+    mg.sculpt(body, "noise", amount=0.0035, scale=38)
     mg.sculpt(body, "inflate", at=(0.155, 0.03, 0.47), radius=0.05, amount=-0.012)
     scar = [(-0.13, -0.1, 0.87), (-0.05, -0.12, 0.915), (0.04, -0.1, 0.93), (0.12, -0.06, 0.9)]
     mg.sculpt(body, "crease", path=scar, radius=0.012, amount=0.008)

@@ -54,7 +54,7 @@ Tiers built for this asset: {built}.
 8. Only `mg`, `math`, `random` (prefer `mg.rng`, seeded) and `mathutils` exist. No other imports, no file or network
    access, no `bpy`, no names or attributes starting with `_`, no classes. Keep the code under 300 lines.
 9. Reply with exactly one ```python code block that defines `def build(mg):` and nothing else outside the block.
-
+{recipes}
 # The modeling kit `mg`
 
 {api}

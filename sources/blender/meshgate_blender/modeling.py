@@ -38,12 +38,13 @@ DETAILS = {
 # finish="faceted" (low-poly style): fewer segments, no subdivision, one-step bevels, flat shading everywhere
 FACETED_SEG = {"mobile-low": 0.4, "mobile-mid": 0.5, "mobile-high": 0.6, "pc": 0.75}
 # What a colour is made of. The realistic finish (finish.py) draws each one: wood grain, corrugated cardboard, cracked
-# and mossy stone, brushed and rusting metal, woven fabric, clumpy ground, porous bone. Stored in the palette's ORM red.
-MATERIALS = ["plain", "wood", "cardboard", "stone", "metal", "rust", "fabric", "ground", "bone"]
+# and mossy stone, brushed and rusting metal, woven fabric, clumpy ground, porous bone, streaky fur. Stored in the palette's ORM red.
+MATERIALS = ["plain", "wood", "cardboard", "stone", "metal", "rust", "fabric", "ground", "bone", "fur"]
 _GUESS = [("rust", r"rust"), ("cardboard", r"card|carton|paper"), ("wood", r"wood|plank|bark|trunk|branch|_wd|board"),
           ("stone", r"stone|rock|concrete|tomb|brick|marble|asphalt|cement"),
           ("metal", r"steel|iron|metal|tin|brass|gold|copper|chrome|nail|bolt|rivet|silver"),
-          ("fabric", r"rope|string|yarn|carpet|canvas|sack|cloth|fabric|sisal|felt|fur|wool"),
+          ("fur", r"fur|pelt|coat|mane|hair|wool|fleece"),
+          ("fabric", r"rope|string|yarn|carpet|canvas|sack|cloth|fabric|sisal|felt"),
           ("ground", r"grass|dirt|soil|mud|ground|sand"), ("bone", r"bone|skull|tooth|teeth")]
 CELLS = 8          # palette grid: 8×8 = 64 colours
 PALETTE_PX = 256   # palette texture size (fits every tier, 32 px per colour)
@@ -59,6 +60,14 @@ def _seg_distance(p, a, b) -> float:
     ab = b - a
     t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
     return (p - (a + ab * t)).length
+
+
+def _paint_layer(me):
+    """An empty soft-paint layer (Blender fills new colour layers with opaque white; this one starts clear)."""
+    from .finish import PAINT_ATTR
+    layer = me.color_attributes.new(PAINT_ATTR, "FLOAT_COLOR", "POINT")
+    layer.data.foreach_set("color", [0.0] * (4 * len(layer.data)))
+    return layer
 
 
 def material_code(material: str) -> float:
@@ -108,6 +117,7 @@ class Kit:
         # "faceted" is the low-poly look, enforced here rather than hoped for from the code: flat shading, few
         # segments, no subdivision. ("weathered" is a bake after the build; see finish.py.)
         self._faceted = finish == "faceted"
+        self._soft_paint = finish in ("weathered", "clean")   # baked finishes blend paint edges (finish.py)
         if self._faceted:
             self._detail = {"seg": FACETED_SEG[tier], "subdiv": -9, "bevel": 1}
         self._colors: dict[str, dict] = {}
@@ -340,6 +350,14 @@ class Kit:
     def join(self, name: str, parts):
         """Merge pieces into one mesh object named `name`, origin at the world origin. One mesh per rigid part:
         join everything that never moves separately (a whole prop is usually one join)."""
+        from .finish import PAINT_ATTR
+        meshes_ = [p for p in parts if getattr(p, "type", None) == "MESH"]
+        if any(p.data.color_attributes.get(PAINT_ATTR) for p in meshes_):
+            for p in meshes_:
+                if not p.data.color_attributes.get(PAINT_ATTR):
+                    if p.data.users > 1:
+                        p.data = p.data.copy()
+                    _paint_layer(p.data)
         parts = [p for p in parts if p is not None]
         if not parts:
             raise ModelError(f"join('{name}') got no parts")
@@ -407,6 +425,189 @@ class Kit:
         bpy.context.scene.frame_end = max(bpy.context.scene.frame_end, self._frame_end)
         return obj
 
+    # ------------------------------------------------------------------ ready-made models and painting
+
+    def model(self, uid: str, color, *, size: float, loc=(0, 0, 0), turn: float = 0.0, axis: str = "longest",
+              smooth: bool = True, keep=None, drop=None, detail: float = 1.0):
+        """A free model from the MeshGate library as one piece to rework — take a good base and make it yours: repaint
+        it (paint), sculpt it (sculpt), cut it, add parts. uid = a model id from `meshgate.py library search`
+        (downloaded first with `meshgate.py library get <uid>`); its author and licence are credited in the result.
+        size = meters along `axis` ("longest", "height", "length" = Y, "width" = X); turn = degrees about Z so its
+        front faces -Y. The model stands on z = 0 centred on loc (x, y), in its rest pose, painted in `color` (its own
+        textures are dropped: repaint regions with paint). Take only part of it — a head, a paw, a wing — with
+        keep = ((x1, y1, z1), (x2, y2, z2)), a box in the placed model's meters: faces outside it go; drop = a box whose
+        faces go. Sink the cut edge into another piece of yours (the open neck of a head into a body). Dense models are
+        thinned to the tier (about 2k triangles on mobile-low up to 60k on pc; detail multiplies it). Returns the piece."""
+        import json as _json
+        base = os.environ.get("MESHGATE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".meshgate")
+        uid = str(uid).strip()
+        folder = os.path.join(base, "library", uid)
+        try:
+            credit = _json.load(open(os.path.join(folder, "credit.json"), encoding="utf-8"))
+        except (OSError, ValueError):
+            raise ModelError(f"model '{uid}' is not in the library — run: meshgate.py library get {uid}") from None
+        path = os.path.join(folder, credit["file"])
+        before = set(bpy.data.objects)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".glb", ".gltf"):
+            bpy.ops.import_scene.gltf(filepath=path)
+        elif ext == ".fbx":
+            bpy.ops.import_scene.fbx(filepath=path)
+        else:
+            raise ModelError(f"model '{uid}': {ext} files are not supported here")
+        new = [o for o in bpy.data.objects if o not in before]
+        for arm in [o for o in new if o.type == "ARMATURE"]:
+            arm.data.pose_position = "REST"   # the modelled shape, not a frame of a clip
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        pieces = []
+        for o in [o for o in new if o.type == "MESH"]:
+            me = bpy.data.meshes.new_from_object(o.evaluated_get(dg))   # modifiers and rest pose applied
+            me.transform(o.matrix_world)
+            pieces.append(me)
+        for o in new:
+            bpy.data.objects.remove(o, do_unlink=True)
+        if not pieces:
+            raise ModelError(f"model '{uid}' has no mesh")
+        import bmesh
+        bm = bmesh.new()
+        for me in pieces:
+            bm.from_mesh(me)
+            bpy.data.meshes.remove(me)
+        me = bpy.data.meshes.new("model")
+        bm.to_mesh(me)
+        bm.free()
+        for layer in list(me.uv_layers):
+            me.uv_layers.remove(layer)
+        if turn:
+            me.transform(Matrix.Rotation(math.radians(turn), 4, "Z"))
+        xs, ys, zs = zip(*[v.co[:] for v in me.vertices])
+        dims = {"width": max(xs) - min(xs), "length": max(ys) - min(ys), "height": max(zs) - min(zs)}
+        ref = max(dims.values()) if axis == "longest" else dims.get(axis)
+        if not ref:
+            raise ModelError("axis must be 'longest', 'height', 'length' or 'width'")
+        k = float(size) / ref
+        centre = Vector(((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2, min(zs)))
+        me.transform(Matrix.Translation(Vector(loc)) @ Matrix.Scale(k, 4) @ Matrix.Translation(-centre))
+        if keep is not None or drop is not None:
+            def inside(c, box):
+                (a, b) = (Vector(box[0]), Vector(box[1]))
+                return all(min(a[i], b[i]) <= c[i] <= max(a[i], b[i]) for i in range(3))
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            gone = [f for f in bm.faces if (keep is not None and not inside(f.calc_center_median(), keep))
+                    or (drop is not None and inside(f.calc_center_median(), drop))]
+            bmesh.ops.delete(bm, geom=gone, context="FACES")
+            bm.to_mesh(me)
+            bm.free()
+            if not me.polygons:
+                raise ModelError(f"model '{uid}': keep / drop left nothing — the boxes are in the placed model's meters")
+        obj = bpy.data.objects.new(f"model_{uid[:6]}", me)
+        bpy.context.collection.objects.link(obj)
+        tris = sum(len(p.vertices) - 2 for p in me.polygons)
+        target = {0: 2000, 1: 6000, 2: 20000, 3: 60000}[self.level] * max(0.1, float(detail)) * (0.5 if self._faceted else 1.0)
+        if tris > target:   # a scan or a hero model: thin it to what the tier can carry
+            dec = obj.modifiers.new("tier", "DECIMATE")
+            dec.ratio = max(0.005, target / tris)
+            self._apply_modifiers(obj)
+        if smooth and not self._faceted and len(me.polygons) < 20000 and self._detail["subdiv"] > 0:
+            sub = obj.modifiers.new("smooth", "SUBSURF")
+            sub.levels = sub.render_levels = 1
+            self._apply_modifiers(obj)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, smooth)
+        self._credits = getattr(self, "_credits", [])
+        if all(c.get("uid") != uid for c in self._credits):
+            self._credits.append({k_: credit.get(k_) for k_ in ("uid", "name", "author", "author_url", "url", "license",
+                                                                 "license_name", "license_url")})
+        return obj
+
+    def paint(self, obj, color, *, at=None, radius: float = 0.1, facing=None, below: float | None = None,
+              above: float | None = None, rough: float = 0.0, seed: int = 0):
+        """Paint a region of a piece in another palette colour, like a texture brush — a pale belly, dark stripes and
+        patches, a pink nose, exposed flesh, wounds, glowing eyes, moss on the top of a stone, rust at the bottom.
+        Faces are painted when all given conditions hold: within `radius` of `at` (x, y, z), facing a direction
+        (facing = (x, y, z): faces whose normal points that way, e.g. (0, 0, -1) = the underside), below / above a
+        height z. rough = 0…1 frays the edge of the region with noise (natural patches). World meters. Returns obj."""
+        from mathutils import noise as mnoise
+        self._bake(obj)
+        name = self._color_name(color)
+        u, v = self._cell_uv(name)
+        me = obj.data
+        if not me.uv_layers:
+            me.uv_layers.new(name="UVMap")
+        uv = me.uv_layers.active.data
+        off = obj.location
+        centre = Vector(at) if at is not None else None
+        face = Vector(facing).normalized() if facing is not None else None
+        jitter = Vector((seed * 7.3, seed * 1.9, seed * 4.1))
+        painted = 0
+        if self._soft_paint and not self._vertex:
+            # baked finish: a soft colour layer carries the look; the palette cell (roughness, material) switches only
+            # deep inside the region, where the layer already covers fully, so no face edge shows
+            weights = self._soft_layer(obj, color, centre, radius, face, below, above, rough, jitter)
+            for p in me.polygons:
+                ws = [weights.get(i, 0.0) for i in p.vertices]
+                if max(ws) > 0.0:
+                    painted += 1
+                if min(ws) >= 0.85:
+                    for li in p.loop_indices:
+                        uv[li].uv = (u, v)
+            if not painted and self.level == 3:   # a small region may fall between the faces of a coarse tier
+                raise ModelError(f"paint({color!r}) touched no faces — check at / radius / facing / heights")
+            return obj
+        for p in me.polygons:
+            c = p.center + off
+            wobble = 1.0 + rough * 0.8 * mnoise.noise(c * (1.8 / max(radius, 0.01)) + jitter) if rough else 1.0
+            if centre is not None and (c - centre).length > radius * wobble:
+                continue
+            if face is not None and p.normal.dot(face) < 0.35 - 0.3 * rough * mnoise.noise(c * 5 + jitter):
+                continue
+            if below is not None and c.z > below + rough * 0.03 * mnoise.noise(c * 6 + jitter):
+                continue
+            if above is not None and c.z < above + rough * 0.03 * mnoise.noise(c * 6 + jitter):
+                continue
+            for li in p.loop_indices:
+                uv[li].uv = (u, v)
+            painted += 1
+        if not painted and self.level == 3:
+            raise ModelError(f"paint({color!r}) touched no faces — check at / radius / facing / heights")
+        return obj
+
+    def _soft_layer(self, obj, color, centre, radius, face, below, above, rough, jitter):
+        """The same region as a per-vertex colour whose alpha is 1 inside and fades out over a band past the edge;
+        the bake mixes it over the palette so painted patches get soft edges. Only for baked finishes."""
+        from mathutils import noise as mnoise
+        from .finish import PAINT_ATTR
+        me = obj.data
+        layer = me.color_attributes.get(PAINT_ATTR) or _paint_layer(me)
+        rgb = [_linear(x) for x in self._colors[self._color_name(color)]["rgb"]]
+        band = max(radius * 0.25, 0.012) if centre is not None else 0.02
+        off = obj.location
+        data = layer.data
+        weights = {}
+        for vx in me.vertices:
+            c = vx.co + off
+            w = 1.0
+            if centre is not None:
+                edge = radius * (1.0 + rough * 0.8 * mnoise.noise(c * (1.8 / max(radius, 0.01)) + jitter) if rough else 1.0)
+                w = min(w, max(0.0, min(1.0, (edge + band - (c - centre).length) / (2 * band))))
+            if face is not None:
+                w = min(w, max(0.0, min(1.0, (vx.normal.dot(face) - 0.15) / 0.4)))
+            if below is not None:
+                w = min(w, max(0.0, min(1.0, (below + band - c.z) / (2 * band))))
+            if above is not None:
+                w = min(w, max(0.0, min(1.0, (c.z - above + band) / (2 * band))))
+            if w <= 0.0:
+                continue
+            old = data[vx.index].color
+            a = w * w * (3 - 2 * w)
+            weights[vx.index] = a
+            keep = old[3] * (1 - a)
+            total = keep + a
+            data[vx.index].color = [(old[i] * keep + rgb[i] * a) / total for i in range(3)] + [min(1.0, total)]
+        return weights
+
     # ------------------------------------------------------------------ sculpting: organic shapes
 
     def blob(self, shapes, color, *, blend: float = 1.0, detail: float = 1.0, smooth: bool = True):
@@ -456,7 +657,10 @@ class Kit:
             el.use_negative = bool(sh.get("cut"))
         extent = max((max(p[i] for p in pts) - min(p[i] for p in pts)) for i in range(3))
         cells = {0: 16, 1: 26, 2: 38, 3: 56}[self.level] * max(0.25, float(detail)) * (0.6 if self._faceted else 1.0)
-        mb.resolution = mb.render_resolution = max(extent / cells, 0.002)
+        wanted = max(extent / cells, 0.002)
+        thinnest = min((float(sh["r"]) if "r" in sh else min(float(v) for v in sh["size"])) for sh in shapes if not sh.get("cut"))
+        res = max(min(wanted, thinnest * 0.6), 0.002)   # a grid coarser than a paw or an arm would lose it
+        mb.resolution = mb.render_resolution = res
         obj = bpy.data.objects.new(f"mgblob{self._blobs}", mb)
         bpy.context.collection.objects.link(obj)
         bpy.context.view_layer.update()
@@ -468,6 +672,10 @@ class Kit:
             raise ModelError("blob() made no surface — shapes too small, or all of them cut")
         out = bpy.data.objects.new(f"blob{self._blobs}", me)
         bpy.context.collection.objects.link(out)
+        if res < wanted * 0.8:   # built finer to keep thin parts: thin it back to the tier's density
+            dec = out.modifiers.new("tier", "DECIMATE")
+            dec.ratio = max(0.02, (res / wanted) ** 2)
+            self._apply_modifiers(out)
         self._fix_normals(out)
         self._finish_piece(out, color, smooth)
         return out
@@ -493,8 +701,9 @@ class Kit:
         for i, v in enumerate(me.skin_vertices[0].data):
             v.radius = (rs[i], rs[i])
             v.use_root = i == 0
-        sub = obj.modifiers.new("smooth", "SUBSURF")
-        sub.levels = sub.render_levels = 0 if self._faceted else {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
+        if not self._faceted:
+            sub = obj.modifiers.new("smooth", "SUBSURF")
+            sub.levels = sub.render_levels = {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
         self._apply_modifiers(obj)
         self._fix_normals(obj)
         self._finish_piece(obj, color, smooth)
@@ -542,7 +751,14 @@ class Kit:
         import bmesh
         from mathutils import noise as mnoise
         self._bake(obj)
-        self._refine(obj, radius / 3 if brush != "noise" or at is not None else 0.3 / max(scale, 1e-3))
+        if brush == "crease" and path:
+            line_ = [Vector(p) for p in path]
+            near = lambda c: min(_seg_distance(c, a, b) for a, b in zip(line_, line_[1:])) < radius * 2   # noqa: E731
+        elif at is not None:
+            near = lambda c: (c - Vector(at)).length < radius * 1.5   # noqa: E731
+        else:
+            near = None
+        self._refine(obj, radius / 3 if brush != "noise" or at is not None else 0.3 / max(scale, 1e-3), near=near)
         me = obj.data
         bm = bmesh.new()
         bm.from_mesh(me)
@@ -607,13 +823,20 @@ class Kit:
     def _vert_cap(self) -> int:
         return {0: 1500, 1: 5000, 2: 15000, 3: 50000}[self.level]
 
-    def _refine(self, obj, max_edge: float, rounds: int = 5):
-        """Split edges longer than max_edge (sculpt needs vertices to move), within the tier's vertex cap."""
+    def _refine(self, obj, max_edge: float, rounds: int = 5, near=None):
+        """Split edges longer than max_edge (sculpt needs vertices to move), within the tier's vertex cap and never
+        finer than the tier's detail: a phone model gets a softer brush, not a denser mesh."""
         import bmesh
+        xs, ys, zs = zip(*[v.co[:] for v in obj.data.vertices]) if obj.data.vertices else ((0,), (0,), (0,))
+        extent = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1e-3)
+        cells = {0: 40, 1: 70, 2: 120, 3: 220}[self.level] * (0.5 if self._faceted else 1.0)
+        max_edge = max(max_edge, extent / cells)
         bm = bmesh.new()
         bm.from_mesh(obj.data)
+        off = obj.location
         for _ in range(rounds):
-            long = [e for e in bm.edges if e.calc_length() > max_edge]
+            long = [e for e in bm.edges if e.calc_length() > max_edge
+                    and (near is None or near((e.verts[0].co + e.verts[1].co) / 2 + off))]
             if not long or len(bm.verts) + len(long) > self._vert_cap():
                 break
             bmesh.ops.subdivide_edges(bm, edges=long, cuts=1, use_grid_fill=True)
@@ -878,8 +1101,13 @@ class Kit:
     @staticmethod
     def _apply_modifiers(obj):
         for m in list(obj.modifiers):
-            with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
-                bpy.ops.object.modifier_apply(modifier=m.name)
+            try:
+                with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+                    bpy.ops.object.modifier_apply(modifier=m.name)
+            except RuntimeError as exc:   # a modifier with nothing to do (e.g. 0 subdivision levels) is "disabled"
+                if "disabled" not in str(exc):
+                    raise
+                obj.modifiers.remove(m)
 
     def _finish_piece(self, obj, color, smooth: bool, flat_faces=()):
         me = obj.data

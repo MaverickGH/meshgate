@@ -106,7 +106,11 @@ def merged_source(turn_deg: float):
     meshes = [o for o in scene.objects if o.type == "MESH"]
     if not meshes:
         raise ValueError("the file has no mesh")
-    for o in meshes:   # keep the evaluated shape (armature pose, modifiers), drop the rig
+    # a rigged model stands in its rest pose (the modelled shape), not in whatever frame of a clip the file opens on
+    for arm in [o for o in scene.objects if o.type == "ARMATURE"]:
+        arm.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+    for o in meshes:   # keep the evaluated shape (rest pose, modifiers), drop the rig
         mw = o.matrix_world.copy()
         o.parent = None
         o.matrix_world = mw

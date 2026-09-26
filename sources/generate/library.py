@@ -32,7 +32,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import keys  # noqa: E402
-from mesh import net  # noqa: E402
+try:
+    from mesh import net  # noqa: E402
+except ImportError:   # inside the Blender add-on the helpers sit next to this file
+    import net  # noqa: E402
 
 API = "https://api.sketchfab.com/v3"
 OBJAVERSE = "https://huggingface.co/datasets/allenai/objaverse/resolve/main"
@@ -115,19 +118,74 @@ def search(query: str, *, licenses=DEFAULT_LICENSES, count: int = 12, max_faces:
         groups.append([summary(m) for m in _get("/search", params).get("results", [])])
     found = [g[i] for i in range(max(map(len, groups), default=0)) for g in groups if i < len(g)]   # licences take turns
     found = [f for f in found if f["license"] in licenses and (not max_faces or (f["faces"] or 0) <= max_faces)]
+    paths = _objaverse_paths(fetch=False)
+    if paths is not None:   # once the mirror's index is here: say which models download without a token, those first
+        for f in found:
+            f["mirror"] = f["uid"] in paths
+        if not _token():
+            found.sort(key=lambda f: not f["mirror"])
     return found[:count]
 
 
-def _objaverse_paths() -> dict:
-    """uid → path inside the Objaverse mirror (the 20 MB index is downloaded once and kept)."""
+def _token() -> str | None:
+    return os.environ.get("SKETCHFAB_API_TOKEN") or keys.load().get("SKETCHFAB_API_TOKEN")
+
+
+_PATHS: dict | None = None
+
+
+def _objaverse_paths(fetch: bool = True) -> dict | None:
+    """uid → path inside the Objaverse mirror (the 20 MB index is downloaded once and kept). fetch=False: None when
+    the index is not downloaded yet."""
+    global _PATHS
+    if _PATHS is not None:
+        return _PATHS
     cache = folder() / "objaverse-object-paths.json.gz"
     if not cache.exists() or cache.stat().st_size < 1000:
+        if not fetch:
+            return None
         cache.parent.mkdir(parents=True, exist_ok=True)
         print("  downloading the Objaverse index (20 MB, once)…", flush=True)
         net.download(f"{OBJAVERSE}/object-paths.json.gz", cache.with_suffix(".part"), timeout=600)
         os.replace(cache.with_suffix(".part"), cache)
     with gzip.open(cache, "rt", encoding="utf-8") as f:
+        _PATHS = json.load(f)
+    return _PATHS
+
+
+def lvis_categories() -> dict:
+    """Objaverse's LVIS labels: category → uids of ~47k mirror models sorted into 1,156 categories ("cat", "skull",
+    "pumpkin", …); the 1 MB file is downloaded once. The labels were made by people looking at each model."""
+    cache = folder() / "objaverse-lvis-annotations.json.gz"
+    if not cache.exists() or cache.stat().st_size < 1000:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        net.download(f"{OBJAVERSE}/lvis-annotations.json.gz", cache.with_suffix(".part"), timeout=300)
+        os.replace(cache.with_suffix(".part"), cache)
+    with gzip.open(cache, "rt", encoding="utf-8") as f:
         return json.load(f)
+
+
+def by_category(category: str, *, licenses=DEFAULT_LICENSES, count: int = 12, max_faces: int | None = None,
+                log=None) -> list[dict]:
+    """Mirror models an LVIS category holds (free to download), with their licence looked up on Sketchfab."""
+    cats = lvis_categories()
+    key = category.strip().lower().replace(" ", "_")
+    names = [key] if key in cats else sorted(c for c in cats if key in c.lower())
+    if not names:
+        raise LibraryError(f"no Objaverse category matches '{category}' — try a plain noun (cat, skull, pumpkin)")
+    uids = [u for n in names for u in cats[n]]
+    out = []
+    for uid in uids:
+        if len(out) >= count:
+            break
+        try:
+            info = summary(_get(f"/models/{uid}"))
+        except LibraryError:
+            continue   # removed from Sketchfab since
+        if info["license"] in licenses and (not max_faces or (info["faces"] or 0) <= max_faces):
+            info["mirror"], info["category"] = True, names[0] if len(names) == 1 else ", ".join(names[:3])
+            out.append(info)
+    return out
 
 
 def _unpack_gltf_zip(archive: Path, dest: Path) -> Path:
@@ -156,11 +214,12 @@ def get(uid: str, *, licenses=DEFAULT_LICENSES, via: str = "auto", log=print) ->
         return existing
     info = summary(_get(f"/models/{uid}"))
     check_license(info["license"], licenses)
-    dest.mkdir(parents=True, exist_ok=True)
-    token = os.environ.get("SKETCHFAB_API_TOKEN") or keys.load().get("SKETCHFAB_API_TOKEN")
+    token = _token()
     path, how = None, None
     if via in ("auto", "objaverse"):
         rel = _objaverse_paths().get(uid)
+        if rel or token:
+            dest.mkdir(parents=True, exist_ok=True)
         if rel:
             log(f"  downloading {info['name']} from the Objaverse mirror…")
             path, how = net.download(f"{OBJAVERSE}/{rel}", dest / "model.glb", timeout=900), "objaverse"
@@ -232,27 +291,44 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--count", type=int, default=12)
     s.add_argument("--max-faces", type=int)
     s.add_argument("--json", action="store_true")
+    s.add_argument("--free", action="store_true", help="only models in the Objaverse mirror (no Sketchfab token needed)")
+    s.add_argument("--category", action="store_true", help="search Objaverse's LVIS categories (hand-labelled, all free)")
     g = sub.add_parser("get", help="download a model with its credit into the library")
     g.add_argument("uid", help="Sketchfab model id or URL")
     g.add_argument("--license", default=",".join(DEFAULT_LICENSES))
     g.add_argument("--via", default="auto", choices=["auto", "objaverse", "sketchfab"])
+    g.add_argument("--json", action="store_true", help="print the file and credit as JSON (for the Blender add-on)")
     sub.add_parser("list", help="models already in the library")
     args = ap.parse_args(argv)
     keys.apply_env()
     try:
         if args.cmd == "search":
             lic = tuple(x.strip() for x in args.license.split(",") if x.strip())
-            res = search(args.query, licenses=lic, count=args.count, max_faces=args.max_faces)
+            if args.category:
+                res = by_category(args.query, licenses=lic, count=args.count, max_faces=args.max_faces)
+                for r in res:
+                    print(f"  {r['uid']}  free  {r['license_name']:12} {r['faces'] or 0:>9,} faces  {r['name'][:48]} — {r['author']}")
+                print(f"{len(res)} models in '{res[0]['category']}'." if res else "Nothing usable in that category.")
+                return 0
+            if args.free:
+                _objaverse_paths()
+            res = search(args.query, licenses=lic, count=48 if args.free else args.count, max_faces=args.max_faces)
+            if args.free:
+                res = [r for r in res if r.get("mirror")][:args.count]
             if args.json:
                 print(json.dumps(res, indent=2, ensure_ascii=False))
                 return 0
             for r in res:
-                print(f"  {r['uid']}  {r['license_name']:12} {r['faces'] or 0:>9,} faces  {r['name'][:48]} — {r['author']}")
+                free = {True: "free ", False: "token", None: "     "}[r.get("mirror")]
+                print(f"  {r['uid']}  {free} {r['license_name']:12} {r['faces'] or 0:>9,} faces  {r['name'][:48]} — {r['author']}")
             print(f"{len(res)} models. Next: meshgate.py gen --library <uid> --size <meters>" if res else "Nothing found.")
         elif args.cmd == "get":
             lic = tuple(x.strip() for x in args.license.split(",") if x.strip())
-            path = get(args.uid, licenses=lic, via=args.via)
+            path = get(args.uid, licenses=lic, via=args.via, log=(lambda t: None) if args.json else print)
             c = credit_for(path)
+            if args.json:
+                print(json.dumps({"file": str(path), "credit": c, "line": credit_line(c)}, ensure_ascii=False))
+                return 0
             print(f"✓ {path}\n  credit: {credit_line(c)}")
         else:
             for c in entries():

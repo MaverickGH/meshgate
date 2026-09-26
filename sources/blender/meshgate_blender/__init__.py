@@ -18,13 +18,14 @@ bl_info = {
 
 import bpy
 
-from . import translations, ui
+from . import kit_ui, translations, ui
 
 
 def register():
     for cls in ui.CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.meshgate = bpy.props.PointerProperty(type=ui.MESHGATE_Settings)
+    kit_ui.register()
     bpy.types.TOPBAR_MT_file_export.append(ui.menu_export)
     bpy.app.translations.register(__name__, translations.DICT)
 
@@ -34,6 +35,7 @@ def unregister():
     tools.stop_preview()
     bpy.app.translations.unregister(__name__)
     bpy.types.TOPBAR_MT_file_export.remove(ui.menu_export)
+    kit_ui.unregister()
     del bpy.types.Scene.meshgate
     for cls in reversed(ui.CLASSES):
         bpy.utils.unregister_class(cls)

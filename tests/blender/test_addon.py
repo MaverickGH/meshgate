@@ -230,6 +230,37 @@ def main():
     low_img = export.validate_file(os.path.join(tiers_dir, "heavy.mobile-low.glb"))["images"]
     step("mobile tiers use JPEG textures", all(i.get("mime") == "image/jpeg" for i in low_img), str([i.get("mime") for i in low_img]))
 
+    # the Kit panel: build code into a scene, guard rails, bring a model in at a size
+    kit = sys.modules[mod.__name__ + ".kit_ui"]
+    repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    addon_utils.enable(MODULE, default_set=True)
+    ks = bpy.context.scene.meshgate_kit
+    ks.code = os.path.join(repo, "sources", "generate", "examples", "zombie_cats", "lowpoly", "zombie_cat.py")
+    ks.name, ks.tier, ks.finish = "zc", "mobile-low", "faceted"
+    res = bpy.ops.meshgate.kit_build()
+    tris = sum(len(p.vertices) - 2 for o in bpy.context.scene.objects if o.type == "MESH" for p in o.data.polygons)
+    ks = bpy.context.scene.meshgate_kit   # with a window the build switched to a scene of its own
+    step("kit panel builds build(mg) code at a tier", res == {"FINISHED"} and 200 < tris <= 8000, f"{res} {tris:,} tris; {ks.status}")
+    bad = os.path.join(OUT, "bad_build.py")
+    with open(bad, "w") as f:
+        f.write("import os\ndef build(mg):\n    os.system('echo no')\n")
+    ks.code = bad
+    try:
+        got = str(bpy.ops.meshgate.kit_build())
+    except RuntimeError as exc:   # operators report ERROR as an exception in background mode
+        got = str(exc)
+    step("kit panel refuses unsafe build code", "CANCELLED" in got or "refused" in got, got[:200])
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    addon_utils.enable(MODULE, default_set=True)
+    objs = kit.import_model(bpy.context, os.path.join(repo, "sources", "generate", "examples", "hydrant_triposr_raw.glb"), 0.5, (1, 2, 0))
+    bpy.context.view_layer.update()
+    import mathutils
+    pts = [o.matrix_world @ mathutils.Vector(c) for o in objs if o.type == "MESH" for c in o.bound_box]
+    size = max(max(p[i] for p in pts) - min(p[i] for p in pts) for i in range(3))
+    low = min(p.z for p in pts)
+    step("kit panel imports a model at a size, standing on the cursor", abs(size - 0.5) < 0.01 and abs(low) < 0.01, f"size {size:.3f} lowest {low:.3f}")
+
     if SAMPLES:
         clips = {"demo": ["beacon_spin", "lid_open"], "hero": ["idle", "wave"], "lantern": ["flicker", "swing"],
                  "barrel": [], "drone": ["hover", "rotors"]}

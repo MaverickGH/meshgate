@@ -40,6 +40,11 @@ def build(out_dir: Path) -> Path:
         files[f"validator/{name}"] = ROOT / "core" / name
     for name in ("index.html", "app.js", "meshgate-viewer.js"):
         files[f"viewer/{name}"] = ROOT / "targets" / "web" / name
+    # the Kit panel: guard rails for build code, the free-model library and its helpers (run in Blender's Python)
+    gen = ROOT / "sources" / "generate"
+    for arc, src in (("kitlib/safety.py", gen / "safety.py"), ("kitlib/library.py", gen / "library.py"),
+                     ("kitlib/keys.py", gen / "keys.py"), ("kitlib/net.py", gen / "mesh" / "net.py")):
+        files[arc] = src
     files["LICENSE"] = ROOT / "LICENSE"
     # one top-level folder: the legacy installer (3.5–4.1) needs it, and Blender 4.2+ accepts a manifest inside it
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:

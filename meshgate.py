@@ -512,6 +512,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_hidden(exe, work)
     ok &= _check_finish(exe, work)
     ok &= _check_sculpt(exe, work)
+    ok &= _check_rework(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -625,6 +626,32 @@ def _check_sculpt(exe: str, work: Path) -> bool:
         print(f"  ✗ sculpt tools: {exc}")
     if not good:
         print("  ✗ sculpt tools: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
+def _check_rework(exe: str, work: Path) -> bool:
+    """mg.model reworks a library model (a stand-in in a temporary library): only the kept part, repainted, credited."""
+    lib = work / "rework_config" / "library" / ("0" * 32)
+    lib.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "sources" / "generate" / "examples" / "hydrant_triposr_raw.glb", lib / "model.glb")
+    (lib / "credit.json").write_text(json.dumps({"uid": "0" * 32, "name": "Stand-in hydrant", "author": "MeshGate tests",
+                                                 "url": "https://example.test/model", "license": "cc0", "license_name": "CC0",
+                                                 "license_url": None, "file": "model.glb"}))
+    out = work / "rework"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "rework_model.py"),
+                        "--name", "rework", "--style", "realistic", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview",
+                        "--out-dir", str(out)], capture_output=True, text=True,
+                       env={**os.environ, "MESHGATE_CONFIG_DIR": str(work / "rework_config")})
+    try:
+        g = json.load(open(out / "gen.json"))
+        pc = g["report"]["tiers"]["pc"]
+        good = (g["ok"] and 0.6 < pc["dims_m"][2] < 0.72 and g.get("credit") and g["credit"][0]["name"] == "Stand-in hydrant"
+                and "Stand-in hydrant" in (out / "CREDITS.txt").read_text())
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ rework a library model: {exc}")
+    if not good:
+        print("  ✗ rework a library model: " + (r.stdout + r.stderr)[-1200:])
     return good
 
 

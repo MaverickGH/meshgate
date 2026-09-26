@@ -104,7 +104,7 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     fixed = checks.fix_all(ctx) if any(i.fix for i in before) else []
     after = [i for i in checks.run_checks(ctx) if i.severity != checks.INFO]
     return {"notes": notes + [f"fixed: {f}" for f in fixed], "issues": [f"[{i.code}] {i.label()}" for i in after],
-            "dims_m": kit._dims(), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
+            "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
                                                      for t in o.animation_data.nla_tracks})}
 
 
@@ -253,6 +253,9 @@ def main() -> int:
             for i in entry["issues"]:
                 report["problems"].append(f"tier {tier}: contract: {i}")
             report["tiers"][tier] = entry
+            for c in entry.pop("credits", []):   # library models used through mg.model: credited once per asset
+                if all(x.get("uid") != c.get("uid") for x in report.setdefault("credits", [])):
+                    report["credits"].append(c)
             print(f"  {'✓' if entry['within_budget'] and not entry['errors'] else '✗'} {tier:12} {entry['tris']:>7,} tris"
                   f" / {entry['max_tris'] or 0:,}  {entry['file']}  dims {info['dims_m']} m"
                   + (f"  clips {', '.join(info['clips'])}" if info["clips"] else ""), flush=True)

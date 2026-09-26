@@ -210,6 +210,13 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.cut(target, cutter)` | Boolean difference | eye sockets, a paw print in stone, windows |
 | `mg.bend` / `mg.twist` | Bend a piece from its base, twist it about its length (rings are added) | curling tails, drooping ears, horns, rope |
 | `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` along a path, `noise`, `smooth` | snouts, cheeks, eyelids, folds, bark, stone |
+| `mg.paint(obj, colour, at=, radius=)` | Paint a region like a texture brush, also by `facing=` and height; soft edges in baked finishes | pale bellies, stripes, wounds, moss, rust |
+| `mg.model(uid, colour, size=)` | A free library model as one piece to rework; `keep=` / `drop=` boxes take just a part | a head, a paw, a whole base to repaint and sculpt |
+
+Colours named fur, pelt or wool get a fur look in the realistic finish (fine streaks and tufts in colour and normal
+map). The AI also gets short artist recipes for the kind of object it builds — creatures, plants, rocks, props,
+buildings, reworking a library model — picked from the description (English or Russian), with a matching example:
+the [realistic zombie cat](../sources/generate/examples/zombie_cats/realistic/zombie_cat.py) for creatures.
 
 Density follows the tier like everything else. With a baked finish (realistic or `--pbr`) the lighter tiers bake their
 normal map **from the PC model** (high → low), so a phone model keeps the sculpted detail as shading.
@@ -232,6 +239,10 @@ python3 meshgate.py gen --library 7a0f2d413b5846f591b40580f783c53c --size 0.6 --
 - **Where it downloads from:** the [Objaverse](https://huggingface.co/datasets/allenai/objaverse) mirror on Hugging Face
   (about 800,000 Sketchfab models, no account; a 20 MB index is fetched once) when the model is in it. Newer models come
   from Sketchfab with your API token (`SKETCHFAB_API_TOKEN`, Studio → Keys; sketchfab.com → Settings → Password & API).
+- `library search cat --category` looks in Objaverse's hand-labelled categories (1,156 of them: cat, skull, pumpkin…):
+  every hit downloads free from the mirror. `--free` keeps a text search to mirror models.
+- Rework instead of reuse: `mg.model(uid, …)` puts a library model into kit code as one piece to repaint, sculpt,
+  cut and add to, or `keep=` just its head. The credit goes into the result as well.
 - Downloads stay in `~/.meshgate/library`, never in the repository. Check each model yourself before you ship it:
   a licence is only as good as the uploader's right to give it.
 
