@@ -154,7 +154,7 @@ tests/           automated checks; .github/ runs them on Linux and Windows and b
 
 ## Status
 
-**v0.6.5.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
+**v0.6.6.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
 and Linux (portable). Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
 GitHub runs the web, Blender, Godot and Unreal API checks on Linux, and the web and Blender checks on Windows. Next: a live Unreal run, characters with a skeleton, animation from text (Kimodo), Maya, signed
 installers — see the [roadmap](docs/roadmap.md).

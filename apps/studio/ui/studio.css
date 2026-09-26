@@ -4,7 +4,7 @@
 :root {
   --bg: #151619; --panel: #1c1e21; --panel-2: #292b2f; --line: #34363a;
   --text: #ededed; --muted: #a2a4a8; --accent: #e09460; --accent-2: #d07d45;
-  --ok: #b5b7ba; --warn: #d5a16f; --bad: #e27870;
+  --ok: #b5b7ba; --warn: #d5a16f; --bad: #e27870; --live: #5cc97b;
   --font: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: dark;
@@ -26,7 +26,9 @@ small, .hint { color: var(--muted); font-size: 11px; margin: 0; }
 .logo { width: 28px; height: 28px; flex: none; border-radius: 6px; background: url('/ui/meshgate-icon.png') center / contain no-repeat; filter: grayscale(1) brightness(1.15); }
 .pills { flex: 1; display: flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
 .pill { display: inline-flex; align-items: center; font-size: 11px; color: var(--muted); border: 1px solid #34363a; background: #232529; padding: 4px 7px; border-radius: 4px; }
-.pill.ok::before, .pill.bad::before { content: ''; width: 5px; height: 5px; border-radius: 50%; margin-right: 6px; background: #898c91; }
+.pill.ok::before, .pill.bad::before { content: ''; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background: #898c91; }
+.pill.ok::before { background: var(--live); box-shadow: 0 0 6px rgba(92, 201, 123, .55); }
+.pill.ok { color: var(--text); }
 .pill.bad::before { background: var(--bad); }
 
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 346px minmax(0, 1fr) 290px; }

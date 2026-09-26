@@ -92,6 +92,12 @@
 - [x] New Studio look and icon (IBM Plex Sans).
 - [x] Proprietary license (all rights reserved; assets you make are yours), THIRD_PARTY_NOTICES.md.
 
+## v0.6.6 — Ready to publish (done)
+- [x] README for newcomers and a full installation guide (docs/install.md) for macOS, Windows and Linux.
+- [x] Portable archive for Linux (Studio in the browser without installing) in every release.
+- [x] Optional components: Hunyuan3D-2 and Kimodo installable from Studio; doctor lists them.
+- [x] Animations on request for kit models; a clean public history; new splash with the app icon; live tools light up green.
+
 ## Later — characters and PBR
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.
 - [ ] Hunyuan3D-2 as a local picture → 3D generator next to TripoSR (installable now).

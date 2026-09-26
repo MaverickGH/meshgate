@@ -1,7 +1,7 @@
 {
   "name": "meshgate-studio",
   "private": true,
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "MeshGate Studio desktop shell (Tauri): starts the local Studio server and shows it in a native window.",
   "license": "UNLICENSED",
   "scripts": {
