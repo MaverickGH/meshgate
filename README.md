@@ -5,7 +5,7 @@
 > Make a game-ready 3D model from a description or a picture — or bring your own from Blender — and get checked files
 > for the web, Unity, Godot and Unreal, one per quality level.
 
-![Parts fly out of the MeshGate portal and snap together into a windmill, like a construction kit](docs/img/meshgate-hero-v3.gif)
+![Parts fly out of the MeshGate portal and snap together like a construction kit: a windmill, a treasure chest, a street lamp](docs/img/meshgate-hero-v4.gif)
 
 ## What it does
 
