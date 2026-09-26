@@ -93,6 +93,8 @@
 - [x] Proprietary license (all rights reserved; assets you make are yours), THIRD_PARTY_NOTICES.md.
 
 ## Later — characters and PBR
+- [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.
+- [ ] Hunyuan3D-2 as a local picture → 3D generator next to TripoSR (installable now).
 - [ ] Characters from text or a picture: a rigged Humanoid base + kit parts, or a generated mesh auto-rigged onto the MeshGate skeleton.
 - [ ] Transfer PBR maps (roughness, metallic) from cloud generators through the bake; multi-view input.
 - [ ] Live runs of the Codex, Gemini, Ollama, Meshy, Tripo and fal adapters; Studio on a Windows machine; signed installers.
