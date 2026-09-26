@@ -33,7 +33,9 @@ as the last four characters.
 - **From a release:** download `MeshGate Studio_<version>_aarch64.dmg` (macOS) or the `.msi` / `-setup.exe`
   (Windows) from the [Releases](https://github.com/MaverickGH/meshgate/releases) page. The builds are not signed yet. On macOS, right-click the app and choose **Open**
   the first time. On Windows, choose **More info → Run anyway** in SmartScreen.
-- **Without installing anything:** `python3 meshgate.py studio` opens the same UI in your browser on any OS.
+- **Linux, or without installing anything:** download `MeshGate-<version>-portable.zip` from the same release, unpack it
+  and run `python3 meshgate.py studio`. It opens the same UI in your browser on any OS; only Python 3.9+ and Blender are
+  needed. From a clone of the repository the same command works too.
 
 Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` inside the repository they go to
 `out/gen`. Each asset has its own folder, and **Show files** opens it.
