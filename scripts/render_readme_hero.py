@@ -1,6 +1,7 @@
-"""Render the original MeshGate cinematic README hero with Blender 3.5+.
+"""Render the MeshGate README hero with Blender 3.5+: parts fly out of the portal and snap together into a windmill,
+bottom to top, like a construction kit; the finished windmill turns its sails, then comes apart and the loop restarts.
 
-blender -b -t 6 --python scripts/render_readme_hero.py -- --preview
+blender -b -t 6 --python scripts/render_readme_hero.py -- --preview      # one frame, mid-build
 blender -b -t 6 --python scripts/render_readme_hero.py
 ffmpeg -framerate 16 -i out/hero-frames/frame-%03d.png -filter_complex '[0:v] split [a][b];[a] palettegen=max_colors=192:stats_mode=diff [p];[b][p] paletteuse=dither=bayer:bayer_scale=3' -loop 0 docs/img/meshgate-hero-v3.gif
 """
@@ -14,7 +15,8 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'out' / 'hero-frames'
 PREVIEW = '--preview' in sys.argv
-COUNT = 48
+COUNT = 64
+FLOOR = -1.75
 TAU = math.tau
 
 bpy.ops.object.select_all(action='SELECT')
@@ -28,8 +30,8 @@ scene.eevee.gtao_factor = 1.3
 scene.eevee.use_bloom = True
 scene.eevee.bloom_intensity = .035
 scene.eevee.bloom_radius = 5
-scene.render.resolution_x = 1400
-scene.render.resolution_y = 560
+scene.render.resolution_x = 1280
+scene.render.resolution_y = 512
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = 'PNG'
 scene.view_settings.view_transform = 'Filmic'
@@ -62,6 +64,7 @@ orange = mat('Amber facets', (.78, .22, .055), .58, .24, (1, .2, .01), 1.35)
 gold = mat('Copper metal', (.45, .17, .055), .86, .25)
 floor_mat = mat('Studio floor', (.015, .024, .03), .46, .31)
 back = mat('Backdrop', (.006, .012, .017), .03, .86)
+flight = mat('Kit part in flight', (.32, .62, .62), .55, .2, (.0, .85, .75), 1.6)
 
 
 def beam(name, a, b, width, depth, material, bevel=.02):
@@ -88,13 +91,17 @@ def ring(name, points, y, width, depth, material, bevel=.025):
 
 # The icon's open, six-sided gate: nested architectural layers, separated in depth.
 gate_start = set(bpy.context.scene.objects)
-gate = [(-2.36,-1.38),(-2.36,1.11),(-1.60,1.88),(.21,1.88),(.98,1.11),(.98,-1.38)]
+gate = [(-2.36,FLOOR+.1),(-2.36,1.11),(-1.60,1.88),(.21,1.88),(.98,1.11),(.98,FLOOR+.1)]
 ring('Structural gate',gate,.15,.30,.52,black,.065)
 ring('Machined face',gate,-.18,.245,.115,graphite,.027)
 ring('Outer chamfer',gate,-.252,.035,.025,silver,.009)
-inner = [(-2.07,-1.32),(-2.07,1.0),(-1.46,1.60),(.07,1.60),(.67,1.0),(.67,-1.32)]
+inner = [(-2.07,FLOOR+.14),(-2.07,1.0),(-1.46,1.60),(.07,1.60),(.67,1.0),(.67,FLOOR+.14)]
 ring('Luminous inner gate',inner,-.285,.08,.045,teal,.018)
 ring('Photon core',inner,-.322,.017,.022,bright,.005)
+# The gate stands on the floor: a heavy foot under each leg.
+for x in (-2.36, .98):
+    beam(f'Gate foot {x:+.2f}', (x, -.02, FLOOR), (x, -.02, FLOOR+.16), .62, .9, black, .04)
+    beam(f'Foot trim {x:+.2f}', (x, -.48, FLOOR+.155), (x, -.48, FLOOR+.175), .5, .03, silver, .005)
 # Broken exterior armor plates add the designed, constructed rhythm of the reference.
 for i,(a,b) in enumerate(zip(gate,gate[1:])):
     for j in range(12):
@@ -146,29 +153,86 @@ wire.data.materials.append(bright)
 w=wire.modifiers.new('Cut seams','WIREFRAME')
 w.thickness=.009
 
-# A curved reconstruction trail flies out of the gate and visually resolves into game geometry.
-random.seed(34)
-fragments=[]
-for i in range(205):
-    bpy.ops.mesh.primitive_cube_add(size=1)
-    obj=bpy.context.object
-    obj.name=f'Voxel {i:03d}'
-    obj.data.materials.append(teal if i%19==0 else orange if i%11==0 else silver if i%4==0 else graphite)
-    mod=obj.modifiers.new('Tiny machined edge','BEVEL')
-    mod.width=.08
-    mod.segments=1
-    obj.modifiers.new('Normals','WEIGHTED_NORMAL')
+# The kit: a windmill built from simple parts, in build order (bottom to top). Each part flies out of the portal on an
+# arc, turns into place, lands with a small snap and a flash, then keeps its own material.
+X0, Y0 = 3.45, .35
+parts = []
+
+
+def part(kind, loc, material, rot=(0, 0, 0), **size):
+    ops = {'cube': bpy.ops.mesh.primitive_cube_add, 'cyl': bpy.ops.mesh.primitive_cylinder_add,
+           'cone': bpy.ops.mesh.primitive_cone_add}
+    ops[kind](location=loc, rotation=rot, **size)
+    obj = bpy.context.object
+    if kind == 'cube':
+        obj.scale = size.get('scale_xyz', (1, 1, 1))
+    mod = obj.modifiers.new('Machined edge', 'BEVEL')
+    mod.width, mod.segments, mod.limit_method = .018, 1, 'ANGLE'
+    obj.modifiers.new('Normals', 'WEIGHTED_NORMAL')
     obj.data.use_auto_smooth = True
-    fragments.append((obj,random.random(),random.random()*TAU,random.uniform(.25,1.1),random.uniform(.065,.18)))
+    obj.data.materials.append(material)
+    obj.rotation_mode = 'QUATERNION'
+    parts.append({'obj': obj, 'mat': material, 'loc': obj.location.copy(), 'rot': obj.rotation_quaternion.copy(),
+                  'scale': obj.scale.copy()})
+    return obj
 
-# Floating drafting lines are a quiet product detail, not a decorative UI overlay.
-for i in range(13):
-    x=1.1+i*.33
-    beam(f'Calibration tick {i}',(x,.48,-1.62),(x,.48,-1.62+(.10 if i%3 else .18)),
-         .007,.007,teal_soft,.001)
-beam('Calibration baseline',(1.05,.49,-1.67),(5.18,.49,-1.67),.006,.006,teal_soft,.001)
 
-bpy.ops.mesh.primitive_plane_add(size=200,location=(0,0,-1.75))
+def box(loc, dims, material, rot=(0, 0, 0)):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=loc, rotation=rot)
+    obj = bpy.context.object
+    obj.scale = dims
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    mod = obj.modifiers.new('Machined edge', 'BEVEL')
+    mod.width, mod.segments = .018, 1
+    obj.modifiers.new('Normals', 'WEIGHTED_NORMAL')
+    obj.data.use_auto_smooth = True
+    obj.data.materials.append(material)
+    obj.rotation_mode = 'QUATERNION'
+    parts.append({'obj': obj, 'mat': material, 'loc': obj.location.copy(), 'rot': obj.rotation_quaternion.copy(),
+                  'scale': obj.scale.copy()})
+    return obj
+
+
+z = FLOOR
+part('cyl', (X0, Y0, z+.07), graphite, vertices=12, radius=.98, depth=.14); z += .14
+part('cyl', (X0, Y0, z+.05), black, vertices=12, radius=.8, depth=.1); z += .1
+tower = [(.64, .57, graphite), (.57, .5, silver), (.5, .43, graphite)]
+for k, (r1, r2, m) in enumerate(tower):
+    part('cone', (X0, Y0, z+.29), m, vertices=8, radius1=r1, radius2=r2, depth=.58)
+    if k < 2:
+        part('cyl', (X0, Y0, z+.58), orange, vertices=8, radius=r2+.04, depth=.05)
+    if k == 0:
+        box((X0, Y0-r1+.05, z+.22), (.3, .1, .42), orange)
+    else:
+        box((X0, Y0-r1+.04, z+.3), (.18, .08, .2), teal)
+    z += .58
+part('cyl', (X0, Y0, z+.04), silver, vertices=8, radius=.5, depth=.08); z += .08
+part('cone', (X0, Y0, z+.3), gold, vertices=8, radius1=.6, radius2=0, depth=.6)
+hub_z = z - .12
+hub = part('cyl', (X0, Y0-.62, hub_z), bright, rot=(math.pi/2, 0, 0), vertices=10, radius=.13, depth=.3)
+rotor = bpy.data.objects.new('Rotor', None)
+scene.collection.objects.link(rotor)
+rotor.location = (X0, Y0-.72, hub_z)
+blades = []
+for k in range(4):
+    a = k*math.pi/2 + math.radians(20)
+    c = Vector((X0 + .62*math.cos(a), Y0-.72, hub_z + .62*math.sin(a)))
+    b = box(tuple(c), (1.02, .05, .17), graphite if k % 2 else silver, rot=(0, -a, 0))
+    blades.append(b)
+box((X0+1.15, Y0-.35, FLOOR+.19), (.38, .38, .38), gold, rot=(0, 0, math.radians(18)))
+part('cyl', (X0-1.1, Y0-.3, FLOOR+.24), graphite, vertices=10, radius=.2, depth=.48)
+for b in blades:   # sails turn with the rotor once they are all in place
+    b.parent = rotor
+    b.matrix_parent_inverse = rotor.matrix_world.inverted()
+for p in parts:    # hidden until launched
+    p['obj'].scale = (0, 0, 0)
+
+# Where the parts come from: the crystal in the middle of the portal.
+random.seed(7)
+for p in parts:
+    p['spin'] = Vector((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1))).normalized()
+
+bpy.ops.mesh.primitive_plane_add(size=200,location=(0,0,FLOOR))
 bpy.context.object.data.materials.append(floor_mat)
 bpy.ops.mesh.primitive_plane_add(size=200,location=(0,5.5,0),rotation=(math.pi/2,0,0))
 bpy.context.object.data.materials.append(back)
@@ -198,26 +262,60 @@ camera.data.ortho_scale=12.4
 scene.camera=camera
 OUT.mkdir(parents=True,exist_ok=True)
 
+N = len(parts)
+LAUNCH, FLIGHT, FLASH = .035, .12, .03       # in loop time: first launch, flight length, landing flash
+STEP = (.62 - LAUNCH) / (N - 1)             # launches spread so the last part lands by ~.74
+SPIN, APART, GONE = .75, .88, .985          # sails turn, then the kit comes apart and the loop restarts
+
+
+def ease_out(u):
+    return 1 - (1 - u) ** 3
+
+
+def pose(p, k, t):
+    """Where part k is at loop time t: hidden, flying, landed (with snap and flash) or coming apart."""
+    obj, start = p['obj'], LAUNCH + k*STEP
+    if t < start or t >= GONE:
+        obj.scale = (0, 0, 0)
+        return
+    src = crystal.matrix_world.translation
+    u = min(1, (t - start) / FLIGHT)
+    e = ease_out(u)
+    if u < 1:
+        mid = (src + p['loc']) / 2 + Vector((0, -1.3, 1.7))
+        pos = (1-e)**2 * src + 2*(1-e)*e * mid + e**2 * p['loc']
+        spin = p['spin'].to_track_quat('Z', 'Y')
+        rot = spin.slerp(p['rot'], e)
+        s = .3 + .7*e
+        obj.data.materials[0] = flight
+    else:
+        pos, rot, s = p['loc'], p['rot'], 1.0
+        landed = t - start - FLIGHT
+        if landed < FLASH:
+            s = 1 + .07*math.sin(math.pi*landed/FLASH)
+            obj.data.materials[0] = bright
+        else:
+            obj.data.materials[0] = p['mat']
+    if t >= APART:                          # come apart top-down, each part lifting and shrinking away
+        a = min(1, max(0, (t - APART - (N-1-k)*(GONE-APART)*.45/N) / ((GONE-APART)*.55)))
+        pos = pos + Vector((0, 0, .9*a*a))
+        s *= 1 - a
+    obj.location = pos                      # sails: rest-pose coordinates; the rotor turns them on top
+    obj.rotation_quaternion = rot
+    obj.scale = p['scale'] * s
+
+
 for frame in range(1 if PREVIEW else COUNT):
-    t=.18 if PREVIEW else frame/COUNT
+    t=.5 if PREVIEW else frame/COUNT
     teal.node_tree.nodes.get('Principled BSDF').inputs['Emission Strength'].default_value=4.4+1.1*math.sin(TAU*t)
     crystal.rotation_euler=(.09*math.sin(TAU*t),-.2+.34*math.sin(TAU*t),.07*math.sin(TAU*t))
     crystal.location.z=.09+.09*math.sin(TAU*t)
     wire.rotation_euler=crystal.rotation_euler
     wire.location=crystal.location
-    for obj,base,phase,spread,size in fragments:
-        p=(base+t)%1
-        theta=phase+TAU*(1.15*p+t*.30)
-        center=-.15+5.35*p
-        radius=spread*(.12+.95*math.sin(math.pi*p))
-        # Bend sharply toward the camera before crossing the near jamb.
-        # This visible foreground overlap is what makes the portal the source.
-        depth=-.70-1.45*(1-math.exp(-13*p))-.35*p
-        obj.location=(center, depth+radius*math.sin(theta)*.55,
-                      -.02+radius*math.cos(theta)*.85)
-        s=size*(.48+.85*math.sin(math.pi*p))
-        obj.scale=(s*1.35,s*.72,s)
-        obj.rotation_euler=(theta*.45,theta*.7,theta*.32)
+    rotor.rotation_euler = (0, -30 * max(0, t - SPIN)**1.3, 0)   # the sails pick up speed once the mill is whole
+    bpy.context.view_layer.update()
+    for k, p in enumerate(parts):
+        pose(p, k, t)
     scene.render.filepath=str(OUT/('preview.png' if PREVIEW else f'frame-{frame:03d}.png'))
     bpy.ops.render.render(write_still=True)
     print(f'MESHGATE_HERO {frame+1}/{1 if PREVIEW else COUNT}',flush=True)
