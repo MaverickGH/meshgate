@@ -81,6 +81,7 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     bpy.ops.wm.read_factory_settings(use_empty=True)
     budget = {**export.load_profiles()["profiles"][tier]["asset"], **(budget_override or {})}
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
+                       max_influences=budget.get("max_influences", 4),
                        finish=finish_)
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
     exec(code_obj, g)  # noqa: S102 — code passed safety.check before reaching here

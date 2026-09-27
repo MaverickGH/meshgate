@@ -56,11 +56,34 @@ def build(mg):
     scar = [(-0.13, -0.1, 0.87), (-0.05, -0.12, 0.915), (0.04, -0.1, 0.93), (0.12, -0.06, 0.9)]
     mg.sculpt(body, "crease", path=scar, radius=0.012, amount=0.008)
     mg.sculpt(body, "crease", path=[(0, -0.205, 0.755), (0, -0.2, 0.73)], radius=0.008, amount=0.005)
+    mouth = [[(0, -0.2, 0.73), (sx * 0.035, -0.19, 0.722), (sx * 0.06, -0.17, 0.73)] for sx in (-1, 1)]
+    for m in mouth:
+        mg.sculpt(body, "crease", path=m, radius=0.007, amount=0.004)
+        mg.sculpt(body, "pinch", path=m, radius=0.008, strength=0.5)
+    # sharp features the clay cannot make: eyelids, a frowning brow, the nose bridge, fingers and toes
     for sx in (-1, 1):
-        mg.sculpt(body, "crease", path=[(0, -0.2, 0.73), (sx * 0.035, -0.19, 0.722), (sx * 0.06, -0.17, 0.73)],
-                  radius=0.007, amount=0.004)
+        cx, cz = sx * 0.068, 0.825
+        upper = [(cx + 0.052 * math.cos(math.radians(a)), -0.163, cz + 0.047 * math.sin(math.radians(a))) for a in range(20, 170, 25)]
+        lower = [(cx + 0.05 * math.cos(math.radians(a)), -0.163, cz + 0.044 * math.sin(math.radians(a))) for a in range(205, 340, 30)]
+        mg.sculpt(body, "ridge", path=upper, radius=0.013, amount=0.011)
+        mg.sculpt(body, "pinch", path=upper, radius=0.01, strength=0.35)
+        mg.sculpt(body, "ridge", path=lower, radius=0.01, amount=0.006)
+        brow = [(sx * 0.115, -0.125, 0.885), (sx * 0.07, -0.15, 0.89), (sx * 0.03, -0.165, 0.872)]
+        mg.sculpt(body, "ridge", path=brow, radius=0.016, amount=0.01)
+        for dx in (-0.025, 0.0, 0.025):   # toes
+            toe = [(sx * 0.12 + dx, -0.168, 0.035), (sx * 0.12 + dx, -0.135, 0.07)]
+            mg.sculpt(body, "crease", path=toe, radius=0.007, amount=0.006)
+            mg.sculpt(body, "pinch", path=toe, radius=0.007, strength=0.5)
+        for dx in (-0.017, 0.017):        # fingers
+            finger = [(sx * 0.15 + dx, -0.447, 0.617), (sx * 0.15 + dx, -0.41, 0.643)]
+            mg.sculpt(body, "crease", path=finger, radius=0.006, amount=0.005)
+            mg.sculpt(body, "pinch", path=finger, radius=0.006, strength=0.5)
+    mg.sculpt(body, "ridge", path=[(0, -0.175, 0.862), (0, -0.2, 0.79)], radius=0.012, amount=0.004)
 
-    parts = [body]
+    # ---- fur cards: a shaggy coat on the body and the back of the head, coloured by the painted coat under them
+    parts = [body,
+             mg.fur(body, length=0.02, count=8000, droop=0.72, below=0.72, seed=1),
+             mg.fur(body, length=0.016, count=1800, droop=0.6, at=(0, 0.04, 0.86), radius=0.16, facing=(0, 0.6, 0.8), seed=2)]
 
     # ---- stitches across the scar and the wound
     def stitches(path, n, length):
@@ -109,7 +132,7 @@ def build(mg):
     tail = mg.skin([(0, 0.12, 0.36), (0, 0.24, 0.3), (0.03, 0.34, 0.36), (0.1, 0.36, 0.5), (0.16, 0.33, 0.56)],
                    [0.045, 0.04, 0.034, 0.028, 0.02], fur)
     mg.paint(tail, dark, at=(0.13, 0.35, 0.53), radius=0.06)
-    parts.append(tail)
+    parts += [tail, mg.fur(tail, length=0.016, count=1200, droop=0.5, seed=3)]
 
     # ---- whiskers and claws on the richer tiers
     if mg.at_least("mobile-high"):
@@ -121,4 +144,15 @@ def build(mg):
                 parts.append(mg.part("cone", claw, loc=(sx * 0.15 + cx, -0.445, 0.605), scale=(0.012, 0.012, 0.03),
                                      rot=(math.pi / 2, 0, 0)))
 
-    mg.join("zc_zombie_cat", parts)
+    body = mg.join("zc_zombie_cat", parts)
+
+    # ---- a skeleton for the engines (Humanoid bone names) and zombie clips
+    mg.rig(body, {"hips": (0, 0.02, 0.37), "spine": (0, 0.0, 0.47), "chest": (0, -0.005, 0.6), "neck": (0, 0.0, 0.69),
+                  "head": (0, -0.02, 0.74), "head_top": (0, -0.02, 0.95),
+                  "shoulder_l": (0.14, -0.01, 0.63), "elbow_l": (0.165, -0.19, 0.6), "hand_l": (0.15, -0.35, 0.615),
+                  "fingers_l": (0.15, -0.44, 0.61), "hip_l": (0.115, 0.02, 0.33), "knee_l": (0.118, 0.005, 0.2),
+                  "ankle_l": (0.12, 0.0, 0.075), "toe_l": (0.12, -0.12, 0.035)},
+           tail=[(0, 0.12, 0.36), (0, 0.24, 0.3), (0.03, 0.34, 0.36), (0.1, 0.36, 0.5), (0.16, 0.33, 0.56)])
+    mg.clip("idle", "idle")
+    mg.clip("walk", "zombie_walk")
+    mg.clip("attack", "attack")

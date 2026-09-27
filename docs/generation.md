@@ -209,7 +209,9 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.skin(points, radii, colour)` | A smooth body grown around a skeleton of points, branches allowed | limbs, tails, tentacles, roots, branches |
 | `mg.cut(target, cutter)` | Boolean difference | eye sockets, a paw print in stone, windows |
 | `mg.bend` / `mg.twist` | Bend a piece from its base, twist it about its length (rings are added) | curling tails, drooping ears, horns, rope |
-| `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` along a path, `noise`, `smooth` | snouts, cheeks, eyelids, folds, bark, stone |
+| `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` / `ridge` / `pinch` along a path, `flatten`, `layer`, `noise`, `smooth`; points snap to the surface | snouts, eyelids, brows, lips, fingers, skull ridges, plates |
+| `mg.fur(surface, length=, count=)` | Hair cards with cutout alpha, coloured by the painted surface under them; fewer on phones, none on mobile-low | coats, manes, tufts, grass |
+| `mg.rig(body, joints)` + `mg.clip(name, motion)` | A Humanoid skeleton bound with automatic weights (≤ the tier's bones per vertex); clips `idle`, `zombie_walk`, `walk`, `attack`, `hit` or keys | characters that move in the engines |
 | `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
 | `mg.scatter(surface, piece, count)` | Copies of a piece over a surface, stood on it, spun and scaled at random | pebbles, grass tufts, moss, spikes, rivets |
 | `mg.modify(obj, kind)` | Blender modifiers: solidify, array, displace, smooth, remesh, bevel, wireframe, subdivide, decimate, shrinkwrap | fins, vertebrae rows, terrain, cages, straps |

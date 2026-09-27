@@ -62,12 +62,42 @@ def _seg_distance(p, a, b) -> float:
     return (p - (a + ab * t)).length
 
 
+def _srgb(c: float) -> float:
+    """linear → sRGB."""
+    c = max(0.0, c)
+    return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
+
+
 def _paint_layer(me):
     """An empty soft-paint layer (Blender fills new colour layers with opaque white; this one starts clear)."""
     from .finish import PAINT_ATTR
     layer = me.color_attributes.new(PAINT_ATTR, "FLOAT_COLOR", "POINT")
     layer.data.foreach_set("color", [0.0] * (4 * len(layer.data)))
     return layer
+
+
+class rest_pose:
+    """Measure and bake a rigged character in its rest pose: with clips on NLA tracks Blender would otherwise show
+    every clip at once on the current frame."""
+
+    def __enter__(self):
+        self.arms = [(a, a.data.pose_position) for a in bpy.data.objects if a.type == "ARMATURE"]
+        for a, _ in self.arms:
+            a.data.pose_position = "REST"
+        bpy.context.view_layer.update()
+
+    def __exit__(self, *exc):
+        for a, pos in self.arms:
+            a.data.pose_position = pos
+        bpy.context.view_layer.update()
+        return False
+
+
+def _seg_closest(p, a, b):
+    """The point on segment a–b nearest to p (sculpt pinch)."""
+    ab = b - a
+    t = 0.0 if ab.length_squared < 1e-12 else max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return a + ab * t
 
 
 def material_code(material: str) -> float:
@@ -99,7 +129,8 @@ class Kit:
     """The `mg` object passed to build(mg)."""
 
     def __init__(self, tier: str = "pc", seed: int = 1, name: str = "asset", tmp: str | None = None,
-                 colors: str = "texture", max_materials: int | None = None, finish: str = "none"):
+                 colors: str = "texture", max_materials: int | None = None, finish: str = "none",
+                 max_influences: int = 4):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
@@ -108,6 +139,7 @@ class Kit:
         self._vertex = colors == "vertex"
         self._groups: dict = {}
         self._max_materials = max_materials
+        self._max_influences = max(1, int(max_influences))   # bones per vertex the tier allows (mg.rig)
         self.tier = tier
         self.level = TIERS.index(tier)
         self.rng = random.Random(seed)
@@ -525,7 +557,7 @@ class Kit:
         """Merge pieces into one mesh object named `name`, origin at the world origin. One mesh per rigid part:
         join everything that never moves separately (a whole prop is usually one join)."""
         from .finish import PAINT_ATTR
-        meshes_ = [p for p in parts if getattr(p, "type", None) == "MESH"]
+        meshes_ = [p for p in parts if getattr(p, "type", None) == "MESH" and not p.get("meshgate_cards")]
         if any(p.data.color_attributes.get(PAINT_ATTR) for p in meshes_):
             for p in meshes_:
                 if not p.data.color_attributes.get(PAINT_ATTR):
@@ -533,6 +565,8 @@ class Kit:
                         p.data = p.data.copy()
                     _paint_layer(p.data)
         parts = [p for p in parts if p is not None]
+        cards = [p for p in parts if p.get("meshgate_cards")]   # fur keeps its own cutout material: a child, not merged
+        parts = [p for p in parts if not p.get("meshgate_cards")]
         if not parts:
             raise ModelError(f"join('{name}') got no parts")
         for o in bpy.context.view_layer.objects:
@@ -549,6 +583,10 @@ class Kit:
         obj.location = (0, 0, 0)
         obj.data.transform(Matrix.Translation(loc))
         obj.name = obj.data.name = self._ascii(name)
+        for c in cards:
+            self._bake(c)
+            c.parent = obj
+            c.matrix_parent_inverse = Matrix.Identity(4)
         bpy.context.view_layer.update()
         return obj
 
@@ -598,6 +636,372 @@ class Kit:
         setattr(obj, path, rest)
         bpy.context.scene.frame_end = max(bpy.context.scene.frame_end, self._frame_end)
         return obj
+
+    def fur(self, surface, *, length: float = 0.03, count: int = 5000, droop: float = 0.45, width: float = 0.55,
+            seed: int = 0, at=None, radius: float = 0.1, facing=None, below: float | None = None,
+            above: float | None = None):
+        """Real fur: hair cards — small curved strips of strands standing on a piece and drooping under their weight,
+        the way game artists make fur, manes and grass tufts. Each card takes the colour of the surface under it
+        (painted regions included), so a pale belly grows pale fur. length = hair length in meters; count = cards on
+        the pc tier (½ on mobile-high, ¼ on mobile-mid, none on mobile-low where the coat texture carries it);
+        droop 0 = straight out, 1 = lying flat downward; width = card width relative to its length. Limit where it
+        grows with at + radius, facing, below / above (keep it off eyes, noses and paws). Uses one fur material with
+        cutout alpha. Not in the low-poly look (returns None). Returns the fur piece — pass it to mg.join with the rest;
+        mg.rig binds it too."""
+        if self._faceted or self.level == 0:
+            return None
+        import bisect
+        from mathutils.bvhtree import BVHTree
+        self._bake(surface)
+        n = max(1, round(count * {3: 1.0, 2: 0.5, 1: 0.25}[self.level]))
+        rng = random.Random(seed * 104729 + 7)
+        sm = surface.data
+        off = surface.location
+        sm.calc_loop_triangles()
+        uv = sm.uv_layers.active.data if sm.uv_layers else None
+        from .finish import PAINT_ATTR
+        soft = sm.color_attributes.get(PAINT_ATTR) if hasattr(sm, "color_attributes") else None
+        cell_rgb = {tuple(round(x, 4) for x in self._cell_uv(nm)): c["rgb"] for nm, c in self._colors.items()}
+        tris = []
+        for lt in sm.loop_triangles:
+            a, b, c = (sm.vertices[i].co + off for i in lt.vertices)
+            nrm = (b - a).cross(c - a)
+            area = nrm.length / 2
+            if area <= 0:
+                continue
+            nrm.normalize()
+            cen = (a + b + c) / 3
+            if at is not None and (cen - Vector(at)).length > radius:
+                continue
+            if facing is not None and nrm.dot(Vector(facing).normalized()) < 0.35:
+                continue
+            if (below is not None and cen.z > below) or (above is not None and cen.z < above):
+                continue
+            rgb = cell_rgb.get(tuple(round(x, 4) for x in uv[lt.loops[0]].uv), (0.5, 0.5, 0.5)) if uv else (0.5, 0.5, 0.5)
+            if soft is not None:   # the soft paint layer over the palette colour, as the bake mixes it
+                col = [0.0, 0.0, 0.0, 0.0]
+                for vi in lt.vertices:
+                    col = [x + y / 3 for x, y in zip(col, soft.data[vi].color)]
+                lin = [_linear(x) for x in rgb]
+                rgb = tuple(_srgb(lin[k] * (1 - col[3]) + col[k] * col[3]) for k in range(3))
+            tris.append((a, b, c, nrm, area, rgb))
+        if not tris:
+            raise ModelError("fur found no surface to grow on — check at / radius / facing / heights")
+        cum, acc = [], 0.0
+        for t in tris:
+            acc += t[4]
+            cum.append(acc)
+        verts, faces, uvs, cols = [], [], [], []
+        down = Vector((0, 0, -1))
+        for _ in range(n):
+            a, b, c, nrm, _area, rgb = tris[min(bisect.bisect_left(cum, rng.random() * acc), len(tris) - 1)]
+            u, v = rng.random(), rng.random()
+            if u + v > 1:
+                u, v = 1 - u, 1 - v
+            root = a + (b - a) * u + (c - a) * v - nrm * length * 0.08
+            L = length * rng.uniform(0.7, 1.3)
+            side = nrm.cross(Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)))).normalized()
+            if side.length < 1e-6:
+                side = nrm.orthogonal().normalized()
+            w = L * width * rng.uniform(0.8, 1.2)
+            d0 = nrm
+            d1 = (nrm * (1 - droop) + down * droop + side.cross(nrm) * rng.uniform(-0.2, 0.2)).normalized()
+            spine = [root, root + d0 * L * 0.35, root + d0 * L * 0.35 + d1 * L * 0.65]
+            base = len(verts)
+            for i, q in enumerate(spine):
+                half = w * (0.5 - 0.15 * i)   # narrower toward the tips
+                verts += [tuple(q - side * half), tuple(q + side * half)]
+                uvs += [(0.0, i / 2), (1.0, i / 2)]
+                cols += [rgb, rgb]
+            for i in range(2):
+                k = base + i * 2
+                faces.append((k, k + 1, k + 3, k + 2))
+        me = bpy.data.meshes.new("fur")
+        me.from_pydata(verts, [], faces)
+        uvl = me.uv_layers.new(name="UVMap")
+        for poly in me.polygons:
+            for li in poly.loop_indices:
+                vi = me.loops[li].vertex_index
+                uvl.data[li].uv = uvs[vi]
+        ca = me.color_attributes.new("Col", "FLOAT_COLOR", "POINT")
+        for i, c in enumerate(cols):
+            ca.data[i].color = [_linear(x) for x in c] + [1.0]
+        for poly in me.polygons:
+            poly.use_smooth = True
+        me.materials.append(self._fur_material())
+        obj = bpy.data.objects.new("fur", me)
+        obj["meshgate_cards"] = True
+        bpy.context.collection.objects.link(obj)
+        return obj
+
+    def _fur_material(self):
+        """One cutout material for every fur card: a strand texture (alpha = the strands), tinted by vertex colour."""
+        mat = bpy.data.materials.get(f"{self._name}_fur")
+        if mat:
+            return mat
+        px = 128
+        img = bpy.data.images.new(f"{self._name}_fur_strands", px, px, alpha=True)
+        rng = random.Random(11)
+        data = [0.0] * (px * px * 4)
+        for _ in range(38):   # strands: thin, tapering, of varied length, a little darker at the root
+            x0 = rng.uniform(0.04, 0.96) * px
+            top = rng.uniform(0.55, 1.0)
+            lean = rng.uniform(-0.08, 0.08) * px
+            for y in range(px):
+                t = y / (px - 1)
+                if t > top:
+                    break
+                half = 1.6 * (1 - t / top) + 0.35
+                xc = x0 + lean * t
+                shade = 0.62 + 0.38 * t
+                for x in range(max(0, int(xc - half - 1)), min(px, int(xc + half + 2))):
+                    cov = max(0.0, min(1.0, half + 0.5 - abs(x + 0.5 - xc)))
+                    if cov > 0:
+                        i = (y * px + x) * 4
+                        data[i:i + 4] = [shade, shade, shade, max(data[i + 3], cov)]
+        img.pixels = data
+        img.pack()
+        mat = bpy.data.materials.new(f"{self._name}_fur")
+        mat.use_nodes = True
+        mat.use_backface_culling = False   # cards are seen from both sides
+        if hasattr(mat, "blend_method"):
+            try:
+                mat.blend_method = "CLIP"
+                mat.alpha_threshold = 0.5
+            except (TypeError, AttributeError):
+                pass
+        nt = mat.node_tree
+        pb = compat.principled(mat)
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        vc = nt.nodes.new("ShaderNodeVertexColor")
+        vc.layer_name = "Col"
+        mul = nt.nodes.new("ShaderNodeMix") if bpy.app.version >= (3, 4, 0) else nt.nodes.new("ShaderNodeMixRGB")
+        if mul.bl_idname == "ShaderNodeMix":
+            mul.data_type, mul.blend_type = "RGBA", "MULTIPLY"
+            mul.inputs[0].default_value = 1.0
+            nt.links.new(tex.outputs["Color"], mul.inputs[6])
+            nt.links.new(vc.outputs["Color"], mul.inputs[7])
+            nt.links.new(mul.outputs[2], pb.inputs["Base Color"])
+        else:
+            mul.blend_type, mul.inputs[0].default_value = "MULTIPLY", 1.0
+            nt.links.new(tex.outputs["Color"], mul.inputs[1])
+            nt.links.new(vc.outputs["Color"], mul.inputs[2])
+            nt.links.new(mul.outputs[0], pb.inputs["Base Color"])
+        cut = nt.nodes.new("ShaderNodeMath")   # the glTF exporter reads a Round on alpha as a cutout (alphaMode MASK)
+        cut.operation = "ROUND"
+        nt.links.new(tex.outputs["Alpha"], cut.inputs[0])
+        nt.links.new(cut.outputs[0], pb.inputs["Alpha"])
+        pb.inputs["Roughness"].default_value = 0.85
+        return mat
+
+    # ------------------------------------------------------------------ characters: a skeleton and clips
+
+    def rig(self, body, joints: dict, *, tail=None, mirror: bool = True):
+        """Give a character a skeleton the engines can animate (Unity Humanoid / Mixamo bone names), bound to `body` —
+        the joined character mesh, so call it after mg.join. joints = world points in meters:
+          "hips", "chest", "neck", "head" (the skull's base), "head_top",
+          "shoulder_l", "elbow_l", "hand_l", "hip_l", "knee_l", "ankle_l", "toe_l"
+        optional "spine" (between hips and chest), "fingers_l" (the hand's tip) and "toe_end_l". The character's left
+        is +X; the right side is mirrored unless you give "_r" joints too (mirror=False). tail = [(x, y, z), …] adds a
+        tail chain (Tail1, Tail2, …). The body bends smoothly (automatic weights); small separate pieces — eyes, a
+        collar, whiskers, claws — follow their nearest bone rigidly. Returns the armature; add clips with mg.clip."""
+        need = ["hips", "chest", "neck", "head", "head_top", "shoulder_l", "elbow_l", "hand_l", "hip_l", "knee_l",
+                "ankle_l", "toe_l"]
+        missing = [k for k in need if k not in joints]
+        if missing:
+            raise ModelError(f"rig: missing joints {', '.join(missing)}")
+        J = {k: Vector(v) for k, v in joints.items()}
+        J.setdefault("spine", (J["hips"] + J["chest"]) / 2)
+        J.setdefault("fingers_l", J["hand_l"] + (J["hand_l"] - J["elbow_l"]) * 0.35)
+        toe_dir = J["toe_l"] - J["ankle_l"]
+        toe_dir.z = 0
+        J.setdefault("toe_end_l", J["toe_l"] + (toe_dir.normalized() * max(toe_dir.length * 0.4, 0.01) if toe_dir.length else Vector((0, -0.02, 0))))
+        for k in list(J):
+            if k.endswith("_l") and (mirror or k[:-2] + "_r" not in J):
+                J.setdefault(k[:-2] + "_r", Vector((-J[k].x, J[k].y, J[k].z)))
+        bones = [("Hips", "hips", "spine", None), ("Spine", "spine", "chest", "Hips"), ("Chest", "chest", "neck", "Spine"),
+                 ("Neck", "neck", "head", "Chest"), ("Head", "head", "head_top", "Neck")]
+        for side, s_ in (("Left", "_l"), ("Right", "_r")):
+            sh = J["chest"] + (J["shoulder" + s_] - J["chest"]) * 0.3
+            sh.z = J["shoulder" + s_].z
+            J["clavicle" + s_] = sh
+            bones += [(f"{side}Shoulder", "clavicle" + s_, "shoulder" + s_, "Chest"),
+                      (f"{side}UpperArm", "shoulder" + s_, "elbow" + s_, f"{side}Shoulder"),
+                      (f"{side}LowerArm", "elbow" + s_, "hand" + s_, f"{side}UpperArm"),
+                      (f"{side}Hand", "hand" + s_, "fingers" + s_, f"{side}LowerArm"),
+                      (f"{side}UpperLeg", "hip" + s_, "knee" + s_, "Hips"),
+                      (f"{side}LowerLeg", "knee" + s_, "ankle" + s_, f"{side}UpperLeg"),
+                      (f"{side}Foot", "ankle" + s_, "toe" + s_, f"{side}LowerLeg"),
+                      (f"{side}Toes", "toe" + s_, "toe_end" + s_, f"{side}Foot")]
+        chain = [Vector(t) for t in (tail or [])]
+        for i in range(len(chain) - 1):
+            J[f"tail{i}"], J[f"tail{i + 1}"] = chain[i], chain[i + 1]
+            bones.append((f"Tail{i + 1}", f"tail{i}", f"tail{i + 1}", "Hips" if i == 0 else f"Tail{i}"))
+        self._bake(body)
+        data = bpy.data.armatures.new(f"{self._name}_rig")
+        arm = bpy.data.objects.new(f"{self._name}_rig", data)
+        bpy.context.collection.objects.link(arm)
+        bpy.context.view_layer.update()
+        for o in bpy.context.view_layer.objects:
+            o.select_set(o is arm)
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="EDIT")
+        for name, a, b, parent in bones:
+            eb = data.edit_bones.new(name)
+            eb.head, eb.tail = J[a], J[b]
+            if (eb.tail - eb.head).length < 1e-4:
+                eb.tail = eb.head + Vector((0, 0, 0.01))
+            if parent:
+                eb.parent = data.edit_bones[parent]
+        bpy.ops.object.mode_set(mode="OBJECT")
+        # bind: Blender's automatic (heat) weights on the body, then tidy up
+        for o in bpy.context.view_layer.objects:
+            o.select_set(o in (arm, body))
+        bpy.context.view_layer.objects.active = arm
+        try:
+            bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+        except RuntimeError as exc:   # heat weighting can refuse a mesh; the distance blend below covers it
+            print(f"MeshGate rig: automatic weights unavailable ({exc})")
+        if body.parent is not arm:
+            body.parent = arm
+        if not any(m.type == "ARMATURE" for m in body.modifiers):
+            body.modifiers.new("rig", "ARMATURE").object = arm
+        for name, *_ in bones:
+            if name not in body.vertex_groups:
+                body.vertex_groups.new(name=name)
+        self._tidy_weights(body, arm)
+        self._bind_cards(body, arm)
+        self._rig = arm
+        return arm
+
+    def _bind_cards(self, body, arm):
+        """Fur cards on the body follow the skeleton: each card vertex copies the weights of the nearest body vertex."""
+        from mathutils.kdtree import KDTree
+        cards = [c for c in bpy.data.objects if c.get("meshgate_cards") and c.parent is body]
+        if not cards:
+            return
+        bm = body.matrix_world
+        tree = KDTree(len(body.data.vertices))
+        for v in body.data.vertices:
+            tree.insert(bm @ v.co, v.index)
+        tree.balance()
+        names = {g.index: g.name for g in body.vertex_groups}
+        for c in cards:
+            mw = c.matrix_world.copy()
+            c.parent = arm
+            c.matrix_world = mw
+            c.modifiers.new("rig", "ARMATURE").object = arm
+            groups = {}
+            for v in c.data.vertices:
+                _, idx, _ = tree.find(mw @ v.co)
+                for g in body.data.vertices[idx].groups:
+                    name = names[g.group]
+                    grp = groups.get(name) or c.vertex_groups.get(name) or c.vertex_groups.new(name=name)
+                    groups[name] = grp
+                    grp.add([v.index], g.weight, "REPLACE")
+
+    def _tidy_weights(self, body, arm):
+        """Small separate pieces and anything left unweighted follow the nearest bone rigidly; ≤ 4 bones per vertex."""
+        me = body.data
+        n = len(me.vertices)
+        parent = list(range(n))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        for e in me.edges:
+            a, b = find(e.vertices[0]), find(e.vertices[1])
+            if a != b:
+                parent[a] = b
+        islands: dict = {}
+        for i in range(n):
+            islands.setdefault(find(i), []).append(i)
+        segs = [(b.name, arm.matrix_world @ b.head_local, arm.matrix_world @ b.tail_local) for b in arm.data.bones]
+        idx = {g.name: g.index for g in body.vertex_groups}
+        groups = body.vertex_groups
+        mw = body.matrix_world
+        ours = set(idx.values())
+        for verts in islands.values():
+            weighted = [sum(g.weight for g in me.vertices[i].groups if g.group in ours) for i in verts]
+            if len(verts) >= 0.03 * n:   # the body: heat weights stay; unweighted vertices blend their nearest bones
+                for i, w in zip(verts, weighted):
+                    if w > 1e-4:
+                        continue
+                    c = mw @ me.vertices[i].co
+                    ds = sorted(((_seg_distance(c, s[1], s[2]), s[0]) for s in segs))
+                    near = [(d, b) for d, b in ds[:4] if d <= ds[0][0] * 1.6 + 0.004]
+                    ws = [(b, 1.0 / (d + 0.004) ** 4) for d, b in near]
+                    tot = sum(x for _, x in ws)
+                    for b, x in ws:
+                        groups[b].add([i], x / tot, "REPLACE")
+                continue
+            c = sum((mw @ me.vertices[i].co for i in verts), Vector()) / len(verts)
+            bone = min(segs, key=lambda s: _seg_distance(c, s[1], s[2]))[0]
+            for g in groups:
+                g.remove(verts)
+            groups[bone].add(verts, 1.0, "REPLACE")
+        for v in me.vertices:
+            gs = sorted(((g.group, g.weight) for g in v.groups if g.weight > 1e-4), key=lambda t: -t[1])
+            keep, drop = gs[:self._max_influences], gs[self._max_influences:]
+            for gi, _ in drop:
+                groups[gi].remove([v.index])
+            total = sum(w for _, w in keep)
+            if total > 0:
+                for gi, w in keep:
+                    groups[gi].add([v.index], w / total, "REPLACE")
+
+    def clip(self, name: str, motion, *, strength: float = 1.0):
+        """An animation clip for the rigged character (mg.rig first). motion = a preset:
+          "idle"        breathing and a slow sway, 2 s loop
+          "zombie_walk" a stiff shamble in place: dragging legs, slumped chest, lolling head, arms out, 1.2 s loop
+          "walk"        a plain walk in place with swinging arms, 1 s loop
+          "attack"      a wind-up, a lunge and a double swipe, 1 s
+          "hit"         a flinch back and recover, 0.7 s
+        or your own keys: {frame: {"Bone": (x, y, z) degrees about the world X / Y / Z axes, …}, …} at 30 fps (the rest
+        pose is (0, 0, 0); "Hips_move": (x, y, z) meters moves the whole body). Bone names as in mg.rig: Hips, Spine,
+        Chest, Neck, Head, LeftUpperArm, LeftLowerArm, LeftHand, LeftUpperLeg, LeftLowerLeg, LeftFoot (Right…),
+        Tail1…. strength scales a preset. Loops end on their first pose."""
+        from mathutils import Euler, Quaternion
+        arm = getattr(self, "_rig", None)
+        if arm is None:
+            raise ModelError("clip: call mg.rig(body, joints) first")
+        keys = _preset(motion, [b.name for b in arm.data.bones], float(strength)) if isinstance(motion, str) else motion
+        if not keys:
+            raise ModelError(f"clip: unknown motion {motion!r} — use idle, zombie_walk, walk, attack, hit or keys")
+        ad = arm.animation_data or arm.animation_data_create()
+        ad.action = bpy.data.actions.new(f"{self._ascii(name)}_{arm.name}")
+        for pb in arm.pose.bones:
+            pb.rotation_mode = "QUATERNION"
+        frames = sorted(int(f) for f in keys)
+        used = {b for f in frames for b in keys[f]}
+        for f in frames:
+            pose = keys[f]
+            for bname in used:
+                if bname == "Hips_move":
+                    pb = arm.pose.bones["Hips"]
+                    rest = pb.bone.matrix_local.to_3x3()
+                    pb.location = rest.inverted() @ Vector(pose.get(bname, (0, 0, 0)))
+                    pb.keyframe_insert("location", frame=f)
+                    continue
+                pb = arm.pose.bones.get(bname)
+                if pb is None:
+                    continue
+                rot = pose.get(bname, (0, 0, 0))
+                q_world = Euler([math.radians(a) for a in rot], "XYZ").to_quaternion()
+                rest = pb.bone.matrix_local.to_quaternion()
+                pb.rotation_quaternion = rest.inverted() @ q_world @ rest
+                pb.keyframe_insert("rotation_quaternion", frame=f)
+            self._frame_end = max(self._frame_end, f)
+        compat.set_interpolation(ad.action, "BEZIER", "EASE_IN_OUT")
+        compat.push_to_nla(arm, self._ascii(name))
+        for pb in arm.pose.bones:
+            pb.rotation_quaternion = Quaternion()
+            pb.location = (0, 0, 0)
+        bpy.context.scene.frame_end = max(bpy.context.scene.frame_end, self._frame_end)
+        return arm
 
     # ------------------------------------------------------------------ ready-made models and painting
 
@@ -957,18 +1361,38 @@ class Kit:
         return self._deform(obj, "TWIST", angle, along, None)
 
     def sculpt(self, obj, brush: str, *, at=None, radius: float = 0.1, amount: float = 0.02, to=None, path=None,
-               scale: float = 12.0):
+               scale: float = 12.0, strength: float = 0.6):
         """Shape a smooth piece like a sculpting brush — best on blob(), skin() or subdivided parts (many vertices):
           "grab"    move the surface near `at` by the vector `to` = (x, y, z), fading out over `radius` (pull a snout)
           "inflate" push the surface near `at` out along its normals by `amount` (negative dents: cheeks, dimples)
           "crease"  press a groove `amount` deep and `radius` wide along `path` = [(x, y, z), …] (eyelids, folds, bark)
           "noise"   roughen the surface by `amount` at `scale` bumps per meter, near `at` or everywhere (stone, bark)
-          "smooth"  relax the surface near `at`, or everywhere without `at`.
-        All positions in world meters. Returns the piece."""
+          "smooth"  relax the surface near `at`, or everywhere without `at`
+          "ridge"   raise a rounded ridge `amount` high and `radius` wide along `path` (eyelids, brows, lips, a skull crest)
+          "pinch"   pull the surface within `radius` toward the `path` line, by `strength` 0…1 — makes a crease or ridge
+                    crisp and sharp (run it after crease or ridge on the same path)
+          "flatten" press the surface near `at` flat onto its average plane (or the plane facing `to`), by `strength`:
+                    cheek plates, planes of a skull, a worn flat spot
+          "layer"   add a layer of clay `amount` thick with a crisp edge over `radius` around `at` (paw pads, plates,
+                    scales, a thickened brow).
+        All positions in world meters; path points and `at` snap to the nearest point of the surface. Returns the piece."""
         import bmesh
         from mathutils import noise as mnoise
         self._bake(obj)
-        if brush == "crease" and path:
+        # brush points land on the surface: the nearest point of the piece, so a path drawn roughly still bites
+        if (path or at is not None) and obj.data.polygons:
+            from mathutils.bvhtree import BVHTree
+            bvh = BVHTree.FromPolygons([tuple(v.co + obj.location) for v in obj.data.vertices],
+                                       [tuple(p.vertices) for p in obj.data.polygons])
+
+            def snap(q):
+                hit = bvh.find_nearest(Vector(q))
+                return tuple(hit[0]) if hit and hit[0] is not None else tuple(q)
+            if path:
+                path = [snap(q) for q in path]
+            if at is not None and brush != "grab":
+                at = snap(at)
+        if brush in ("crease", "ridge", "pinch") and path:
             line_ = [Vector(p) for p in path]
             near = lambda c: min(_seg_distance(c, a, b) for a, b in zip(line_, line_[1:])) < radius * 2   # noqa: E731
         elif at is not None:
@@ -1003,16 +1427,59 @@ class Kit:
                 if w:
                     h = amount if brush == "inflate" else amount * mnoise.noise(wp * scale)
                     v.co += v.normal * h * w
-        elif brush == "crease":
+        elif brush in ("crease", "ridge", "pinch"):
             line = [Vector(p) for p in (path or [])]
             if len(line) < 2:
-                raise ModelError("sculpt('crease') needs path= with at least two points")
+                raise ModelError(f"sculpt('{brush}') needs path= with at least two points")
+            k = max(0.0, min(1.0, float(strength)))
             for v in bm.verts:
                 wp = mw @ v.co
-                d = min(_seg_distance(wp, a, b) for a, b in zip(line, line[1:]))
+                d, q = min(((_seg_distance(wp, a, b), _seg_closest(wp, a, b)) for a, b in zip(line, line[1:])),
+                           key=lambda t: t[0])
                 w = fall(d)
-                if w:
+                if not w:
+                    continue
+                if brush == "crease":
                     v.co -= v.normal * amount * w
+                elif brush == "ridge":
+                    v.co += v.normal * amount * w
+                else:   # pinch: slide toward the line within the surface, so its edge gets sharp
+                    delta = q - wp
+                    delta -= v.normal * v.normal.dot(delta)
+                    v.co += delta * k * w
+            # tidy the stroke like an artist's light smooth pass: shards from moved vertices go, the ridge stays
+            touched = [v for v in bm.verts
+                       if min(_seg_distance(mw @ v.co, a, b) for a, b in zip(line, line[1:])) < radius * 1.2]
+            for _ in range(2):
+                new = {}
+                for v in touched:
+                    if v.link_edges:
+                        avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
+                        new[v] = v.co.lerp(avg, 0.35)
+                for v, co in new.items():
+                    v.co = co
+        elif brush == "flatten":
+            if centre is None:
+                raise ModelError("sculpt('flatten') needs at=")
+            inside = [(v, fall(((mw @ v.co) - centre).length)) for v in bm.verts]
+            inside = [(v, w) for v, w in inside if w]
+            if inside:
+                tot = sum(w for _, w in inside)
+                origin = sum((v.co * w for v, w in inside), Vector()) / tot
+                nrm = (inv.to_3x3() @ Vector(to)).normalized() if to is not None else \
+                    sum((v.normal * w for v, w in inside), Vector()).normalized()
+                k = max(0.0, min(1.0, float(strength)))
+                for v, w in inside:
+                    v.co -= nrm * nrm.dot(v.co - origin) * k * w
+        elif brush == "layer":
+            if centre is None:
+                raise ModelError("sculpt('layer') needs at=")
+            edge = max(radius * 0.25, 1e-6)
+            for v in bm.verts:
+                d = ((mw @ v.co) - centre).length
+                u = max(0.0, min(1.0, (radius - d) / edge))
+                if u:
+                    v.co += v.normal * amount * u * u * (3 - 2 * u)
         elif brush == "smooth":
             new = {}
             for v in bm.verts:
@@ -1023,7 +1490,7 @@ class Kit:
             for v, co in new.items():
                 v.co = co
         else:
-            raise ModelError(f"sculpt brush '{brush}' — use grab, inflate, crease, noise or smooth")
+            raise ModelError(f"sculpt brush '{brush}' — use grab, inflate, crease, ridge, pinch, flatten, layer, noise or smooth")
         bm.to_mesh(me)
         me.update()
         bm.free()
@@ -1046,7 +1513,7 @@ class Kit:
         import bmesh
         xs, ys, zs = zip(*[v.co[:] for v in obj.data.vertices]) if obj.data.vertices else ((0,), (0,), (0,))
         extent = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1e-3)
-        cells = {0: 40, 1: 70, 2: 120, 3: 220}[self.level] * (0.5 if self._faceted else 1.0)
+        cells = {0: 40, 1: 70, 2: 140, 3: 300}[self.level] * (0.5 if self._faceted else 1.0)
         max_edge = max(max_edge, extent / cells)
         bm = bmesh.new()
         bm.from_mesh(obj.data)
@@ -1130,12 +1597,16 @@ class Kit:
     def _finalize(self) -> list[str]:
         """After build(): palette textures, one root named after the asset, grounded and centred. Returns notes."""
         notes = []
+        with rest_pose():
+            return self._finalize_rest(notes)
+
+    def _finalize_rest(self, notes: list) -> list[str]:
         self._make_palette()
         objs = [o for o in bpy.context.scene.objects]
         meshes = [o for o in objs if o.type == "MESH"]
         if not meshes:
             raise ModelError("build(mg) made no mesh — create parts and join them")
-        hidden = sum(self._cull_hidden(o) for o in meshes)
+        hidden = sum(self._cull_hidden(o) for o in meshes if not o.get("meshgate_cards"))
         if hidden:
             notes.append(f"removed {hidden} hidden faces (inside other pieces)")
         roots = [o for o in objs if o.parent is None]
@@ -1259,7 +1730,8 @@ class Kit:
 
     def _dims(self) -> list[float]:
         meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
-        lo, hi = self._bounds(meshes)
+        with rest_pose():
+            lo, hi = self._bounds(meshes)
         return [round(v, 3) for v in (hi - lo)]
 
     # ------------------------------------------------------------------ internals
@@ -1482,3 +1954,73 @@ class Kit:
             nt.links.new(t3.outputs["Color"], compat.socket(b, "Emission Color"))
             b.inputs["Emission Strength"].default_value = peak
         return self._mat
+
+
+def _preset(motion: str, bones: list, k: float) -> dict:
+    """Keyframes for a named motion over the humanoid bones present: {frame: {bone: (x, y, z) world degrees}}."""
+    tails = [b for b in bones if b.startswith("Tail")]
+    out: dict = {}
+
+    def put(f, b, v):
+        if b in bones or b == "Hips_move":
+            out.setdefault(f, {})[b] = tuple(x * k for x in v) if b != "Hips_move" else tuple(x * k for x in v)
+    if motion in ("zombie_walk", "walk"):
+        n = 36 if motion == "zombie_walk" else 30
+        zombie = motion == "zombie_walk"
+        for f in range(0, n + 1, 3):
+            ph = 2 * math.pi * f / n
+            s, c = math.sin(ph), math.cos(ph)
+            swing = 22 if zombie else 28
+            put(f, "LeftUpperLeg", (-swing * s, 0, 0))
+            put(f, "RightUpperLeg", (swing * s, 0, 0))
+            put(f, "LeftLowerLeg", (30 * max(0.0, -c) + 5, 0, 0))
+            put(f, "RightLowerLeg", (30 * max(0.0, c) + 5, 0, 0))
+            put(f, "Hips", (0, 5 * s if zombie else 2 * s, 6 * s))
+            put(f, "Hips_move", (0, 0, -0.012 * math.cos(2 * ph)))
+            put(f, "Spine", (4 if zombie else 0, 0, -3 * s))
+            put(f, "Chest", (10 if zombie else 2, -3 * s if zombie else 0, -4 * s))
+            put(f, "Head", (6 * math.sin(2 * ph) + (8 if zombie else 0), 14 * s if zombie else 0, 0))
+            if zombie:   # arms held out, bobbing out of step
+                put(f, "LeftUpperArm", (6 * math.sin(ph + 1.5), 0, 3 * s))
+                put(f, "RightUpperArm", (6 * math.sin(ph - 1.5), 0, 3 * s))
+                put(f, "LeftLowerArm", (-5 * max(0.0, s), 0, 0))
+                put(f, "RightLowerArm", (-5 * max(0.0, -s), 0, 0))
+            else:
+                put(f, "LeftUpperArm", (25 * s, 0, 0))
+                put(f, "RightUpperArm", (-25 * s, 0, 0))
+            for i, t in enumerate(tails):
+                put(f, t, (0, 0, 16 * math.sin(ph - 0.7 * (i + 1))))
+    elif motion == "idle":
+        for f in range(0, 61, 6):
+            ph = 2 * math.pi * f / 60
+            s = math.sin(ph)
+            put(f, "Chest", (3 * s, 0, 0))
+            put(f, "Spine", (1.5 * s, 0, 0))
+            put(f, "Head", (-2 * s, 5 * math.sin(ph + 0.8), 0))
+            put(f, "LeftUpperArm", (-3 * s, 0, 0))
+            put(f, "RightUpperArm", (-3 * math.sin(ph + 0.6), 0, 0))
+            for i, t in enumerate(tails):
+                put(f, t, (0, 0, 10 * math.sin(ph - 0.6 * (i + 1))))
+    elif motion == "attack":
+        poses = {0: (0, 0, 0, 0), 8: (-45, -10, -10, 0.0), 13: (40, 20, 15, -0.05), 18: (-20, 5, -5, -0.04),
+                 22: (45, 25, 18, -0.06), 30: (0, 0, 0, 0)}
+        for f, (arm, chest, head, lunge) in poses.items():
+            put(f, "LeftUpperArm", (arm, 0, 0))
+            put(f, "RightUpperArm", (arm * (0.6 if f in (13, 18) else 1.0), 0, 0))
+            put(f, "LeftLowerArm", (max(0, arm) * 0.3, 0, 0))
+            put(f, "RightLowerArm", (max(0, arm) * 0.3, 0, 0))
+            put(f, "Chest", (chest, 0, 0))
+            put(f, "Head", (head, 0, 0))
+            put(f, "Hips_move", (0, lunge, 0))
+            for i, t in enumerate(tails):
+                put(f, t, (-chest * 0.6, 0, 0))
+    elif motion == "hit":
+        poses = {0: (0, 0), 4: (-16, -22), 9: (-8, -10), 14: (3, 4), 20: (0, 0)}
+        for f, (chest, head) in poses.items():
+            put(f, "Chest", (chest, 0, 0))
+            put(f, "Spine", (chest * 0.5, 0, 0))
+            put(f, "Head", (head, 0, 0))
+            put(f, "LeftUpperArm", (-chest, 0, 0))
+            put(f, "RightUpperArm", (-chest, 0, 0))
+            put(f, "Hips_move", (0, -chest * 0.002, 0))
+    return out

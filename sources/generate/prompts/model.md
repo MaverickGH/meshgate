@@ -32,8 +32,8 @@ Tiers built for this asset: {built}.
    one cell of a single palette material, so the whole asset stays one material and one draw call on every tier. Use
    real material values: bare metal (steel, brass, chrome, gold) metal=1.0 with rough 0.2–0.5; painted or rusted metal
    is paint: metal=0–0.2, rough 0.4–0.8; wood, stone, fabric, plastic metal=0 with rough 0.5–0.9; glow only on things
-   that emit light (lamps, screens, eyes, magic). There is no transparency: glass is an opaque tinted colour (glowing
-   glass: give that colour glow).
+   that emit light (lamps, screens, eyes, magic). Glass is an opaque tinted colour (glowing glass: give that colour
+   glow). The one kind of transparency is cutout fur and hair from `mg.fur`.
 4. Join every rigid group into one mesh with `mg.join(name, parts)`. Only parts that move separately (a lid, a door,
    a wheel, a propeller) stay separate: `mg.pivot` them to the hinge or axle, `mg.attach` them to the body and give
    them an `mg.animate` clip — only when the description implies motion.

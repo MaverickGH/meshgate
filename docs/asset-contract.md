@@ -16,6 +16,8 @@ the rest are conventions on the export side.
 
 ## Materials
 - **PBR only.** Principled BSDF (Blender) / Standard Surface → glTF `pbrMetallicRoughness`. Exotic nodes do not carry over — bake them into textures.
+- **Transparency** is cutout only (`alphaMode: MASK`) and only where it replaces geometry: hair and fur cards,
+  leaves, grass. Blended transparency sorts badly on every engine and is avoided; glass is an opaque tint.
 - **Textures** are packed into the GLB or placed next to it; sizes are powers of two (1024/2048), format WebP/PNG where possible.
 
 ## Naming

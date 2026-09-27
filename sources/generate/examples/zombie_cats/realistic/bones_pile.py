@@ -72,6 +72,16 @@ def build(mg):
         mg.sculpt(skull, "crease", path=[P(sx + 0.02 * length, 0.05 * length, z + 0.02 * length),
                                          P(sx + 0.03 * length, -0.05 * length, z + 0.02 * length)],
                   radius=0.004, amount=0.002)
+        crest = [P(sx - 0.07 * length, 0.01, z + 0.032 * length), P(sx + 0.07 * length, 0.012, z + 0.03 * length)]
+        mg.sculpt(skull, "ridge", path=crest, radius=0.005, amount=0.0025)
+        mg.sculpt(skull, "pinch", path=crest, radius=0.005, strength=0.6)
+        cheek = P(sx + 0.04 * length, -0.03 * length, z + 0.02 * length)
+        mg.sculpt(skull, "layer", at=cheek, radius=0.03 * length, amount=0.0015)
+        mg.sculpt(skull, "flatten", at=cheek, radius=0.028 * length, strength=0.5)
+        gill = [P(sx + 0.07 * length, 0.05 * length, z + 0.015 * length), P(sx + 0.085 * length, 0.0, z + 0.022 * length),
+                P(sx + 0.07 * length, -0.06 * length, z + 0.015 * length)]
+        mg.sculpt(skull, "ridge", path=gill, radius=0.004, amount=0.0018)
+        mg.sculpt(skull, "pinch", path=gill, radius=0.004, strength=0.6)
         parts.append(skull)
         # the lower jaw hangs open
         parts.append(C([(sx - 0.02 * length, -0.03 * length, z - 0.004), (sx - 0.1 * length, -0.06 * length, z - 0.008),

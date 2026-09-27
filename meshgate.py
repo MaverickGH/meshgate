@@ -515,6 +515,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_rework(exe, work)
     ok &= _check_blender_tools(exe, work)
     ok &= _check_review(exe, work)
+    ok &= _check_character(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -698,6 +699,33 @@ def _check_review(exe: str, work: Path) -> bool:
         print(f"  ✗ visual review loop: {exc}")
     if not good:
         print("  ✗ visual review loop: " + (r.stdout + r.stderr)[-1500:])
+    return good
+
+
+def _check_character(exe: str, work: Path) -> bool:
+    """A kit character: Humanoid skeleton, three clips, bones per vertex within each tier, cutout fur cards on the
+    rich tiers only, the same size on every tier (measured in the rest pose)."""
+    out = work / "character"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "character_rig.py"),
+                        "--name", "critter", "--tiers", "pc,mobile-low", "--targets", "web,unity", "--blender", exe,
+                        "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        t = g["report"]["tiers"]
+        reps = {k: json.loads(subprocess.run([sys.executable, str(ROOT / "core" / "validate_glb.py"), str(out / v["file"]),
+                                               "--json", "--profile", k], capture_output=True, text=True).stdout) for k, v in t.items()}
+        reps = {k: (v[0] if isinstance(v, list) else v) for k, v in reps.items()}
+        mats = {k: [m.get("alphaMode") for m in _glb_json(out / v["file"])["materials"]] for k, v in t.items()}
+        good = (g["ok"] and all(r_.get("humanoid") for r_ in reps.values())
+                and all(sorted(r_.get("animations", [])) == ["attack", "idle", "walk"] for r_ in reps.values())
+                and reps["pc"]["max_influences"] <= 4 and reps["mobile-low"]["max_influences"] <= 2
+                and "MASK" in mats["pc"] and "MASK" not in mats["mobile-low"]
+                and abs(t["pc"]["dims_m"][2] - t["mobile-low"]["dims_m"][2]) < 0.03)
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ character (rig, clips, fur): {exc}")
+    if not good:
+        print("  ✗ character (rig, clips, fur): " + (r.stdout + r.stderr)[-1500:])
     return good
 
 

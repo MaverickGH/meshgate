@@ -1,7 +1,7 @@
 """Zombie cat character standing upright on two legs like a person, about 1 m tall: grey-green fur, a stitched scar
 across its head, a torn ear, glowing green eyes, arms stretched forward like a zombie. Sculpted with the kit's clay
 (one blob body), painted in regions, creased and stitched; after the Zombie Cats concept art (docs/img).
-Stylized: the same sculpt with a smooth, clean coat."""
+Stylized: the same sculpt and rig with a smooth, clean coat (no coat noise, no fur cards)."""
 import math
 
 
@@ -12,7 +12,6 @@ def build(mg):
     flesh = mg.color("raw_flesh", "#8c3a3c", rough=0.45)
     inner = mg.color("inner_ear", "#b98282", rough=0.6)
     glow = mg.color("eye_glow", "#a4ff3c", rough=0.3, glow=3.0)
-    pupil = mg.color("pupil", "#0e120c", rough=0.2)
     nose = mg.color("nose", "#6b3a44", rough=0.4)
     thread = mg.color("stitch_thread", "#2b2622", rough=0.8, material="fabric")
     collar_c = mg.color("collar_leather", "#6e1f1f", rough=0.55)
@@ -57,9 +56,29 @@ def build(mg):
     scar = [(-0.13, -0.1, 0.87), (-0.05, -0.12, 0.915), (0.04, -0.1, 0.93), (0.12, -0.06, 0.9)]
     mg.sculpt(body, "crease", path=scar, radius=0.012, amount=0.008)
     mg.sculpt(body, "crease", path=[(0, -0.205, 0.755), (0, -0.2, 0.73)], radius=0.008, amount=0.005)
+    mouth = [[(0, -0.2, 0.73), (sx * 0.035, -0.19, 0.722), (sx * 0.06, -0.17, 0.73)] for sx in (-1, 1)]
+    for m in mouth:
+        mg.sculpt(body, "crease", path=m, radius=0.007, amount=0.004)
+        mg.sculpt(body, "pinch", path=m, radius=0.008, strength=0.5)
+    # sharp features the clay cannot make: eyelids, a frowning brow, the nose bridge, fingers and toes
     for sx in (-1, 1):
-        mg.sculpt(body, "crease", path=[(0, -0.2, 0.73), (sx * 0.035, -0.19, 0.722), (sx * 0.06, -0.17, 0.73)],
-                  radius=0.007, amount=0.004)
+        cx, cz = sx * 0.068, 0.825
+        upper = [(cx + 0.052 * math.cos(math.radians(a)), -0.163, cz + 0.047 * math.sin(math.radians(a))) for a in range(20, 170, 25)]
+        lower = [(cx + 0.05 * math.cos(math.radians(a)), -0.163, cz + 0.044 * math.sin(math.radians(a))) for a in range(205, 340, 30)]
+        mg.sculpt(body, "ridge", path=upper, radius=0.013, amount=0.011)
+        mg.sculpt(body, "pinch", path=upper, radius=0.01, strength=0.35)
+        mg.sculpt(body, "ridge", path=lower, radius=0.01, amount=0.006)
+        brow = [(sx * 0.115, -0.125, 0.885), (sx * 0.07, -0.15, 0.89), (sx * 0.03, -0.165, 0.872)]
+        mg.sculpt(body, "ridge", path=brow, radius=0.016, amount=0.01)
+        for dx in (-0.025, 0.0, 0.025):   # toes
+            toe = [(sx * 0.12 + dx, -0.168, 0.035), (sx * 0.12 + dx, -0.135, 0.07)]
+            mg.sculpt(body, "crease", path=toe, radius=0.007, amount=0.006)
+            mg.sculpt(body, "pinch", path=toe, radius=0.007, strength=0.5)
+        for dx in (-0.017, 0.017):        # fingers
+            finger = [(sx * 0.15 + dx, -0.447, 0.617), (sx * 0.15 + dx, -0.41, 0.643)]
+            mg.sculpt(body, "crease", path=finger, radius=0.006, amount=0.005)
+            mg.sculpt(body, "pinch", path=finger, radius=0.006, strength=0.5)
+    mg.sculpt(body, "ridge", path=[(0, -0.175, 0.862), (0, -0.2, 0.79)], radius=0.012, amount=0.004)
 
     parts = [body]
 
@@ -92,10 +111,10 @@ def build(mg):
             mg.cut(inside, bite2)
         parts += [ear, inside]
 
-    # ---- glowing eyes with slit pupils, a nose
+    # ---- glowing eyes (iris rings, a slit pupil set in, a glossy ball), a nose
     for sx in (-1, 1):
-        parts.append(mg.part("sphere", glow, loc=(sx * 0.068, -0.145, 0.825), scale=(0.078, 0.07, 0.078)))
-        parts.append(mg.part("sphere", pupil, loc=(sx * 0.068, -0.179, 0.825), scale=(0.018, 0.008, 0.056)))
+        parts.append(mg.eye((sx * 0.068, -0.142, 0.825), 0.039, glow, look=(sx * 0.18, -1, 0.04), pupil="slit",
+                            pupil_size=0.32))
     parts.append(mg.part("sphere", nose, loc=(0, -0.207, 0.772), scale=(0.036, 0.022, 0.024)))
 
     # ---- collar with a brass bell
@@ -122,4 +141,15 @@ def build(mg):
                 parts.append(mg.part("cone", claw, loc=(sx * 0.15 + cx, -0.445, 0.605), scale=(0.012, 0.012, 0.03),
                                      rot=(math.pi / 2, 0, 0)))
 
-    mg.join("zc_zombie_cat", parts)
+    body = mg.join("zc_zombie_cat", parts)
+
+    # ---- a skeleton for the engines (Humanoid bone names) and zombie clips
+    mg.rig(body, {"hips": (0, 0.02, 0.37), "spine": (0, 0.0, 0.47), "chest": (0, -0.005, 0.6), "neck": (0, 0.0, 0.69),
+                  "head": (0, -0.02, 0.74), "head_top": (0, -0.02, 0.95),
+                  "shoulder_l": (0.14, -0.01, 0.63), "elbow_l": (0.165, -0.19, 0.6), "hand_l": (0.15, -0.35, 0.615),
+                  "fingers_l": (0.15, -0.44, 0.61), "hip_l": (0.115, 0.02, 0.33), "knee_l": (0.118, 0.005, 0.2),
+                  "ankle_l": (0.12, 0.0, 0.075), "toe_l": (0.12, -0.12, 0.035)},
+           tail=[(0, 0.12, 0.36), (0, 0.24, 0.3), (0.03, 0.34, 0.36), (0.1, 0.36, 0.5), (0.16, 0.33, 0.56)])
+    mg.clip("idle", "idle")
+    mg.clip("walk", "zombie_walk")
+    mg.clip("attack", "attack")

@@ -18,5 +18,13 @@ example: zombie_cats/realistic/zombie_cat.py
 - Hard details stay parts: eyes (with a pupil in front), nose, claws (cones), collar (torus), bell, whiskers (thin
   tubes on mobile-high and up). Ears are cones with a flatter pink cone in front; tear one with `mg.cut`.
 - Tails, tentacles and horns: `mg.skin` through 4–6 points with shrinking radii, then `mg.bend` if it should curl.
+- Sharp features the clay cannot make come from the sharp brushes on the snapped surface: `ridge` + `pinch` for
+  eyelids around the sockets, brows and lips, `crease` + `pinch` between fingers and toes, `layer` for paw pads.
+- Eyes: `mg.eye(center, radius, iris, look=…, pupil="slit")` in each socket — glossy, with iris rings and depth.
+- A coat: `mg.fur(body, length=…, count=…, droop=…)` over the painted body (not the face: limit it with `below=`
+  or `at=` + `facing=`); it takes the painted colours and is skipped on low tiers by itself.
+- A character that moves gets `mg.rig(joined_body, joints)` after the join (hips, chest, neck, head, head_top,
+  shoulder/elbow/hand, hip/knee/ankle/toe on the left; the right is mirrored; `tail=` points) and clips with
+  `mg.clip("idle", "idle")`, `mg.clip("walk", "zombie_walk" or "walk")`, `mg.clip("attack", "attack")`.
 - Tails, whiskers and tentacles read best as `mg.curve` (smooth splines); fur tufts, warts or spikes can be
   `mg.scatter`ed over the body on the richer tiers.

@@ -315,7 +315,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     ridge = maprange(ao.outputs["AO"], 0.82, 0.97, 0.0, 1.0)
     hollow = maprange(ao.outputs["AO"], 0.75, 0.45, 0.0, 1.0)
     wear_amt = {1: .5, 2: .35, 3: .6, 4: .75, 5: .25, 6: .1, 7: .15, 8: .7, 9: .04}   # material index → edge wear (fur: none)
-    dirt_amt = {1: .35, 2: .3, 3: .45, 4: .25, 5: .35, 6: .3, 7: .2, 8: .3, 9: .25}  # → grime in concave edges
+    dirt_amt = {1: .35, 2: .3, 3: .45, 4: .25, 5: .35, 6: .3, 7: .2, 8: .3, 9: .1}  # → grime in concave edges
     wear_k, dirt_k = 0.3, 0.25
     for k in wear_amt:
         mk = nodes.new("ShaderNodeMath")
@@ -432,7 +432,8 @@ def save_high(ctx, path: str, *, hero: bool = False, cells: dict | None = None, 
     PC included, gets in its normal, colour and occlusion maps."""
     ctx.view_layer.update()
     objs = []
-    meshes = [o for o in ctx.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")]
+    meshes = [o for o in ctx.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
+              and not o.get("meshgate_cards")]
     total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons) or 1
     for o in meshes:
         me = o.data.copy()
@@ -465,10 +466,12 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | Non
     """Bake the weathered look (or, clean, the exact colours) into one full PBR texture set for every mesh of the asset:
     base colour, occlusion-roughness-metallic, emission and a normal map. want = texture size asked for. high = meshes
     of the detailed (PC) build: the normal map is baked from them onto this lighter model. Returns notes."""
+    from .modeling import rest_pose
     scene = ctx.scene
     high = list(high or [])
     try:
-        return _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero)
+        with rest_pose():   # a rigged character bakes in its rest pose, not mid-clip
+            return _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero)
     finally:
         for o in high:
             me = o.data
@@ -479,7 +482,7 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | Non
 
 def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=False) -> list[str]:
     meshes = [o for o in scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
-              and not o.get("meshgate_high")]
+              and not o.get("meshgate_high") and not o.get("meshgate_cards")]   # fur cards keep their own material
     mats = {s.material for o in meshes for s in o.material_slots if s.material}
     if len(mats) != 1:
         return [f"weathered finish skipped: needs the one palette material (found {len(mats)})"]
