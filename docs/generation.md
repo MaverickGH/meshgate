@@ -212,6 +212,8 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` / `ridge` / `pinch` along a path, `flatten`, `layer`, `noise`, `smooth`; points snap to the surface | snouts, eyelids, brows, lips, fingers, skull ridges, plates |
 | `mg.sweep(profile, path, colour)` | A 2D profile swept along a smooth path, or with mitred `corners="sharp"` | frames, mouldings, rails, rims, shaped pipes |
 | `mg.inset(obj, facing=, amount=, depth=)` | Panels, hatches and buttons pressed into (or raised from) the faces looking one way | sci-fi crates, doors, consoles |
+| `mg.place(obj, on=)` · `mg.snap(obj, to, side=)` · `mg.align(objs, axis)` | Parts set by other parts, not by guessed numbers: dropped onto a surface, put box against box, lined up | cups on tables, crates by walls, rows of posts |
+| `mg.socket(name, at)` | An attachment point exported as `SOCKET_<name>` under the asset | weapon in hand, muzzle flash, rider seat |
 | `mg.focus(at, radius)` | More polygons where they show — a face, hands — within the tier's budget | characters, hero details |
 | `mg.param(name, default, lo, hi)` | A number the artist tunes with a slider in Studio (Refine → Parameters) without asking the AI again | ear size, fur length, arm reach, plank count |
 | `mg.fur(surface, length=, count=)` | Hair cards with cutout alpha, coloured by the painted surface under them; fewer on phones, none on mobile-low | coats, manes, tufts, grass |
@@ -322,6 +324,31 @@ copy's vertices, so colour detail follows the vertex density: great for low-poly
 
 Each CLI runs in an empty temporary folder with the prompt on stdin, so it does not read your project. An answer
 without build code, such as "Not logged in" or a quota message, stops the run with a hint instead of wasting attempts.
+
+## Live Blender for an AI client (MCP)
+
+`meshgate.py mcp` is an [MCP](https://modelcontextprotocol.io) server: an AI client builds kit code in Blender, looks at
+the result and fixes it in a loop, instead of writing the whole model blind.
+
+```bash
+claude mcp add meshgate -- python3 /path/to/meshgate.py mcp
+```
+
+(Codex, Cursor and other MCP clients take the same command.) The tools:
+
+| Tool | What it does |
+|---|---|
+| `kit_reference` | The rules, every `mg.*` function with its docs, and the artist recipes (`recipe=creature`, …) |
+| `blender_build` | Runs `def build(mg): …` in the live scene; returns floating parts by code line, triangles per line, size, asymmetry |
+| `blender_view` | A rendered sheet of four views, plus up to two close-ups, as an image |
+| `blender_measure` | The gap between two parts: `"line 9"` and `"line 11"` of the build code, or object names |
+| `blender_facts`, `blender_scene` | The facts again; the objects with sizes, triangles and materials |
+| `blender_export` | A checked GLB + FBX by the MeshGate contract |
+
+With Blender open, turn the link on in Sidebar (N) → MeshGate → Kit → **Connect AI**: the builds appear in a scene of
+its own, "MeshGate live", next to yours. Without an open Blender, the server starts a background one. Only kit code
+runs, with the same guard rails as `gen`: no raw `bpy`, files or network. The link listens on 127.0.0.1 only, with a
+random port and token in `~/.meshgate/blender_link.json`.
 
 ## The modeling kit in one example
 

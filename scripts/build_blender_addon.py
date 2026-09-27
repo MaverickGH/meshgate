@@ -43,7 +43,8 @@ def build(out_dir: Path) -> Path:
     # the Kit panel: guard rails for build code, the free-model library and its helpers (run in Blender's Python)
     gen = ROOT / "sources" / "generate"
     for arc, src in (("kitlib/safety.py", gen / "safety.py"), ("kitlib/library.py", gen / "library.py"),
-                     ("kitlib/keys.py", gen / "keys.py"), ("kitlib/net.py", gen / "mesh" / "net.py")):
+                     ("kitlib/keys.py", gen / "keys.py"), ("kitlib/net.py", gen / "mesh" / "net.py"),
+                     ("kitlib/render_views.py", gen / "render_views.py")):   # the AI link's rendered views
         files[arc] = src
     files["LICENSE"] = ROOT / "LICENSE"
     # one top-level folder: the legacy installer (3.5–4.1) needs it, and Blender 4.2+ accepts a manifest inside it

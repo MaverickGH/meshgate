@@ -114,6 +114,10 @@ Blender), затем нажми **N** → **MeshGate**: отметь движк�
 **«Экспорт»**. Получишь проверенный GLB плюс FBX, коллизии для Unreal и Godot и LOD-меши для Unity, результат
 откроется в браузере. См. [sources/blender/README.ru.md](sources/blender/README.ru.md).
 
+ИИ-клиент тоже может собирать в Blender: **Kit** → **Connect AI**, затем `claude mcp add meshgate -- python3 meshgate.py mcp`.
+Он собирает код kit, видит отрендеренные виды и измеренные факты и экспортирует. См.
+[docs/generation.ru.md](docs/generation.ru.md#живой-blender-для-ии-клиента-mcp).
+
 ## Командная строка
 
 То же без окна и в CI:
@@ -123,6 +127,7 @@ python3 meshgate.py doctor                                    # что уста�
 python3 meshgate.py gen "деревянный сундук с сокровищами" --size 0.8  # текст → модель для каждого уровня
 python3 meshgate.py gen --image photo.jpg --size 0.8          # картинка → модель
 python3 meshgate.py studio                                    # MeshGate Studio в браузере
+python3 meshgate.py mcp                                       # MCP-сервер: ИИ-клиент собирает в живом Blender
 python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # файл Blender → проверенный GLB (+ FBX)
 python3 meshgate.py validate build/asset.glb --strict         # проверить любой GLB или FBX
 python3 meshgate.py serve --glb build/asset.glb               # посмотреть в веб-вьюере

@@ -251,6 +251,30 @@ def main():
     except RuntimeError as exc:   # operators report ERROR as an exception in background mode
         got = str(exc)
     step("kit panel refuses unsafe build code", "CANCELLED" in got or "refused" in got, got[:200])
+    # the AI link: Connect AI starts it, a client with the token builds kit code over the socket, the button stops it
+    live = sys.modules[mod.__name__ + ".live"]
+    bpy.ops.meshgate.live_link()
+    link = json.loads(live.link_file().read_text())
+    reply = {}
+
+    def client():
+        import socket as sk
+        with sk.create_connection(("127.0.0.1", link["port"]), timeout=120) as c:
+            req = {"token": link["token"], "cmd": "run", "tier": "mobile-low",
+                   "code": "def build(mg):\n    mg.part('cube', mg.color('box', '#aa8844'), loc=(0, 0, 0.5))\n"}
+            c.sendall((json.dumps(req) + "\n").encode())
+            reply.update(json.loads(c.makefile().readline()))
+    import threading, time
+    th = threading.Thread(target=client, daemon=True)
+    th.start()
+    for _ in range(1200):   # background Blender: serve the queue here, as serve_forever() does
+        live._drain(live._state["queue"])
+        if not th.is_alive():
+            break
+        time.sleep(0.05)
+    bpy.ops.meshgate.live_link()
+    step("Connect AI: an AI client builds kit code over the link", reply.get("ok") and reply.get("tris", 0) > 0
+         and not live.running() and not live.link_file().exists(), json.dumps(reply)[:300])
     bpy.ops.wm.read_factory_settings(use_empty=True)
     addon_utils.enable(MODULE, default_set=True)
     objs = kit.import_model(bpy.context, os.path.join(repo, "sources", "generate", "examples", "hydrant_triposr_raw.glb"), 0.5, (1, 2, 0))

@@ -819,6 +819,89 @@ class Kit:
         child.matrix_world = world
         return child
 
+    # ------------------------------------------------------------------ relations: place parts by other parts
+
+    def _box(self, obj):
+        self._bake(obj)
+        pts = [v.co + obj.location for v in obj.data.vertices] if obj.type == "MESH" and obj.data.vertices else [obj.location.copy()]
+        lo = Vector([min(p[i] for p in pts) for i in range(3)])
+        hi = Vector([max(p[i] for p in pts) for i in range(3)])
+        return lo, hi
+
+    def place(self, obj, on=None, *, at=None, sink: float | None = None):
+        """Set a piece down on another piece's surface, the way you put a cup on a table: it drops straight down (−Z)
+        until its lowest point meets the surface of `on`, then sinks `sink` meters in (default a hair, so it never
+        floats). on=None sets it on the ground (z = 0). at = (x, y) to move it there first (else it drops where it is).
+        Works on any shape under it — a table top, a rock, a roof. Returns the piece."""
+        from mathutils.bvhtree import BVHTree
+        lo, hi = self._box(obj)
+        if at is not None:
+            obj.location.x += float(at[0]) - (lo.x + hi.x) / 2
+            obj.location.y += float(at[1]) - (lo.y + hi.y) / 2
+            lo, hi = self._box(obj)
+        size = max(hi - lo) or 0.01
+        if on is None:   # the ground
+            obj.location.z -= lo.z
+            return obj
+        self._bake(on)
+        me = on.data
+        bvh = BVHTree.FromPolygons([tuple(v.co + on.location) for v in me.vertices], [tuple(p_.vertices) for p_ in me.polygons])
+        size = max(hi - lo) or 0.01
+        best = None
+        cx, cy = (lo.x + hi.x) / 2, (lo.y + hi.y) / 2
+        for dx in (-0.35, 0.0, 0.35):   # a few rays across the footprint: the highest surface under it wins
+            for dy in (-0.35, 0.0, 0.35):
+                origin = Vector((cx + dx * (hi.x - lo.x), cy + dy * (hi.y - lo.y), hi.z + size * 10))
+                hit = bvh.ray_cast(origin, Vector((0, 0, -1)))
+                if hit[0] is not None and (best is None or hit[0].z > best):
+                    best = hit[0].z
+        if best is None:
+            raise ModelError("place(): nothing of that piece is under it — move it over the piece first (at=)")
+        depth = float(sink) if sink is not None else max(0.002, size * 0.01)
+        obj.location.z += best - lo.z - depth
+        return obj
+
+    def snap(self, obj, to, *, side: str = "right", gap: float = 0.0, center: bool = True):
+        """Put a piece right against another one, box to box: side = where it goes relative to `to` — "left"/"right"
+        (−X/+X), "front"/"back" (−Y/+Y), "top"/"bottom" (+Z/−Z); gap = meters between them (negative overlaps, to join
+        them firmly); center = also line their middles up on the other axes. Returns the piece."""
+        axes = {"left": (0, -1), "right": (0, 1), "front": (1, -1), "back": (1, 1), "top": (2, 1), "bottom": (2, -1)}
+        if side not in axes:
+            raise ModelError(f"snap side '{side}' — use {', '.join(axes)}")
+        a, sgn = axes[side]
+        lo, hi = self._box(obj)
+        tlo, thi = self._box(to)
+        move = Vector()
+        move[a] = (thi[a] + gap - lo[a]) if sgn > 0 else (tlo[a] - gap - hi[a])
+        if center:
+            for i in range(3):
+                if i != a:
+                    move[i] = (tlo[i] + thi[i]) / 2 - (lo[i] + hi[i]) / 2
+        obj.location += move
+        return obj
+
+    def align(self, objs, axis: str = "x", to: str = "center", target=None):
+        """Line pieces up along an axis ("x", "y" or "z"): to = "min", "center" or "max" of their boxes; target = a
+        piece to line them up with (else the first one). Returns the pieces."""
+        i = "xyz".index(str(axis).lower())
+        pick = {"min": lambda lo, hi: lo[i], "center": lambda lo, hi: (lo[i] + hi[i]) / 2, "max": lambda lo, hi: hi[i]}[to]
+        objs = list(objs)
+        ref = pick(*self._box(target if target is not None else objs[0]))
+        for o in objs:
+            o.location[i] += ref - pick(*self._box(o))
+        return objs
+
+    def socket(self, name: str, at, rot=(0, 0, 0)):
+        """An attachment point the engines see: a hand holding a weapon, where a muzzle flash or smoke starts, a
+        door's hinge, where a rider sits. at = (x, y, z) meters; rot = its orientation (radians). It is exported as an
+        empty named SOCKET_<name> under the asset (Unreal reads that prefix; Unity and Godot get a child transform)."""
+        e = bpy.data.objects.new(f"SOCKET_{self._ascii(name)}", None)
+        e.empty_display_type, e.empty_display_size = "ARROWS", 0.05
+        bpy.context.collection.objects.link(e)
+        e.location, e.rotation_euler = Vector(at), rot
+        e["meshgate_socket"] = True
+        return e
+
     def group(self, name: str, loc=(0, 0, 0)):
         """An empty (no mesh) to hold moving parts together — a root for a multi-part asset."""
         bpy.ops.object.empty_add(type="PLAIN_AXES", location=loc)
@@ -1925,7 +2008,8 @@ class Kit:
             n = sum(self._weighted_normals(o) for o in meshes if not o.get("meshgate_cards"))
             if n:
                 notes.append(f"weighted normals on {n} mesh{'es' if n > 1 else ''} (clean shading on flat faces)")
-        roots = [o for o in objs if o.parent is None]
+        sockets = [o for o in objs if o.get("meshgate_socket") and o.parent is None]
+        roots = [o for o in objs if o.parent is None and not o.get("meshgate_socket")]
         if len(roots) == 1:
             root = roots[0]
             root.name = self._name
@@ -1935,6 +2019,8 @@ class Kit:
             root = self.group(self._name)
             for o in roots:
                 self.attach(o, root)
+        for sk in sockets:   # attachment points ride along with the asset
+            self.attach(sk, root)
         bpy.context.view_layer.update()
         lo, hi = self._bounds(meshes)
         size = max(hi - lo)

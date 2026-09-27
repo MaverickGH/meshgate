@@ -112,6 +112,10 @@ closed), then press **N** → **MeshGate**: tick the engines and tiers, **Check*
 validated GLB plus FBX, collision for Unreal and Godot and LOD meshes for Unity, and opens the result in the browser.
 See [sources/blender/README.md](sources/blender/README.md).
 
+An AI client can build in Blender too: **Kit** → **Connect AI**, then `claude mcp add meshgate -- python3 meshgate.py mcp`.
+It builds kit code, sees rendered views and measured facts, and exports. See
+[docs/generation.md](docs/generation.md#live-blender-for-an-ai-client-mcp).
+
 ## Command line
 
 The same without a window, and in CI:
@@ -121,6 +125,7 @@ python3 meshgate.py doctor                                    # what is installe
 python3 meshgate.py gen "a wooden treasure chest" --size 0.8  # text → model for every tier
 python3 meshgate.py gen --image photo.jpg --size 0.8          # picture → model
 python3 meshgate.py studio                                    # MeshGate Studio in your browser
+python3 meshgate.py mcp                                       # MCP server: an AI client builds in live Blender
 python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # Blender file → checked GLB (+ FBX)
 python3 meshgate.py validate build/asset.glb --strict         # check any GLB or FBX
 python3 meshgate.py serve --glb build/asset.glb               # view it in the web viewer

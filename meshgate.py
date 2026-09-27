@@ -333,6 +333,7 @@ def _check_web() -> int:
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "check_profiles.py")]))   # tiers identical everywhere
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_generate.py")]))   # gen: safety, prompt
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_library.py")]))   # free-model library
+    code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_mcp.py")]))   # MCP server protocol
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "studio" / "test_server.py")]))   # studio: token, host, paths
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_providers.py")]))   # cloud generators
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "check_links.py")]))   # docs: links + translations
@@ -518,6 +519,8 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_character(exe, work)
     ok &= _check_facts(exe, work)
     ok &= _check_hard_surface(exe, work)
+    ok &= _check_relations(exe, work)
+    ok &= _check_live(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -773,6 +776,74 @@ def _check_hard_surface(exe: str, work: Path) -> bool:
     return good
 
 
+def _check_relations(exe: str, work: Path) -> bool:
+    """Pieces placed by other pieces (place, snap, align): nothing floats, the set is the right size, and the socket
+    reaches the GLB as a child of the asset."""
+    out = work / "relations"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "relations.py"),
+                        "--name", "table_set", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        pc = g["report"]["tiers"]["pc"]
+        nodes = _glb_json(out / pc["file"])["nodes"]
+        names = [n.get("name") for n in nodes]
+        root = next(n for n in nodes if n.get("name") == "table_set")
+        good = (g["ok"] and not g["report"]["facts"]["floating"] and abs(pc["dims_m"][0] - 1.45) < 0.03
+                and abs(pc["dims_m"][2] - 0.838) < 0.02 and "SOCKET_lamp_hook" in names
+                and names.index("SOCKET_lamp_hook") in root.get("children", []))
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ relations and sockets: {exc}")
+    if not good:
+        print("  ✗ relations and sockets: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
+def _check_live(exe: str, work: Path) -> bool:
+    """The AI link end to end, as an AI client uses it: `meshgate.py mcp` starts a background Blender, builds kit code
+    in the live scene, reports facts, renders the views, measures between build lines and exports a checked GLB."""
+    env = {**os.environ, "MESHGATE_BLENDER": exe, "MESHGATE_CONFIG_DIR": str(work / "live_config")}
+    proc = subprocess.Popen([sys.executable, str(ROOT / "meshgate.py"), "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, env=env)
+    got: dict = {}
+
+    def ask(mid, method, params=None):
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": mid, "method": method, "params": params or {}}) + "\n")
+        proc.stdin.flush()
+        got[mid] = json.loads(proc.stdout.readline())
+        return got[mid]
+
+    def tool(mid, name, **args):
+        return ask(mid, "tools/call", {"name": name, "arguments": args})["result"]
+    try:
+        ask(1, "initialize", {"protocolVersion": "2024-11-05"})
+        names = {t["name"] for t in ask(2, "tools/list")["result"]["tools"]}
+        code = (ROOT / "tests" / "generate" / "relations.py").read_text(encoding="utf-8")
+        built = tool(3, "blender_build", code=code)
+        facts = json.loads(built["content"][0]["text"])
+        view = tool(4, "blender_view", closeups=[{"at": [0.2, 0, 0.8], "from": [1, -1, 0.5], "size": 0.3}])
+        gap = json.loads(tool(5, "blender_measure", a="line 9", b="line 11")["content"][0]["text"])
+        glb = work / "live_export" / "live.glb"
+        exported = json.loads(tool(6, "blender_export", path=str(glb))["content"][0]["text"])
+        good = ({"kit_reference", "blender_build", "blender_view", "blender_measure", "blender_export"} <= names
+                and facts.get("ok") and not facts["facts"]["floating"] and abs(facts["size_m"][0] - 1.45) < 0.03
+                and view["content"][0]["type"] == "image" and len(view["content"][0]["data"]) > 10000
+                and gap.get("touching") and exported.get("ok") and glb.exists())
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ AI link (mcp): {type(exc).__name__}: {exc}")
+    finally:
+        proc.stdin.close()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    if not good:
+        print("  ✗ AI link (mcp): " + json.dumps(got, default=str)[-1500:])
+    return good
+
+
 def _check_finish(exe: str, work: Path) -> bool:
     """The style's finish: lowpoly is faceted with fewer triangles than stylized; realistic bakes weathered textures
     (colour at the tier's size plus a normal map) and keeps one material."""
@@ -943,6 +1014,10 @@ def main() -> int:
     for stream in (sys.stdout, sys.stderr):   # Windows consoles and pipes default to cp1252; MeshGate prints ✓ and —
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+    if len(sys.argv) > 1 and sys.argv[1] == "mcp":   # MCP server over stdio: AI clients drive Blender through the kit
+        sys.path.insert(0, str(ROOT / "sources" / "generate"))
+        import mcp_server
+        return mcp_server.main()
     if len(sys.argv) > 1 and sys.argv[1] == "library":   # its own parser: sources/generate/library.py
         sys.path.insert(0, str(ROOT / "sources" / "generate"))
         import library
@@ -988,6 +1063,7 @@ def main() -> int:
     p.set_defaults(fn=cmd_samples)
 
     sub.add_parser("gen", help="generate an asset from a text description through an AI CLI (meshgate.py gen --help)")
+    sub.add_parser("mcp", help="MCP server for AI clients: live kit tools in Blender (claude mcp add meshgate -- python3 meshgate.py mcp)")
     sub.add_parser("library", help="find and download free CC0 / CC-BY models to refine (meshgate.py library --help)")
     sub.add_parser("studio", help="open MeshGate Studio, the local app for generation (meshgate.py studio --help)")
 

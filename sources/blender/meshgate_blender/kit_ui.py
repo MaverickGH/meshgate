@@ -220,6 +220,25 @@ def import_model(context, path: str, size: float, at) -> list:
 
 # ---------------------------------------------------------------------------- UI
 
+class MESHGATE_OT_live_link(Operator):
+    bl_idname = "meshgate.live_link"
+    bl_label = "Connect AI"
+    bl_description = ("Let an AI tool (Claude Code, Codex, Cursor… through `meshgate.py mcp`) build kit code in this "
+                      "Blender and see the result. Builds go to a scene of their own; only kit code runs")
+
+    def execute(self, context):
+        from . import live
+        s = context.scene.meshgate_kit
+        if live.running():
+            live.stop()
+            s.status = "AI link off."
+        else:
+            info = live.start()
+            s.status = (f"AI link on (port {info['port']}). In a terminal: claude mcp add meshgate -- python3 "
+                        "meshgate.py mcp — builds show in the “MeshGate live” scene.")
+        return {"FINISHED"}
+
+
 class MESHGATE_UL_kit_results(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         row = layout.row(align=True)
@@ -257,8 +276,14 @@ class MESHGATE_PT_kit(Panel):
         row = box.row(align=True)
         row.prop(s, "size")
         row.operator("meshgate.kit_import", icon="IMPORT")
+        box = col.box()
+        box.label(text="AI link", icon="LINKED")
+        from . import live
+        on = live.running()
+        box.operator("meshgate.live_link", text="Disconnect AI" if on else "Connect AI", icon="CANCEL" if on else "PLUGIN",
+                     depress=on)
         if s.status:
-            for line in _wrap(s.status, 44)[:4]:
+            for line in _wrap(s.status, 44)[:5]:
                 col.label(text=line)
 
 
@@ -274,7 +299,7 @@ def _wrap(text: str, width: int) -> list[str]:
 
 
 CLASSES = (MESHGATE_KitResult, MESHGATE_KitSettings, MESHGATE_OT_kit_build, MESHGATE_OT_kit_search, MESHGATE_OT_kit_import,
-           MESHGATE_UL_kit_results, MESHGATE_PT_kit)
+           MESHGATE_OT_live_link, MESHGATE_UL_kit_results, MESHGATE_PT_kit)
 
 
 def register():
@@ -284,6 +309,8 @@ def register():
 
 
 def unregister():
+    from . import live
+    live.stop()
     del bpy.types.Scene.meshgate_kit
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
