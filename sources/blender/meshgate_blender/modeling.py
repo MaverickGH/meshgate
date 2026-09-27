@@ -2025,7 +2025,10 @@ class Kit:
         xs, ys, zs = zip(*[v.co[:] for v in obj.data.vertices]) if obj.data.vertices else ((0,), (0,), (0,))
         extent = max(max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs), 1e-3)
         cells = {0: 40, 1: 70, 2: 140, 3: 300}[self.level] * (0.5 if self._faceted else 1.0)
-        max_edge = max(max_edge, extent / cells)
+        # and never finer than the tier's cell in meters (a little under blob's): a small skull on a phone does not
+        # need millimetre edges just because it is small
+        floor = {0: 0.02, 1: 0.012, 2: 0.007, 3: 0.004}[self.level] * 0.6
+        max_edge = max(max_edge, extent / cells, floor)
         bm = bmesh.new()
         bm.from_mesh(obj.data)
         _tidy_bm(bm, extent)
@@ -2129,6 +2132,9 @@ class Kit:
             added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards") and o.data.users == 1])
             if added:
                 notes.append(f"focus: {added:,} more triangles where the model needs detail")
+        thinned = self._fit_cards()
+        if thinned:
+            notes.append(f"fur thinned to {thinned} % of its cards to stay within the tier's triangle budget")
         if not self._faceted:
             n = sum(self._weighted_normals(o) for o in once if not o.get("meshgate_cards"))
             if n:
@@ -2335,10 +2341,50 @@ class Kit:
                 return 0
         return 1
 
+    def _fit_cards(self) -> int:
+        """Fur cards are the part a tier can lose most gracefully: when the model is over its triangle budget, drop a
+        random share of the cards (never below 30 %) so it fits. Returns the percentage kept, 0 when nothing changed."""
+        import bmesh
+        if not self._max_tris:
+            return 0
+        objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+        total = sum(len(p.vertices) - 2 for o in objs for p in o.data.polygons)
+        cards = [o for o in objs if o.get("meshgate_cards")]
+        card_tris = sum(len(p.vertices) - 2 for o in cards for p in o.data.polygons)
+        over = total - self._max_tris * 0.95
+        if over <= 0 or not card_tris:
+            return 0
+        keep = max(0.3, 1.0 - over / card_tris)
+        rng = random.Random(7)
+        for o in cards:
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            drop, seen = [], set()
+            for f in bm.faces:   # a card is a connected strip: keep or drop it whole
+                if f.index in seen:
+                    continue
+                strip, todo = [], [f]
+                while todo:
+                    g = todo.pop()
+                    if g.index in seen:
+                        continue
+                    seen.add(g.index)
+                    strip.append(g)
+                    todo += [h for e in g.edges for h in e.link_faces if h.index not in seen]
+                if rng.random() > keep:
+                    drop += strip
+            if drop:
+                bmesh.ops.delete(bm, geom=drop, context="FACES")
+            bm.to_mesh(o.data)
+            bm.free()
+            o.data.update()
+        return round(keep * 100)
+
     def _apply_focus(self, meshes) -> int:
         """Smoothly subdivide the faces inside focus regions, within the tier's budget. Returns triangles added."""
         import bmesh
-        total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons)
+        # the room left in the tier's budget counts everything drawn: other meshes, fur cards and instance copies
+        total = sum(len(p.vertices) - 2 for o in bpy.context.scene.objects if o.type == "MESH" for p in o.data.polygons)
         room = (self._max_tris or 10 ** 9) * 0.85 - total
         added = 0
         for rounds in range(2):

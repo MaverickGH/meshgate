@@ -31,19 +31,25 @@ def texture_plan(budget: dict, tier: str, glow: bool, want: int | None = None,
     want: the texture size asked for (--texture 1k…8k); the tier's own limit still caps it."""
     mb = lambda px: px * px * 4 * 4 / 3 / 2 ** 20 if px else 0.0   # noqa: E731
     colour = min(budget.get("max_texture", 1024), want or MAX_PX)
+    limit = budget.get("max_texture_mb", 64)
+    want_normal = tier != "mobile-low" and normal_map
     while True:
-        # roughness-metallic and glow need less detail than colour; the memory saved goes to the normal map
-        orm, emissive = min(colour // 2, 1024), (min(colour // 2, 1024) if glow else 0)
-        base = mb(colour) + mb(orm) + mb(emissive)
-        if base <= budget.get("max_texture_mb", 64) or colour <= 256:
+        # roughness-metallic and glow need less detail than colour, and a normal map is worth more than either:
+        # they shrink (½, then ¼ of the colour) before the colour itself is halved
+        best = None
+        for k in (2, 4):
+            orm, emissive = min(colour // k, 1024), (min(colour // k, 1024) if glow else 0)
+            base = mb(colour) + mb(orm) + mb(emissive)
+            if base > limit:
+                continue
+            normal = next((n for n in (colour, colour // 2, colour // 4) if want_normal and base + mb(n) <= limit), 0)
+            best = (orm, emissive, normal)
+            if normal or not want_normal:
+                break
+        if best or colour <= 256:
             break
         colour //= 2
-    normal = 0
-    if tier != "mobile-low" and normal_map:
-        for n in (colour, colour // 2, colour // 4):
-            if base + mb(n) <= budget.get("max_texture_mb", 64):
-                normal = n
-                break
+    orm, emissive, normal = best or (min(colour // 4, 1024), min(colour // 4, 1024) if glow else 0, 0)
     return colour, orm, emissive, normal
 
 
@@ -593,8 +599,9 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
               and not o.get("meshgate_tiles")]   # so do tiling surfaces (mg.tile): they repeat, not bake
     if not meshes:
         return []
-    # tiling surfaces (mg.tile) already hold part of the tier's texture memory: the atlas gets the rest
-    tiled = {n.image for o in scene.objects if o.type == "MESH" and o.get("meshgate_tiles")
+    # tiling surfaces (mg.tile) and fur cards keep their own textures, already part of the tier's texture memory:
+    # the atlas gets the rest
+    tiled = {n.image for o in scene.objects if o.type == "MESH" and (o.get("meshgate_tiles") or o.get("meshgate_cards"))
              for sl in o.material_slots if sl.material and sl.material.use_nodes
              for n in sl.material.node_tree.nodes if n.type == "TEX_IMAGE" and n.image}
     if tiled:
