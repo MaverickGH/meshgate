@@ -98,6 +98,16 @@
 - [x] Optional components: Hunyuan3D-2 and Kimodo installable from Studio; doctor lists them.
 - [x] Animations on request for kit models; a clean public history; new splash with the app icon; live tools light up green.
 
+## After v0.6.6 — Artist-level kit, live Blender for AI, big scenes (on main)
+- [x] Artist kit: 2K–8K textures and full PBR, quad topology, sculpting (blob, skin, cut, bend, twist, sculpt brushes, paint), high → low bakes, splines, scatter, modifiers, a Humanoid rig with clips, fur cards, a free model library (CC0 / CC-BY), artist recipes in the prompt, a Kit panel in the add-on.
+- [x] Realistic finish like a texturing artist: a hero high model with relief per material, curvature wear, mg.eye; clay pipeline (metaballs → smoothed grid → QuadriFlow).
+- [x] Measured facts for the AI by code line (floating parts, triangles per line, asymmetry, UV use), mg.focus, joint loops, weighted normals, mg.sweep, mg.inset, UV tidy; visual review with AI-chosen close-ups, keep-best versions, a critic checklist and a library of good builds.
+- [x] Studio: a progress bar with time left, refine by words or sliders (mg.param), versions with restore.
+- [x] Relations: mg.place, mg.snap, mg.align, mg.socket.
+- [x] Live Blender for AI clients: `meshgate.py mcp` (build, view, facts, measure, export) and Kit → Connect AI.
+- [x] Big scenes: instances (one mesh, many placements, kept through tiers and bakes), seamless tiling materials (mg.tile), modular kits on a grid (mg.module, one GLB per module).
+- [x] Fixed on the way: the realistic colour bake was black on models without paint; bmesh subdivide crashes in 3.5/4.2; duplicate faces broke glTF export in 3.5; per-vertex normal recomputation made realistic bakes take 20 minutes.
+
 ## Later — characters and PBR
 - [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.

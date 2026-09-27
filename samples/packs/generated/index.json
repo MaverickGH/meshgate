@@ -11,7 +11,7 @@
       "colors": "texture",
       "caps": null,
       "fbx": "gen_windmill.fbx",
-      "tris": 21620,
+      "tris": 15619,
       "clips": [
         "spin"
       ],
@@ -27,17 +27,17 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_windmill.mobile-high.glb",
-          "tris": 9950,
+          "tris": 7698,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_windmill.mobile-mid.glb",
-          "tris": 4418,
+          "tris": 3340,
           "within_budget": true
         },
         "mobile-low": {
           "file": "gen_windmill.mobile-low.glb",
-          "tris": 1444,
+          "tris": 1235,
           "within_budget": true
         }
       }
@@ -50,7 +50,7 @@
       "colors": "texture",
       "caps": null,
       "fbx": "gen_street_lamp.fbx",
-      "tris": 31214,
+      "tris": 18091,
       "clips": [],
       "dims_m": [
         0.815,
@@ -64,17 +64,17 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_street_lamp.mobile-high.glb",
-          "tris": 14202,
+          "tris": 9649,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_street_lamp.mobile-mid.glb",
-          "tris": 4770,
+          "tris": 4177,
           "within_budget": true
         },
         "mobile-low": {
           "file": "gen_street_lamp.mobile-low.glb",
-          "tris": 1394,
+          "tris": 1322,
           "within_budget": true
         }
       }
@@ -87,7 +87,7 @@
       "colors": "texture",
       "caps": null,
       "fbx": "gen_fire_hydrant.fbx",
-      "tris": 2358,
+      "tris": 1784,
       "clips": [],
       "dims_m": [
         0.45,
@@ -103,17 +103,17 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_fire_hydrant.mobile-high.glb",
-          "tris": 1590,
+          "tris": 1262,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_fire_hydrant.mobile-mid.glb",
-          "tris": 950,
+          "tris": 756,
           "within_budget": true
         },
         "mobile-low": {
           "file": "gen_fire_hydrant.mobile-low.glb",
-          "tris": 470,
+          "tris": 396,
           "within_budget": true
         }
       }
@@ -126,7 +126,7 @@
       "colors": "texture",
       "caps": null,
       "fbx": "gen_treasure_chest.fbx",
-      "tris": 1324,
+      "tris": 1294,
       "clips": [
         "open"
       ],
@@ -144,12 +144,12 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_treasure_chest.mobile-high.glb",
-          "tris": 924,
+          "tris": 912,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_treasure_chest.mobile-mid.glb",
-          "tris": 684,
+          "tris": 672,
           "within_budget": true
         },
         "mobile-low": {
@@ -167,7 +167,7 @@
       "colors": "texture",
       "caps": null,
       "fbx": "gen_toxic_can.fbx",
-      "tris": 24416,
+      "tris": 16172,
       "clips": [],
       "dims_m": [
         0.47,
@@ -181,17 +181,17 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_toxic_can.mobile-high.glb",
-          "tris": 11960,
+          "tris": 8083,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_toxic_can.mobile-mid.glb",
-          "tris": 4544,
+          "tris": 3245,
           "within_budget": true
         },
         "mobile-low": {
           "file": "gen_toxic_can.mobile-low.glb",
-          "tris": 1496,
+          "tris": 1179,
           "within_budget": true
         }
       }
@@ -241,7 +241,7 @@
       "colors": "vertex",
       "caps": null,
       "fbx": "gen_toxic_can_vertex.fbx",
-      "tris": 24416,
+      "tris": 16172,
       "clips": [],
       "dims_m": [
         0.47,
@@ -255,17 +255,54 @@
       "tiers": {
         "mobile-high": {
           "file": "gen_toxic_can_vertex.mobile-high.glb",
-          "tris": 11960,
+          "tris": 8083,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "gen_toxic_can_vertex.mobile-mid.glb",
-          "tris": 4544,
+          "tris": 3245,
           "within_budget": true
         },
         "mobile-low": {
           "file": "gen_toxic_can_vertex.mobile-low.glb",
-          "tris": 1496,
+          "tris": 1179,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_forest_glade.glb",
+      "title": "Forest glade \u2014 kit code, instanced trees and fence",
+      "kind": "asset",
+      "made_with": "kit, instances",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_forest_glade.fbx",
+      "tris": 6950,
+      "clips": [],
+      "dims_m": [
+        13.3473,
+        4.03,
+        13.8169
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_forest_glade.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_forest_glade.mobile-high.glb",
+          "tris": 3150,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_forest_glade.mobile-mid.glb",
+          "tris": 1810,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_forest_glade.mobile-low.glb",
+          "tris": 676,
           "within_budget": true
         }
       }

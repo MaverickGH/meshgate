@@ -2,18 +2,19 @@
 
 # Example pack: Generated
 
-Eight assets made by [`meshgate.py gen`](../../../docs/generation.md). They go through the same engine checks as the
+Nine assets made by [`meshgate.py gen`](../../../docs/generation.md). They go through the same engine checks as the
 hand-built samples, so every change to generation is tested in the web viewer, Unity, Godot and Unreal.
 
 | Asset | Made with | Triangles, mobile-low → PC |
 |---|---|---|
-| `gen_windmill` | Kit code an AI wrote from a Russian description, looping `spin` clip | 1,444 → 21,620 |
-| `gen_street_lamp` | Kit code an AI wrote from an English description | 1,394 → 31,214 |
-| `gen_fire_hydrant` | Hand-written kit example, convex collision | 470 → 2,358 |
-| `gen_treasure_chest` | Hand-written kit example, opening lid, box collision | 196 → 1,324 |
-| `gen_toxic_can` | Kit code an AI wrote looking at a picture of the Zombie Cats can | 1,496 → 24,416 |
+| `gen_windmill` | Kit code an AI wrote from a Russian description, looping `spin` clip | 1,235 → 15,619 |
+| `gen_street_lamp` | Kit code an AI wrote from an English description, realistic finish (baked wear, 1k textures) | 1,322 → 18,091 |
+| `gen_fire_hydrant` | Hand-written kit example, convex collision | 396 → 1,784 |
+| `gen_treasure_chest` | Hand-written kit example, opening lid, box collision | 196 → 1,294 |
+| `gen_toxic_can` | Kit code an AI wrote looking at a picture of the Zombie Cats can | 1,179 → 16,172 |
 | `gen_hydrant_photo` | TripoSR mesh from a picture, refined per tier | 4,000 → 62,500 |
-| `gen_toxic_can_vertex` | The toxic can's kit code with `--colors vertex`: no textures | 1,496 → 24,416 |
+| `gen_toxic_can_vertex` | The toxic can's kit code with `--colors vertex`: no textures | 1,179 → 16,172 |
+| `gen_forest_glade` | Kit example: trees scattered as instances, an instanced fence — each repeated mesh stored once | 676 → 6,950 |
 | `gen_hydrant_lowpoly` | The TripoSR hydrant with `--tris low=300,mid=800,high=1500,pc=3000 --colors vertex` | 300 → 3,000 |
 
 Each asset has `<name>.glb` (PC) and `<name>.mobile-low/mid/high.glb`; assets with collision also have
