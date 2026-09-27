@@ -118,6 +118,10 @@ SYSTEM = ("You write Python build code for the MeshGate modeling kit. Reply with
 SYSTEM_IMAGE = ("You write Python build code for the MeshGate modeling kit. First look at the reference image file named "
                 "in the prompt (Read tool, that file only), then reply with exactly one ```python code block that "
                 "defines build(mg). Do not use any other tool, do not ask questions.")
+SYSTEM_REVIEW = ("You review and improve Python build code for the MeshGate modeling kit. First look at the image file named "
+                 "in the prompt (Read tool, that file only): your model rendered from four sides, next to the reference. "
+                 "Then reply with the short review the prompt asks for, the MATCH line, and exactly one ```python code "
+                 "block that defines build(mg). Do not use any other tool, do not ask questions.")
 
 # AI command-line tools. The prompt goes to stdin; the answer is read from stdout (or a file for codex).
 ADAPTERS = {
@@ -351,7 +355,7 @@ def reference_name(image: str | None) -> str | None:
 
 
 def ask_ai(ai: str, prompt: str, *, model: str | None = None, ai_cmd: str | None = None, timeout: int = 900,
-           image: str | None = None) -> str:
+           image: str | None = None, review: bool = False) -> str:
     """Send the prompt to an AI CLI and return its text answer. Runs in an empty temp folder so the CLI does not pick
     up project files or instructions. With `image`, the picture is copied there as reference.<ext> and handed to the
     CLI its own way (Claude Code: the Read tool for that folder only; Codex: -i; Gemini: @file; Ollama: the path)."""
@@ -380,7 +384,7 @@ def ask_ai(ai: str, prompt: str, *, model: str | None = None, ai_cmd: str | None
                 i = args.index("--tools")
                 args[i + 1] = "Read"
                 args += ["--allowedTools", "Read"]
-                args[args.index("--system-prompt") + 1] = SYSTEM_IMAGE
+                args[args.index("--system-prompt") + 1] = SYSTEM_REVIEW if review else SYSTEM_IMAGE
             elif ref and ai == "codex":
                 args += ["-i", ref]
             elif ref and ai == "gemini":
@@ -523,6 +527,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--model", help="model name passed to the AI CLI")
     ap.add_argument("--ai-cmd", help="any other CLI: reads the prompt on stdin (or {prompt_file}), prints the answer")
     ap.add_argument("--attempts", type=int, default=3, help="build → feedback → fix rounds (default 3)")
+    ap.add_argument("--review", type=int, default=0, metavar="N",
+                    help="kit: after a clean build, show the AI its model rendered from four sides next to the reference "
+                         "and let it improve the code — up to N rounds (stops at MATCH 9/10)")
     ap.add_argument("--code", help="run this build(mg) file instead of asking an AI")
     ap.add_argument("--out-dir", help="default out/gen/<name>")
     ap.add_argument("--seed", type=int, default=1)
@@ -874,7 +881,112 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
             (out_dir / f"{name}.py").write_text(code, encoding="utf-8")
             break
         feedback = feedback_block(code, report.get("problems", []), report.get("advice", []))
+    if report.get("ok") and getattr(args, "review", 0) > 0:
+        report, code, reviews = review_kit(args, name, out_dir, tiers, blender, image, say, code, report, reference_kind)
+        report["reviews"] = reviews
+        (out_dir / f"{name}.py").write_text(code, encoding="utf-8")
     return report, history, code
+
+
+def render_views(blender: str, glb: Path, out: Path, reference: str | None = None, px: int = 1024, samples: int = 24,
+                 timeout: int = 900) -> bool:
+    """Four views of a built model on one sheet (with the reference picture on its left) — render_views.py in Blender."""
+    cmd = [blender, "-b", "--factory-startup", "-P", str(HERE / "render_views.py"), "--", str(glb), str(out), str(px),
+           str(samples), reference or ""]
+    try:
+        procs.run(cmd, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False
+    return out.exists()
+
+
+def review_block(code: str, round_: int, rounds: int, has_reference: bool, image_name: str) -> str:
+    return (f"\n# Review round {round_} of {rounds}\n\nMeshGate built the code below cleanly. The image `{image_name}` "
+            "shows " + ("on the left the reference picture and on the right " if has_reference else "")
+            + "your model rendered in Blender from four sides (3/4, front, side and back; a flat object from above). "
+            "Look at it the way an art director would, against the reference and the description. Start your answer "
+            "with up to 8 short bullet points naming the biggest differences — silhouette, proportions, pose, colours, "
+            "missing or wrong parts, parts floating in the air or sunk out of sight. Then one line `MATCH: n/10` for how "
+            "well the model matches now. Then return the complete improved code in one ```python block (the whole "
+            "build function), fixing the most important differences first. If it already matches at 9/10 or better, "
+            f"return the same code unchanged.\n\n```python\n{code.strip()}\n```\n")
+
+
+def parse_review(answer: str) -> tuple[float | None, list[str]]:
+    """The MATCH score and the bullet points before it."""
+    m = re.search(r"MATCH:\s*(\d+(?:\.\d+)?)\s*/\s*10", answer)
+    head = answer[:m.start()] if m else answer.split("```")[0]
+    notes = [re.sub(r"^\s*[-*•\d.)]+\s*", "", line).strip() for line in head.splitlines()
+             if re.match(r"^\s*([-*•]|\d+[.)])\s+", line)]
+    return (float(m.group(1)) if m else None), notes[:8]
+
+
+def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str | None, say, code: str,
+               report: dict, reference_kind: str = "picture"):
+    """Stage 3, the visual loop: render the model from four sides next to the reference, let the AI compare and improve
+    the code, rebuild in a side folder and keep the result only when it builds cleanly. Returns (report, code, reviews)."""
+    reviews = []
+    rounds = args.review
+    for r in range(1, rounds + 1):
+        canon = report["tiers"][report["canonical"]]["file"]
+        sheet = out_dir / f"review_{r}.png"
+        say(f"[review {r}/{rounds}] rendering the model from four sides…", stage="review", round=r)
+        if not render_views(blender, out_dir / canon, sheet, reference=image):
+            say("    could not render the views — review stopped", stage="review", round=r)
+            break
+        prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
+                              size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
+                              anims=args.anims, feedback=review_block(code, r, rounds, bool(image), reference_name(str(sheet))))
+        label = args.ai_cmd or args.ai + (f" ({args.model})" if args.model else "")
+        say(f"[review {r}/{rounds}] asking {label} to compare it with the {'reference' if image else 'description'}…",
+            stage="review", round=r)
+        try:
+            answer = ask_ai(args.ai, prompt, model=args.model, ai_cmd=args.ai_cmd, timeout=args.timeout, image=str(sheet),
+                            review=True)
+        except RuntimeError as exc:
+            say(f"    ✗ {exc} — keeping the current model", stage="review", round=r)
+            break
+        (out_dir / f"review_{r}.answer.md").write_text(answer, encoding="utf-8")
+        match, notes = parse_review(answer)
+        entry = {"round": r, "match": match, "notes": notes, "image": sheet.name, "accepted": False}
+        reviews.append(entry)
+        for n in notes:
+            say(f"    · {n}", stage="review", round=r)
+        say(f"    match {match:g}/10" if match is not None else "    no MATCH score in the answer", stage="review", round=r)
+        new_code = extract_code(answer)
+        if match is not None and match >= 9 or new_code.strip() == code.strip():
+            say("    the model matches — review done", stage="review", round=r)
+            break
+        if safety.check(new_code):
+            say("    ✗ the improved code breaks the guard rails — keeping the current model", stage="review", round=r)
+            continue
+        side = out_dir / f"review_{r}"
+        side.mkdir(exist_ok=True)
+        (side / f"{name}.py").write_text(new_code, encoding="utf-8")
+        baking = args.finish_resolved in ("weathered", "clean")
+        tex = TEXTURES[args.texture]
+        limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0) + (2400 if baking and tex > 4096 else 0)
+        say(f"[review {r}/{rounds}] building the improved code…", stage="review", round=r)
+        new_report, log = run_in_blender(blender, side / f"{name}.py", name=name, out_dir=side, tiers=tiers, timeout=limit,
+                                         targets=args.targets, collision=args.collision, size=args.size,
+                                         preview=not args.no_preview, seed=args.seed, colors=args.colors,
+                                         caps=args.caps_parsed, finish=args.finish_resolved, texture=tex,
+                                         topology=args.topology)
+        (side / "blender.log").write_text(log, encoding="utf-8")
+        if not new_report.get("ok"):
+            entry["problems"] = new_report.get("problems", [])[:6]
+            say("    ✗ the improved code did not build cleanly — keeping the current model", stage="review", round=r)
+            continue
+        for f in side.iterdir():   # the improved build replaces the current one
+            if f.is_file() and f.name != "blender.log":
+                shutil.copyfile(f, out_dir / f.name)
+        code, report, entry["accepted"] = new_code, new_report, True
+        show_tiers(report, tiers, say, r)
+    if any(e["accepted"] for e in reviews):
+        final = out_dir / "views.png"
+        if render_views(blender, out_dir / report["tiers"][report["canonical"]]["file"], final, reference=image):
+            say(f"    final views: {final.name}", stage="review")
+    return report, code, reviews
 
 
 if __name__ == "__main__":

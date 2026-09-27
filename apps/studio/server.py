@@ -177,6 +177,9 @@ class Studio:
             cmd += ["--concept", req["concept"]]
         if req.get("texture") in generate.TEXTURES and req.get("texture") != "auto":
             cmd += ["--texture", req["texture"]]
+        review = int(req.get("review") or 0)
+        if 0 < review <= 4:
+            cmd += ["--review", str(review)]
         if req.get("topology") in {"tri", "quad"}:
             cmd += ["--topology", req["topology"]]
         if req.get("pbr") is True:

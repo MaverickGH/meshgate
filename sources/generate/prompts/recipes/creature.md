@@ -18,3 +18,5 @@ example: zombie_cats/realistic/zombie_cat.py
 - Hard details stay parts: eyes (with a pupil in front), nose, claws (cones), collar (torus), bell, whiskers (thin
   tubes on mobile-high and up). Ears are cones with a flatter pink cone in front; tear one with `mg.cut`.
 - Tails, tentacles and horns: `mg.skin` through 4–6 points with shrinking radii, then `mg.bend` if it should curl.
+- Tails, whiskers and tentacles read best as `mg.curve` (smooth splines); fur tufts, warts or spikes can be
+  `mg.scatter`ed over the body on the richer tiers.

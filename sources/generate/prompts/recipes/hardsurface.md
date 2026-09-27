@@ -10,3 +10,6 @@ example: treasure_chest.py
   hinge and an `open` clip if it opens. Gate bolts, rivets and scratches with `mg.at_least(...)`.
 - Wear on realistic models: dents with `sculpt("inflate", amount<0)` on subdivided parts, a snapped plank
   (`mg.cut` with a jagged extrude), rust painted near the bottom (`below=`), paint chipped at edges.
+- Cables and hoses are `mg.curve`s that sag between points; rows of planks, rungs or bolts are one part plus
+  `mg.modify(part, "array", count=…, offset=…)`; grilles and cages `mg.modify(box, "wireframe", thickness=…)`;
+  straps `mg.modify(band, "shrinkwrap", target=…)`.

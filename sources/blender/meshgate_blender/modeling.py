@@ -295,6 +295,180 @@ class Kit:
         self._finish_piece(obj, color, smooth, flat)
         return obj
 
+    def curve(self, points, radius, color, *, radii=None, sides: int = 8, cap: bool = True, smooth: bool = True,
+              closed: bool = False):
+        """A smooth round tube through control points (a spline, not a polyline) — cables, hoses, vines, branches,
+        ribs, spines, tentacles, springs (points on a helix), handles, horns. points = [(x, y, z), …] (2 or more);
+        radius in meters, or radii = one per point for tapering (then pass radius 0); closed = a loop (a ring, a
+        hoop, a coiled rope). Smoothness follows the tier. Returns the piece."""
+        pts = [Vector(p) for p in points]
+        if len(pts) < 2:
+            raise ModelError("curve needs at least two points")
+        rs = [float(r) for r in radii] if radii is not None else [float(radius)] * len(pts)
+        if len(rs) != len(pts):
+            raise ModelError("curve radii must have one value per point")
+        if closed:
+            pts, rs = pts + pts[:1], rs + rs[:1]
+        steps = max(2, round({0: 2, 1: 4, 2: 6, 3: 8}[self.level] * (0.6 if self._faceted else 1.0)))
+        out_p, out_r = [], []
+        n = len(pts)
+        for i in range(n - 1):   # Catmull-Rom through every point, radii eased along with it
+            p0 = pts[i - 1] if i > 0 else (pts[-2] if closed else pts[0] * 2 - pts[1])
+            p3 = pts[i + 2] if i + 2 < n else (pts[1] if closed else pts[-1] * 2 - pts[-2])
+            p1, p2 = pts[i], pts[i + 1]
+            for k in range(steps):
+                t = k / steps
+                t2, t3 = t * t, t * t * t
+                out_p.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                                    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
+                out_r.append(rs[i] + (rs[i + 1] - rs[i]) * (3 * t2 - 2 * t3))
+        out_p.append(pts[-1])
+        out_r.append(rs[-1])
+        if closed:   # the tube meets itself: drop the duplicate end, no caps
+            out_p, out_r = out_p[:-1] + [out_p[0] + (out_p[1] - out_p[0]) * 1e-3], out_r[:-1] + [out_r[0]]
+        keep = [0] + [i for i in range(1, len(out_p)) if (out_p[i] - out_p[i - 1]).length > 1e-6]
+        # thin curves come in dozens (ribs, rays, wires): fewer sides on the phone tiers too
+        n_sides = self.seg(sides) if sides >= 8 else max(3, round(sides * {0: 0.6, 1: 0.8, 2: 1.0, 3: 1.0}[self.level]))
+        return self.tube([tuple(out_p[i]) for i in keep], 0, color, radii=[out_r[i] for i in keep], sides=n_sides,
+                         cap=cap and not closed, smooth=smooth, exact=True)
+
+    def scatter(self, surface, piece, count: int, *, seed: int = 0, scale=(0.8, 1.2), align: bool = True,
+                spin: bool = True, sink: float = 0.0, at=None, radius: float = 0.1, facing=None,
+                below: float | None = None, above: float | None = None):
+        """Copies of `piece` scattered over the surface of another piece — pebbles on ground, grass tufts, moss,
+        mushrooms on a log, spikes on a shell, rivets, warts, fur tufts, leaves on a branch. count = copies on the pc
+        tier (fewer on phones: ½, ¼, ⅛). The piece is modelled standing at the origin, its up along +Z; each copy is
+        stood on the surface (align = up along the surface normal, else straight up), turned randomly about it (spin),
+        scaled by a random factor in scale = (min, max) and sunk `sink` meters in. Limit where copies land with at +
+        radius, facing (a direction the surface must face), below / above (heights). `piece` is used up (do not also
+        join it); returns one piece holding every copy."""
+        import bmesh
+        self._bake(surface)
+        self._bake(piece)
+        n = max(1, round(count * {3: 1.0, 2: 0.5, 1: 0.25, 0: 0.125}[self.level]))
+        rng = random.Random(seed * 7919 + 13)
+        sm = surface.data
+        off = surface.location
+        tris = []
+        sm.calc_loop_triangles()
+        for lt in sm.loop_triangles:
+            a, b, c = (sm.vertices[i].co + off for i in lt.vertices)
+            nrm = (b - a).cross(c - a)
+            area = nrm.length / 2
+            if area <= 0:
+                continue
+            nrm.normalize()
+            cen = (a + b + c) / 3
+            if at is not None and (cen - Vector(at)).length > radius:
+                continue
+            if facing is not None and nrm.dot(Vector(facing).normalized()) < 0.35:
+                continue
+            if (below is not None and cen.z > below) or (above is not None and cen.z < above):
+                continue
+            tris.append((a, b, c, nrm, area))
+        if not tris:
+            raise ModelError("scatter found no surface where the copies may land — check at / radius / facing / heights")
+        total = sum(t[4] for t in tris)
+        cum, acc = [], 0.0
+        for t in tris:
+            acc += t[4]
+            cum.append(acc)
+        src = bmesh.new()
+        src.from_mesh(piece.data)
+        bmesh.ops.translate(src, verts=src.verts, vec=piece.location)   # piece space → its placed position
+        base = piece.location.copy()
+        out = bmesh.new()
+        import bisect
+        for _ in range(n):
+            a, b, c, nrm, _area = tris[min(bisect.bisect_left(cum, rng.random() * total), len(tris) - 1)]
+            u, v = rng.random(), rng.random()
+            if u + v > 1:
+                u, v = 1 - u, 1 - v
+            p = a + (b - a) * u + (c - a) * v
+            up = nrm if align else Vector((0, 0, 1))
+            m = up.to_track_quat("Z", "Y").to_matrix().to_4x4()
+            if spin:
+                m = m @ Matrix.Rotation(rng.uniform(0, 2 * math.pi), 4, "Z")
+            k = rng.uniform(*scale) if isinstance(scale, (tuple, list)) else float(scale)
+            xf = Matrix.Translation(p - up * sink) @ m @ Matrix.Scale(k, 4) @ Matrix.Translation(-base)
+            tmp = src.copy()
+            bmesh.ops.transform(tmp, matrix=xf, verts=tmp.verts)
+            me_tmp = bpy.data.meshes.new("scatter_tmp")
+            tmp.to_mesh(me_tmp)
+            tmp.free()
+            out.from_mesh(me_tmp)
+            bpy.data.meshes.remove(me_tmp)
+        src.free()
+        me = bpy.data.meshes.new("scatter")
+        out.to_mesh(me)
+        out.free()
+        for mat in piece.data.materials:
+            me.materials.append(mat)
+        obj = bpy.data.objects.new("scatter", me)
+        bpy.context.collection.objects.link(obj)
+        self._forget(piece)
+        return obj
+
+    def modify(self, obj, kind: str, **opts):
+        """Apply one Blender modifier to a piece, the way an artist stacks them:
+          "solidify"  thickness= — give an open shell or a plane thickness (leaves, fins, cloth, paper, ears)
+          "array"     count=, offset=(x, y, z) meters — repeat in a row (vertebrae, chain links, planks, stairs)
+          "displace"  strength= meters, scale= size of the bumps in meters — noisy relief (terrain, rock, bark)
+          "smooth"    factor=, repeat= — relax lumps and hard edges
+          "remesh"    size= voxel meters — rebuild as an even, closed mesh (after many cuts; melted shapes)
+          "bevel"     width=, segments= — round every sharp edge
+          "wireframe" thickness= — keep only the edges as struts (cages, grilles, lattices)
+          "subdivide" levels= — smooth subdivision (tier-adjusted)
+          "decimate"  ratio= 0…1 — fewer faces, same shape
+          "shrinkwrap" target=another piece, offset= — hug its surface (straps, bandages, clothes)
+        Returns the piece."""
+        kind = str(kind).lower()
+        self._bake(obj)
+        if kind == "displace":
+            size = float(opts.get("scale", 0.1))
+            self._refine(obj, size / 3)
+        mods = {"solidify": "SOLIDIFY", "array": "ARRAY", "displace": "DISPLACE", "smooth": "SMOOTH", "remesh": "REMESH",
+                "bevel": "BEVEL", "wireframe": "WIREFRAME", "subdivide": "SUBSURF", "decimate": "DECIMATE",
+                "shrinkwrap": "SHRINKWRAP"}
+        if kind not in mods:
+            raise ModelError(f"modify: unknown '{kind}' — use {', '.join(mods)}")
+        m = obj.modifiers.new(kind, mods[kind])
+        if kind == "solidify":
+            m.thickness, m.offset = float(opts.get("thickness", 0.01)), 0.0
+            m.use_even_offset = True
+        elif kind == "array":
+            m.count = max(1, int(opts.get("count", 2)))
+            m.use_relative_offset, m.use_constant_offset = False, True
+            m.constant_offset_displace = tuple(opts.get("offset", (0.1, 0, 0)))
+        elif kind == "displace":
+            tex = bpy.data.textures.new(f"mg_displace_{len(bpy.data.textures)}", "CLOUDS")
+            tex.noise_scale = float(opts.get("scale", 0.1))
+            m.texture, m.texture_coords = tex, "GLOBAL"
+            m.strength, m.mid_level = float(opts.get("strength", 0.01)), 0.5
+        elif kind == "smooth":
+            m.factor, m.iterations = float(opts.get("factor", 0.5)), int(opts.get("repeat", 5))
+        elif kind == "remesh":
+            m.mode, m.voxel_size = "VOXEL", max(float(opts.get("size", 0.02)), 0.002)
+        elif kind == "bevel":
+            m.width, m.segments = float(opts.get("width", 0.005)), int(opts.get("segments", self._detail["bevel"]))
+            m.limit_method = "ANGLE"
+        elif kind == "wireframe":
+            m.thickness, m.use_even_offset = float(opts.get("thickness", 0.01)), False
+        elif kind == "subdivide":
+            m.levels = m.render_levels = max(0, int(opts.get("levels", 1)) + min(0, self._detail["subdiv"]))
+        elif kind == "decimate":
+            m.ratio = min(1.0, max(0.01, float(opts.get("ratio", 0.5))))
+        elif kind == "shrinkwrap":
+            target = opts.get("target")
+            if target is None:
+                raise ModelError("modify('shrinkwrap') needs target=another piece")
+            self._bake(target)
+            m.target, m.offset = target, float(opts.get("offset", 0.002))
+        bpy.context.view_layer.update()
+        self._apply_modifiers(obj)
+        self._fix_normals(obj)
+        return obj
+
     def extrude(self, outline, depth, color, loc=(0, 0, 0), rot=(0, 0, 0), *, bevel: float = 0.0, smooth: bool = False):
         """A flat shape with thickness — signs, blades, planks, leaves, logos, gears. outline = [(x, z), ...] polygon in
         the XZ plane (front view, may be concave, no self-crossing), extruded `depth` meters along Y, centred on y = 0."""
@@ -467,6 +641,7 @@ class Kit:
             pieces.append(me)
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
+        bpy.context.view_layer.update()
         if not pieces:
             raise ModelError(f"model '{uid}' has no mesh")
         import bmesh
@@ -668,6 +843,7 @@ class Kit:
         me = bpy.data.meshes.new_from_object(obj.evaluated_get(dg))
         bpy.data.objects.remove(obj)
         bpy.data.metaballs.remove(mb)
+        bpy.context.view_layer.update()
         if not me.polygons:
             raise ModelError("blob() made no surface — shapes too small, or all of them cut")
         out = bpy.data.objects.new(f"blob{self._blobs}", me)
@@ -720,10 +896,7 @@ class Kit:
         if hasattr(mod, "solver"):
             mod.solver = "EXACT"
         self._apply_modifiers(target)
-        data = cutter.data
-        bpy.data.objects.remove(cutter)
-        if data and data.users == 0:
-            bpy.data.meshes.remove(data)
+        self._forget(cutter)
         return target
 
     def bend(self, obj, angle: float, along: str = "Z", toward: str = "-Y"):
@@ -893,7 +1066,18 @@ class Kit:
         bpy.context.view_layer.update()
         self._apply_modifiers(obj)
         bpy.data.objects.remove(empty)
+        bpy.context.view_layer.update()
         return obj
+
+    @staticmethod
+    def _forget(obj) -> None:
+        """Delete a used-up piece and its mesh. The view layer is refreshed right away: Blender 4.2+ keeps a cached object
+        list that would otherwise still hand out the deleted object (a crash in 4.2, None in 5.x)."""
+        data = obj.data
+        bpy.data.objects.remove(obj, do_unlink=True)
+        if data is not None and data.users == 0 and isinstance(data, bpy.types.Mesh):
+            bpy.data.meshes.remove(data)
+        bpy.context.view_layer.update()
 
     def _finalize(self) -> list[str]:
         """After build(): palette textures, one root named after the asset, grounded and centred. Returns notes."""

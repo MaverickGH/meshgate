@@ -12,3 +12,5 @@ example: zombie_cats/realistic/dead_tree.py
   single leaves only at pc.
 - Cacti and succulents: lathe or skin bodies, ribs by `crease` lines, spines as tiny cones gated with
   `mg.at_least("mobile-high")`. Never model the hidden inside of a pot: fill it with a soil disc.
+- Vines, hanging roots and thin twigs are `mg.curve`s; leaves, moss clumps and mushrooms go on with
+  `mg.scatter` (count is for pc, phones get fewer by themselves).

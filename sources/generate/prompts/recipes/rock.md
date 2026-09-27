@@ -9,3 +9,5 @@ example: zombie_cats/realistic/tombstone_cat.py
   paw prints (the cutter is a blob or extrude pushed a few centimetres in), `noise` for weathering, a `crease` crack.
 - Paint moss on top (`facing=(0, 0, 1)`, rough 0.6) and grime near the ground (`below=`). Name stone colours
   "stone" / "rock" so the realistic finish draws cracks and moss.
+- Pebbles and rubble around or on top: `mg.scatter` a small ico or blob with `facing=(0, 0, 1)`; for a lumpy
+  surface `mg.modify(rock, "displace", strength=…, scale=…)`.

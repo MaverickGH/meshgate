@@ -1,7 +1,8 @@
-"""One asset from four sides (3/4, front, side, back) in a 2×2 sheet: studio light on a blue-grey floor, like the
-Zombie Cats concept art. Used to judge a model against its reference, by people and by the AI's review loop.
+"""One asset from four sides (3/4, front, side, back — or from above for flat things) in a 2×2 sheet: studio light on
+a blue-grey floor, like the Zombie Cats concept art. With a reference picture, the sheet goes on the right of it in one
+image — what the AI review loop (`gen --review`) looks at, and handy for people too.
 
-    blender -b -P scripts/render/asset_views.py -- model.glb sheet.png [size_px] [samples]
+    blender -b -P sources/generate/render_views.py -- model.glb sheet.png [size_px] [samples] [reference.png]
 """
 import math
 import os
@@ -14,6 +15,7 @@ a = sys.argv[sys.argv.index("--") + 1:]
 src, out = a[0], a[1]
 px = int(a[2]) if len(a) > 2 else 1024
 samples = int(a[3]) if len(a) > 3 else 48
+reference = a[4] if len(a) > 4 and a[4] else None
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -82,6 +84,8 @@ except TypeError:
     sc.view_settings.view_transform = "Filmic"
 
 views = [("three_quarter", (0.75, -1.6, 0.55)), ("front", (0, -1, 0.15)), ("side", (1, 0, 0.15)), ("back", (-0.5, 1.2, 0.35))]
+if (hi.z - lo.z) < 0.3 * max(hi.x - lo.x, hi.y - lo.y):   # flat things (a tile, a pile of bones) read from above
+    views = [("three_quarter", (0.7, -1.1, 1.0)), ("top", (0.0, -0.12, 1.0)), ("front", (0, -1, 0.5)), ("back", (-0.6, 1.0, 0.9))]
 tmp = os.path.splitext(out)[0]
 tiles = []
 for name, d in views:
@@ -92,17 +96,33 @@ for name, d in views:
     bpy.ops.render.render(write_still=True)
     tiles.append(bpy.data.images.load(sc.render.filepath))
 
-# stitch the four views into one 2×2 sheet
+# stitch the four views into one 2×2 sheet, with the reference picture on its left when there is one
 half = px // 2
-sheet = bpy.data.images.new("sheet", px, px, alpha=False)
-pixels = [0.0] * (px * px * 4)
+left = px if reference else 0
+width = left + px
+pixels = [0.2, 0.25, 0.34, 1.0] * (width * px)
 for i, img in enumerate(tiles):
     src_px = list(img.pixels)
-    ox, oy = (i % 2) * half, (1 - i // 2) * half   # 3/4 top-left, front top-right, side bottom-left, back bottom-right
+    ox, oy = left + (i % 2) * half, (1 - i // 2) * half   # the four views left to right, top to bottom
     for row in range(half):
-        s = row * half * 4
-        d = ((oy + row) * px + ox) * 4
-        pixels[d:d + half * 4] = src_px[s:s + half * 4]
+        s0 = row * half * 4
+        d = ((oy + row) * width + ox) * 4
+        pixels[d:d + half * 4] = src_px[s0:s0 + half * 4]
+if reference:
+    ref = bpy.data.images.load(os.path.abspath(reference))
+    rw, rh = ref.size
+    k = min(px / rw, px / rh)
+    w, h = max(1, int(rw * k)), max(1, int(rh * k))
+    ref.scale(w, h)
+    rp = list(ref.pixels)
+    ch = ref.channels
+    ox, oy = (px - w) // 2, (px - h) // 2
+    for row in range(h):
+        for col in range(w):
+            si = (row * w + col) * ch
+            d = ((oy + row) * width + ox + col) * 4
+            pixels[d:d + 3] = rp[si:si + 3]
+sheet = bpy.data.images.new("sheet", width, px, alpha=False)
 sheet.pixels = pixels
 sheet.filepath_raw = out
 sheet.file_format = "PNG"

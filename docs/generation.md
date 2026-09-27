@@ -210,6 +210,9 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.cut(target, cutter)` | Boolean difference | eye sockets, a paw print in stone, windows |
 | `mg.bend` / `mg.twist` | Bend a piece from its base, twist it about its length (rings are added) | curling tails, drooping ears, horns, rope |
 | `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` along a path, `noise`, `smooth` | snouts, cheeks, eyelids, folds, bark, stone |
+| `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
+| `mg.scatter(surface, piece, count)` | Copies of a piece over a surface, stood on it, spun and scaled at random | pebbles, grass tufts, moss, spikes, rivets |
+| `mg.modify(obj, kind)` | Blender modifiers: solidify, array, displace, smooth, remesh, bevel, wireframe, subdivide, decimate, shrinkwrap | fins, vertebrae rows, terrain, cages, straps |
 | `mg.paint(obj, colour, at=, radius=)` | Paint a region like a texture brush, also by `facing=` and height; soft edges in baked finishes | pale bellies, stripes, wounds, moss, rust |
 | `mg.model(uid, colour, size=)` | A free library model as one piece to rework; `keep=` / `drop=` boxes take just a part | a head, a paw, a whole base to repaint and sculpt |
 
@@ -220,6 +223,18 @@ the [realistic zombie cat](../sources/generate/examples/zombie_cats/realistic/zo
 
 Density follows the tier like everything else. With a baked finish (realistic or `--pbr`) the lighter tiers bake their
 normal map **from the PC model** (high → low), so a phone model keeps the sculpted detail as shading.
+
+## Visual review: the AI looks at its model
+
+`--review N` (Studio: *AI review rounds*) adds a look-and-fix loop after a clean build, the way an artist checks the
+viewport. MeshGate renders the model from four sides (from above for flat things) and puts the sheet next to the
+reference picture in one image. The AI gets that image with its code, names the biggest differences — silhouette,
+proportions, colours, missing or floating parts — scores the match (`MATCH: n/10`) and returns improved code. The
+improved code is built in a side folder and replaces the model only when it builds cleanly, so a round can never make
+the result worse than a clean build. The loop stops at 9/10 or after N rounds. Every round's sheet and answer stay in
+the output folder (`review_1.png`, `review_1.answer.md`, final `views.png`), and `gen.json` lists the scores and notes.
+The same renderer works on its own:
+`blender -b -P sources/generate/render_views.py -- model.glb sheet.png 1024 48 reference.png`.
 
 ## Free models library
 

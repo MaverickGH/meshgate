@@ -513,6 +513,8 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_finish(exe, work)
     ok &= _check_sculpt(exe, work)
     ok &= _check_rework(exe, work)
+    ok &= _check_blender_tools(exe, work)
+    ok &= _check_review(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -652,6 +654,49 @@ def _check_rework(exe: str, work: Path) -> bool:
         print(f"  ✗ rework a library model: {exc}")
     if not good:
         print("  ✗ rework a library model: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
+def _check_blender_tools(exe: str, work: Path) -> bool:
+    """Spline curves, scatter and modifiers build on every tier (fewer copies and segments on phones), same size."""
+    out = work / "blender_tools"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "blender_tools.py"),
+                        "--name", "tools2", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        pc, low = g["report"]["tiers"]["pc"], g["report"]["tiers"]["mobile-low"]
+        good = (g["ok"] and pc["tris"] > low["tris"] and abs(pc["dims_m"][0] - 1.45) < 0.03 and abs(pc["dims_m"][2] - 0.607) < 0.03
+                and abs(low["dims_m"][0] - pc["dims_m"][0]) < 0.02)
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ curves, scatter, modifiers: {exc}")
+    if not good:
+        print("  ✗ curves, scatter, modifiers: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
+def _check_review(exe: str, work: Path) -> bool:
+    """Stage 3 with a stand-in AI: the model is rendered next to the reference, the AI sees that sheet, its improved code
+    replaces the model only after a clean build, and the loop stops at MATCH 9/10."""
+    import shlex
+    out = work / "review"
+    fake = f"{shlex.quote(sys.executable)} {shlex.quote(str(ROOT / 'tests' / 'generate' / 'fake_ai.py'))}"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "a fire hydrant", "--ai-cmd", fake, "--engine", "kit",
+                        "--image", str(ROOT / "sources" / "generate" / "examples" / "hydrant_picture.png"), "--review", "2",
+                        "--tiers", "pc,mobile-low", "--name", "review", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        rv = g["report"]["reviews"]
+        good = (g["ok"] and [x["match"] for x in rv] == [6.0, 9.0] and rv[0]["accepted"] and not rv[1]["accepted"]
+                and all("attached" in x["notes"][0] for x in rv) and "#d0342a" in (out / "review.py").read_text()
+                and (out / "views.png").exists() and (out / "review_1.png").exists())
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ visual review loop: {exc}")
+    if not good:
+        print("  ✗ visual review loop: " + (r.stdout + r.stderr)[-1500:])
     return good
 
 

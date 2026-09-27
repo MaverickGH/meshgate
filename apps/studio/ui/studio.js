@@ -21,7 +21,8 @@ const STRINGS = {
     name: "Name", size: "Size, m", auto: "auto", tiers: "Quality tiers",
     tiers_hint: "The same model is built once per tier, with as much detail as the tier affords.", engines: "Engines",
     ai_settings: "AI and advanced", ai: "AI command line", model: "Model", model_ph: "default of the CLI",
-    ai_cmd: "Custom command", attempts: "Attempts", collision: "Collision", none: "none", generate: "Generate",
+    ai_cmd: "Custom command", attempts: "Attempts", review: "AI review rounds",
+    review_hint: "After a clean build the AI sees its model from four sides next to the picture and improves the code", collision: "Collision", none: "none", generate: "Generate",
     generating: "Generating…", cancel: "Cancel", wireframe: "Wireframe", reveal: "Show files", progress: "Progress",
     code: "Code", library: "Library", empty: "Describe a model and press Generate. Results appear here, one file per quality tier.",
     not_installed: "not installed", no_blender: "Blender not found", blender: "Blender", nothing: "Nothing generated yet.",
@@ -62,7 +63,8 @@ const STRINGS = {
     name: "Имя", size: "Размер, м", auto: "авто", tiers: "Уровни качества",
     tiers_hint: "Одна и та же модель строится под каждый уровень — с той детализацией, которую он позволяет.", engines: "Движки",
     ai_settings: "Нейросеть и дополнительно", ai: "ИИ в командной строке", model: "Модель", model_ph: "по умолчанию CLI",
-    ai_cmd: "Своя команда", attempts: "Попытки", collision: "Коллизия", none: "нет", generate: "Сгенерировать",
+    ai_cmd: "Своя команда", attempts: "Попытки", review: "Круги ревью ИИ",
+    review_hint: "После чистой сборки ИИ видит свою модель с четырёх сторон рядом с картинкой и улучшает код", collision: "Коллизия", none: "нет", generate: "Сгенерировать",
     generating: "Генерирую…", cancel: "Отмена", wireframe: "Сетка", reveal: "Показать файлы", progress: "Ход работы",
     code: "Код", library: "Библиотека", empty: "Опиши модель и нажми «Сгенерировать». Результат появится здесь — по файлу на каждый уровень качества.",
     not_installed: "не установлен", no_blender: "Blender не найден", blender: "Blender", nothing: "Пока ничего не сгенерировано.",
@@ -521,7 +523,7 @@ $("form").onsubmit = async (e) => {
     tris: tierPlan().tris,
     detail: parseFloat($("detail").value) || 1, turn: parseFloat($("turn").value) || 0,
     tiers: tierPlan().tiers, targets: checked("targets"), ai: $("ai").value, model: $("model").value,
-    ai_cmd: $("ai_cmd").value, attempts: parseInt($("attempts").value, 10) || 3, collision: $("collision").value,
+    ai_cmd: $("ai_cmd").value, attempts: parseInt($("attempts").value, 10) || 3, review: parseInt($("review").value, 10) || 0, collision: $("collision").value,
   };
   $("log").replaceChildren(); $("code").textContent = "";
   document.querySelector('[data-pane="log"]').click();

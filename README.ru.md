@@ -93,8 +93,8 @@
 металл. Каждый файл укладывается в бюджет каждого уровня, а код сборки лежит в репозитории, поэтому
 `python3 sources/generate/make_style_packs.py` пересобирает все три пака без ИИ. Кот-зомби вылеплен, а не собран из
 шаров: одно тело из «глины» с вытянутыми вперёд руками, раскрашенная шерсть с мягкими краями, шрам со швами, рваное ухо,
-ошейник с колокольчиком ([код](sources/generate/examples/zombie_cats/realistic/zombie_cat.py)). **Появятся позже:**
-реалистичные рыбьи кости ([в планах](sources/generate/examples/zombie_cats/planned.json)).
+ошейник с колокольчиком ([код](sources/generate/examples/zombie_cats/realistic/zombie_cat.py)); реалистичные рыбьи
+кости — позвоночник-сплайн, дуги рёбер и веера лучей плавников ([код](sources/generate/examples/zombie_cats/realistic/bones_pile.py)).
 
 **Что генерирует движок kit, ключ не нужен:**
 
