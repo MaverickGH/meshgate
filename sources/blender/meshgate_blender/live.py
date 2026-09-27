@@ -122,7 +122,8 @@ def cmd_run(req: dict) -> dict:
     with _in_scene(scene):
         budget = export.load_profiles()["profiles"][tier]["asset"]
         kit = modeling.Kit(tier, name=str(req.get("name") or "live"), max_materials=budget["max_materials"], finish=look,
-                           max_tris=budget["max_tris"], params=req.get("params") or {})
+                           max_tris=budget["max_tris"], params=req.get("params") or {},
+                           max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"))
         g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
         try:
             exec(compile(code, "<generated>", "exec"), g)  # noqa: S102 — passed safety.check above

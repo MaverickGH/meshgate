@@ -190,7 +190,8 @@ class Kit:
 
     def __init__(self, tier: str = "pc", seed: int = 1, name: str = "asset", tmp: str | None = None,
                  colors: str = "texture", max_materials: int | None = None, finish: str = "none",
-                 max_influences: int = 4, params: dict | None = None, max_tris: int | None = None):
+                 max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
+                 max_texture: int | None = None, max_texture_mb: float | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
@@ -203,6 +204,8 @@ class Kit:
         self._param_values = dict(params or {})   # values set in MeshGate Studio (sliders)
         self._params: list = []                     # what the build code declared, in order
         self._max_tris = max_tris                   # the tier's triangle budget (focus regions stay within it)
+        self._max_texture = max_texture             # the tier's texture size and memory (tiling materials fit in)
+        self._max_texture_mb = max_texture_mb
         self._sources: dict = {}                    # code line → what it made (geometry facts for the AI)
         self._focus: list = []                      # (point, radius, strength) where the model needs more polygons
         self.tier = tier
@@ -218,6 +221,9 @@ class Kit:
         if self._faceted:
             self._detail = {"seg": FACETED_SEG[tier], "subdiv": -9, "bevel": 1}
         self._colors: dict[str, dict] = {}
+        self._tiles: dict[str, dict] = {}   # tiling materials (mg.tile), by colour name
+        self._modules: list = []              # modular kit pieces (mg.module), laid out in a row
+        self._module_x = 0.0
         self._frame_end = 1
         self._mat = bpy.data.materials.new(f"{name}_palette")
         self._mat.use_nodes = True
@@ -277,6 +283,26 @@ class Kit:
         guess = next((m for m, rx in _GUESS if re.search(rx, str(name).lower())), "plain")
         self._colors[name] = {"index": len(self._colors), "rgb": _rgb(rgb), "rough": float(rough),
                               "metal": float(metal), "glow": float(glow), "material": material or guess}
+        return name
+
+    def tile(self, name: str, pattern: str, rgb, *, size: float = 1.0, rgb2=None, rough: float = 0.7,
+             metal: float = 0.0, material: str | None = None) -> str:
+        """A tiling material for big surfaces — walls, floors, roads, roofs, yards, ground — that one colour cannot
+        cover at a readable scale. pattern: "bricks" (4 × 12 per repeat, running bond), "planks" (5 boards),
+        "tiles" (4 × 4), "cobble" (irregular stones), "shingles" (roof rows), "plates" (2 × 2 riveted metal),
+        "plaster" or "ground" (soft variation; rgb2 = patches of moss, dirt or dry grass). size = meters one repeat
+        covers (bricks at size=1 are 25 × 8 cm); rgb2 = joint colour (mortar, grout, gaps). Use the name like a colour:
+        mg.part("cube", wall, ...). It is laid by world position, so neighbouring pieces continue the pattern. Tiers
+        with too few materials and the low-poly look show its plain colour instead. Returns the name."""
+        from . import tiles
+        if pattern not in tiles.PATTERNS:
+            raise ModelError(f"tile pattern '{pattern}' — use one of {', '.join(tiles.PATTERNS)}")
+        guess = {"bricks": "stone", "cobble": "stone", "tiles": "stone", "shingles": "stone", "planks": "wood",
+                 "plates": "metal", "ground": "ground", "plaster": "plain"}[pattern]
+        self.color(name, rgb, rough=rough, metal=metal, material=material or guess)
+        self._tiles[name] = {"pattern": pattern, "rgb": _rgb(rgb), "rgb2": _rgb(rgb2) if rgb2 is not None else None,
+                             "size": max(float(size), 0.05), "rough": float(rough), "metal": float(metal),
+                             "seed": len(self._tiles) + 1}
         return name
 
     def part(self, kind: str, color, loc=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0), *, smooth: bool | None = None,
@@ -800,6 +826,28 @@ class Kit:
             c.scale = scale
         self._bake(c)
         return c
+
+    def module(self, name: str, parts, *, grid: float = 2.0, footprint=(1, 0)):
+        """One piece of a modular kit — a wall, a wall with a window, a doorway, a corner, a floor tile, stairs — made
+        to a grid so level designers snap the pieces together in the engine. Build it with its footprint's corner at
+        the origin: x from 0 to footprint[0] × grid, y from 0 to footprint[1] × grid (0 for a wall: its thickness sits
+        around y = 0), z up from 0. parts are joined into the module. The asset shows every module in a row; each is
+        also written as its own file (<asset>_<name>.glb, origin at that corner). Choose tile sizes (mg.tile) that
+        divide the grid, so bricks and planks carry on across the joints. Returns the module."""
+        name = self._ascii(name)
+        if any(m["meshgate_module"] == name for m in self._modules):
+            raise ModelError(f"module '{name}' twice — give every module its own name")
+        grid = float(grid)
+        if grid <= 0:
+            raise ModelError("module grid must be positive (meters)")
+        obj = self.join(f"MOD_{name}", list(parts) if isinstance(parts, (list, tuple)) else [parts])
+        obj["meshgate_module"] = name
+        obj["meshgate_grid"] = grid
+        obj["meshgate_footprint"] = [float(footprint[0]), float(footprint[1])]
+        obj.location.x += self._module_x   # laid out in a row, a grid cell apart
+        self._module_x += (max(float(footprint[0]), 1.0) + 1.0) * grid
+        self._modules.append(obj)
+        return obj
 
     def instance(self, piece, at=None, *, turn: float = 0.0, rot=None):
         """A copy that shares the piece's mesh — trees in a forest, fence posts, chairs round a table, lamps down a
@@ -2066,6 +2114,9 @@ class Kit:
 
     def _finalize_rest(self, notes: list) -> list[str]:
         self._make_palette()
+        laid = self._apply_tiles()
+        if laid:
+            notes.append(f"tiling materials: {', '.join(laid)}")
         objs = [o for o in bpy.context.scene.objects]
         meshes = [o for o in objs if o.type == "MESH"]
         if not meshes:
@@ -2112,6 +2163,147 @@ class Kit:
                 root.location += shift
         bpy.context.view_layer.update()
         return notes
+
+    def _apply_tiles(self) -> list[str]:
+        """Turn the faces coloured with a tile (mg.tile) into its tiling material, laid by position. Faces are found
+        by their palette cell, so joins and cuts keep them. Within the tier's material budget (the palette takes one;
+        the largest tiled areas win); the others, and the low-poly look, keep the plain colour."""
+        if not self._tiles or self._vertex or self._faceted:
+            return []
+        cells = {tuple(round(x, 4) for x in self._cell_uv(n)): n for n in self._tiles}
+        users: dict = {}
+        for o in bpy.context.scene.objects:
+            if o.type == "MESH" and not o.get("meshgate_cards"):
+                users.setdefault(o.data, []).append(o)
+        found: dict = {}   # mesh → {tile name: [face indices]}
+        area: dict = {}
+        for me, objs in users.items():
+            uv = me.uv_layers.get("UVMap") or me.uv_layers.active
+            if uv is None:
+                continue
+            for p in me.polygons:
+                n = cells.get(tuple(round(x, 4) for x in uv.data[p.loop_start].uv))
+                if n:
+                    found.setdefault(me, {}).setdefault(n, []).append(p.index)
+                    area[n] = area.get(n, 0.0) + p.area * len(objs)
+        room = len(area) if not self._max_materials else max(0, self._max_materials - 1)
+        chosen = sorted(area, key=lambda n: -area[n])[:room]
+        if not chosen:
+            return []
+        px = min({0: 256, 1: 512, 2: 1024, 3: 2048}[self.level], self._max_texture or 4096)
+        if self._max_texture_mb:   # three maps per tile (+ mips) within the tier's texture memory, the palette aside
+            while px > 128 and len(chosen) * 3 * px * px * 16 / 3 / 2 ** 20 > self._max_texture_mb * 0.85:
+                px //= 2
+        mats = {n: self._tile_material(n, px) for n in chosen}
+        for me, by in found.items():
+            by = {n: f for n, f in by.items() if n in mats}
+            if not by:
+                continue
+            pieces = users[me]
+            shared = len(pieces) > 1
+            faces = {i for f in by.values() for i in f}
+            if self._soft_paint and len(faces) < len(me.polygons):
+                # a baked finish bakes the palette part into one atlas: the tiled faces become a child object of
+                # each piece (placed, turned and animated with it), keeping their own material
+                me = self._split_faces(me, faces, pieces)
+                by = {n: self._faces_of(me, cells, n) for n in by}
+            # by position: world for a single piece, the mesh's own space for instances (copies look alike) and
+            # for modules (the pattern starts at the grid corner, so it carries on across snapped modules)
+            m = self._world(pieces[0]) if not shared and not pieces[0].get("meshgate_module") else Matrix.Identity(4)
+            for n, idx in by.items():
+                if mats[n] not in list(me.materials):
+                    me.materials.append(mats[n])
+                slot = list(me.materials).index(mats[n])
+                for i in idx:
+                    me.polygons[i].material_index = slot
+                self._box_uv(me, idx, m, self._tiles[n]["size"])
+            used = {me.materials[p.material_index] for p in me.polygons}
+            if used <= set(mats.values()):   # all tiled: out of the palette bake, and no unused palette slot
+                for o in bpy.data.objects:
+                    if o.data is me:
+                        o["meshgate_tiles"] = True
+                keep = [x for x in me.materials if x in used]
+                idx = [keep.index(me.materials[p.material_index]) for p in me.polygons]
+                me.materials.clear()
+                for x in keep:
+                    me.materials.append(x)
+                me.polygons.foreach_set("material_index", idx)
+        return [f"{n} ({self._tiles[n]['pattern']}, {self._tiles[n]['size']:g} m)" for n in chosen]
+
+    def _faces_of(self, me, cells, name) -> list:
+        uv = me.uv_layers.get("UVMap") or me.uv_layers.active
+        return [p.index for p in me.polygons if cells.get(tuple(round(x, 4) for x in uv.data[p.loop_start].uv)) == name]
+
+    def _split_faces(self, me, faces: set, objs):
+        """Move `faces` of a mesh into a new mesh; each object using it gets a child holding the new one."""
+        import bmesh
+        new = me.copy()
+        for target, drop in ((new, lambda f: f.index not in faces), (me, lambda f: f.index in faces)):
+            bm = bmesh.new()
+            bm.from_mesh(target)
+            bm.faces.ensure_lookup_table()
+            bmesh.ops.delete(bm, geom=[f for f in bm.faces if drop(f)], context="FACES")
+            bm.to_mesh(target)
+            bm.free()
+            target.update()
+        for o in objs:
+            child = bpy.data.objects.new(f"{o.name}_tiles", new)
+            bpy.context.collection.objects.link(child)
+            child.parent = o   # identity under the piece: moves, turns and animates with it
+            child.matrix_parent_inverse = Matrix.Identity(4)
+            child["meshgate_tiles"] = True
+        return new
+
+    @staticmethod
+    def _box_uv(me, faces, m, size: float) -> None:
+        """Lay a tile by position (box projection): walls take it upright, floors and roofs from above."""
+        uv = me.uv_layers.get("UVMap") or me.uv_layers.active
+        rot = m.to_3x3()
+        for i in faces:
+            p = me.polygons[i]
+            n = rot @ p.normal
+            ax = max(range(3), key=lambda k: abs(n[k]))
+            for li in p.loop_indices:
+                co = m @ me.vertices[me.loops[li].vertex_index].co
+                if ax == 2:
+                    u, v = co.x, co.y if n.z > 0 else -co.y
+                elif ax == 0:
+                    u, v = (co.y if n.x > 0 else -co.y), co.z
+                else:
+                    u, v = (-co.x if n.y > 0 else co.x), co.z
+                uv.data[li].uv = (u / size, v / size)
+
+    def _tile_material(self, name: str, px: int):
+        from . import tiles
+        from .finish import _occlusion
+        spec = self._tiles[name]
+        imgs = tiles.make_images(bpy, f"{self._name}_{name}", spec, px, self._tmp)
+        mat = bpy.data.materials.new(f"{self._name}_{name}")
+        mat.use_nodes = True
+        mat.use_backface_culling = True
+        nt = mat.node_tree
+        pb = compat.principled(mat)
+
+        def tex(img, y):
+            t = nt.nodes.new("ShaderNodeTexImage")
+            t.image, t.location = img, (-700, y)
+            return t
+        c = tex(imgs["basecolor"], 300)
+        nt.links.new(c.outputs["Color"], pb.inputs["Base Color"])
+        r = tex(imgs["orm"], 0)
+        sep = nt.nodes.new("ShaderNodeSeparateColor")
+        sep.location = (-400, 0)
+        nt.links.new(r.outputs["Color"], sep.inputs[0])
+        nt.links.new(sep.outputs[1], pb.inputs["Roughness"])
+        nt.links.new(sep.outputs[2], pb.inputs["Metallic"])
+        _occlusion(nt, sep.outputs[0])
+        nrm = tex(imgs["normal"], -300)
+        nm = nt.nodes.new("ShaderNodeNormalMap")
+        nm.location = (-400, -300)
+        nt.links.new(nrm.outputs["Color"], nm.inputs["Color"])
+        nt.links.new(nm.outputs["Normal"], pb.inputs["Normal"])
+        nt.nodes.active = c
+        return mat
 
     @staticmethod
     def _weighted_normals(obj) -> int:
@@ -2286,7 +2478,25 @@ class Kit:
         total = sum(tris_by_line.values()) or 1
         top = sorted(((ln, n) for ln, n in tris_by_line.items() if ln), key=lambda t: -t[1])[:6]
         uv = json.loads(bpy.context.scene.get("mg_uv", "{}") or "{}")
-        return {"floating": floating[:12], "uv": uv or None,
+        modules = []
+        for m in self._modules:
+            if not m.name or m.name not in bpy.data.objects:
+                continue
+            g, (fx, fy) = m["meshgate_grid"], m["meshgate_footprint"]
+            vs = [v.co for v in m.data.vertices] or [Vector()]
+            mlo = Vector([min(v[i] for v in vs) for i in range(3)])
+            mhi = Vector([max(v[i] for v in vs) for i in range(3)])
+            off = []
+            tol = max(0.01, g * 0.005)
+            if fx and (abs(mlo.x) > tol or abs(mhi.x - fx * g) > tol):   # 0: a post at the corner, centred on it
+                off.append(f"x runs {mlo.x:.3f}…{mhi.x:.3f} m, the grid wants 0…{fx * g:g}")
+            if fy and (abs(mlo.y) > tol or abs(mhi.y - fy * g) > tol):
+                off.append(f"y runs {mlo.y:.3f}…{mhi.y:.3f} m, the grid wants 0…{fy * g:g}")
+            if mlo.z < -tol:
+                off.append(f"it reaches {mlo.z:.3f} m below its floor")
+            modules.append({"name": m["meshgate_module"], "grid_m": g, "footprint": [fx, fy],
+                            "size_m": [round(x, 3) for x in (mhi - mlo)], "off_grid": off})
+        return {"floating": floating[:12], "uv": uv or None, "modules": modules or None,
                 "triangles_by_line": [{"line": ln, "what": self._sources.get(ln, "piece"), "tris": n,
                                        "share": round(n / total, 3)} for ln, n in top],
                 "asymmetry": round(mirror / size, 4), "size_m": [round(x, 3) for x in (hi - lo)]}

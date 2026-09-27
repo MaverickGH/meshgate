@@ -16,3 +16,5 @@ example: forest_glade.py
 - Triangles count per copy, so a forest of 200 trees of 800 triangles is 160k: keep repeated pieces lean and let
   `scatter` counts drop on phones by themselves.
 - Do not join instanced copies, and finish shaping and painting a piece before repeating it.
+- Ground, roads, paths, plazas and walls take `mg.tile` materials ("ground" with rgb2 patches, "cobble", "tiles",
+  "bricks", "planks") — a flat colour on a 20 m ground reads as plastic. Phones keep only the biggest tiled area.

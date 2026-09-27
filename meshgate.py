@@ -522,6 +522,8 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_relations(exe, work)
     ok &= _check_live(exe, work)
     ok &= _check_instances(exe, work)
+    ok &= _check_tiles(exe, work)
+    ok &= _check_modules(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -879,6 +881,63 @@ def _check_instances(exe: str, work: Path) -> bool:
         good, detail = False, str(exc)
     if not good:
         print(f"  ✗ instances: {detail}")
+    return good
+
+
+def _check_tiles(exe: str, work: Path) -> bool:
+    """Tiling materials (a yard: brick walls joined with wooden frames, a shingle roof, cobbles, planks, ground): each
+    tile gets its own seamless material within the tier's material and texture budget, phones keep the largest one,
+    and the realistic finish bakes the rest while the tiled surfaces keep repeating."""
+    got = {}
+    for style, tiers in (("stylized", "pc,mobile-low"), ("realistic", "mobile-mid")):
+        out = work / f"tiles_{style}"
+        r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "tiles_scene.py"),
+                            "--name", "yard", "--style", style, "--tiers", tiers, "--blender", exe, "--no-preview",
+                            "--out-dir", str(out)], capture_output=True, text=True)
+        try:
+            got[style] = json.load(open(out / "gen.json"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ tiles {style}: {exc}\n" + (r.stdout + r.stderr)[-800:])
+            return False
+    try:
+        st, re_ = got["stylized"]["report"]["tiers"], got["realistic"]["report"]["tiers"]["mobile-mid"]
+        laid = [n for n in st["pc"]["notes"] if n.startswith("tiling materials:")]
+        good = (got["stylized"]["ok"] and got["realistic"]["ok"] and laid and laid[0].count("(") == 5
+                and st["pc"]["materials"] == 6 and st["pc"]["within_budget"] and st["mobile-low"]["materials"] <= 2
+                and st["mobile-low"]["within_budget"] and re_["materials"] >= 3 and re_["within_budget"]
+                and (re_.get("bake_colour") or 0) > 0.03)
+        detail = {"pc": (st["pc"]["materials"], laid), "mobile-low": st["mobile-low"]["materials"],
+                  "realistic": (re_["materials"], re_.get("bake_colour"))}
+    except Exception as exc:  # noqa: BLE001
+        good, detail = False, str(exc)
+    if not good:
+        print(f"  ✗ tiles: {detail}")
+    return good
+
+
+def _check_modules(exe: str, work: Path) -> bool:
+    """A modular kit on a 2 m grid: every module is also its own GLB with the origin at its grid corner, and the one
+    built 10 cm too wide is reported off the grid (facts and advice) while the others are not."""
+    out = work / "modules"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "modules_scene.py"),
+                        "--name", "kit", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        mods = {m["name"]: m for m in g["report"].get("modules") or []}
+        off = {m["name"] for m in g["report"]["facts"].get("modules") or [] if m["off_grid"]}
+        wall = json.loads(subprocess.run([sys.executable, str(ROOT / "core" / "validate_glb.py"), str(out / "kit_wall.glb"), "--json"],
+                                         capture_output=True, text=True).stdout)
+        wall = wall[0] if isinstance(wall, list) else wall
+        good = (g["ok"] and set(mods) == {"wall", "wall_window", "doorway", "floor", "post", "wall_wide"}
+                and all(m["ok"] for m in mods.values()) and off == {"wall_wide"}
+                and any("module wall_wide" in a for a in g["report"]["advice"])
+                and [round(x, 3) for x in wall["bounds_min_m"]] == [0.0, 0.0, -0.1] and wall["dims_m"][0] == 2.0)
+        detail = {"modules": sorted(mods), "off": sorted(off), "wall": (wall.get("bounds_min_m"), wall.get("dims_m"))}
+    except Exception as exc:  # noqa: BLE001
+        good, detail = False, f"{exc}: " + (r.stdout + r.stderr)[-600:]
+    if not good:
+        print(f"  ✗ modular kit: {detail}")
     return good
 
 

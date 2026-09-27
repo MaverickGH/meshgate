@@ -34,7 +34,8 @@ hi = Vector([max(p[i] for p in pts) for i in range(3)])
 centre, radius = (lo + hi) / 2, max((hi - lo).length / 2, 0.05)
 
 # floor and world
-bpy.ops.mesh.primitive_plane_add(size=radius * 40, location=(centre.x, centre.y, lo.z))
+# a hair below the model: a model with its own ground at the lowest point (a yard, a street) must not z-fight it
+bpy.ops.mesh.primitive_plane_add(size=radius * 40, location=(centre.x, centre.y, lo.z - max(radius * 0.002, 0.001)))
 floor = sc.objects[-1] if sc.objects[-1].type == "MESH" else bpy.context.active_object
 fm = bpy.data.materials.new("floor")
 fm.use_nodes = True

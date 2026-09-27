@@ -1184,6 +1184,9 @@ def facts_block(facts: dict | None) -> str:
     for f in facts.get("floating", []):
         lines.append(f"- line {f['line']} ({f['what']}) floats {f['gap_cm']} cm away from everything that stands on the "
                      f"ground, around {f['at']}")
+    for m in facts.get("modules") or []:
+        if m.get("off_grid"):
+            lines.append(f"- module {m['name']} is off its {m['grid_m']:g} m grid: {'; '.join(m['off_grid'])}")
     tl = facts.get("triangles_by_line") or []
     if tl:
         lines.append("- triangles spent by line: " + ", ".join(f"line {t['line']} {t['what']} {round(t['share'] * 100)} %"

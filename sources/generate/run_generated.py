@@ -83,7 +83,7 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     budget = {**export.load_profiles()["profiles"][tier]["asset"], **(budget_override or {})}
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
                        max_influences=budget.get("max_influences", 4), params=params, max_tris=budget.get("max_tris"),
-                       finish=finish_)
+                       finish=finish_, max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"))
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
     exec(code_obj, g)  # noqa: S102 — code passed safety.check before reaching here
     g["build"](kit)
@@ -113,6 +113,34 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
             "params": kit._params, "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(),
             "bake_colour": ctx.scene.get("mg_bake_colour"), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
                                                      for t in o.animation_data.nla_tracks})}
+
+
+def export_modules(out: str, name: str, targets, image_format) -> list:
+    """Modular kits (mg.module): every module also as its own GLB, origin at its grid corner, for snapping in engines."""
+    ctx = bpy.context
+    mods = [o for o in ctx.scene.objects if o.get("meshgate_module")]
+    written = []
+    for m in mods:
+        keep = (m.parent, m.matrix_parent_inverse.copy(), m.location.copy())
+        m.parent = None
+        m.matrix_parent_inverse = mathutils.Matrix.Identity(4)
+        m.location = (0.0, 0.0, 0.0)
+        ctx.view_layer.update()
+        for o in ctx.view_layer.objects:
+            o.select_set(o is m or o.parent is m)
+        path = os.path.join(out, f"{name}_{m['meshgate_module']}.glb")
+        try:
+            res = export.export_asset(ctx, path, targets=[], fbx=False, selection=True, animations=False, validate=True,
+                                      strict=True, image_format=image_format)
+            rep = res.reports[0] if res.reports else {}
+            written.append({"name": m["meshgate_module"], "file": os.path.basename(path), "ok": res.ok,
+                            "dims_m": rep.get("dims_m"), "tris": rep.get("triangles")})
+        finally:
+            m.parent, m.matrix_parent_inverse, m.location = keep[0], keep[1], keep[2]
+            ctx.view_layer.update()
+    for o in ctx.view_layer.objects:
+        o.select_set(False)
+    return written
 
 
 def render_preview(path: str) -> str | None:
@@ -222,6 +250,10 @@ def main() -> int:
                     res = export.export_asset(bpy.context, glb, targets=targets, fbx=bool({"unity", "unreal"} & set(targets)),
                                               validate=True, strict=True, image_format=image_format)
                 entry["notes"] += [f"{n} (your cap)" for n in cap_notes]
+                mods = export_modules(out, name, targets, image_format)
+                if mods:
+                    report["modules"] = mods
+                    report["files"] += [m["file"] for m in mods]
                 rep = export.validate_file(glb, profile=tier)
                 report["files"] += [os.path.basename(f) for f in res.files]
                 variant_problems = [f"{r.get('file')}: {e}" for r in res.reports[1:] for e in r.get("errors", [])]
@@ -271,6 +303,10 @@ def main() -> int:
                 for f in facts.get("floating", []):
                     report["advice"].append(f"geometry: the {f['what']} from line {f['line']} floats {f['gap_cm']} cm away from "
                                             f"everything else (at {f['at']}) — sink it into the piece it belongs to")
+                for m in facts.get("modules") or []:
+                    if m.get("off_grid"):
+                        report["advice"].append(f"module {m['name']}: off its {m['grid_m']:g} m grid — {'; '.join(m['off_grid'])}; "
+                                                "build it from its corner at the origin so it snaps")
             declared = entry.pop("params", [])
             if declared and not report.get("params"):   # the sliders Studio shows (the same on every tier)
                 report["params"] = declared

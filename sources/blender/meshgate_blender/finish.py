@@ -530,7 +530,7 @@ def save_high(ctx, path: str, *, hero: bool = False, cells: dict | None = None, 
     ctx.view_layer.update()
     objs = []
     meshes = [o for o in ctx.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
-              and not o.get("meshgate_cards")]
+              and not o.get("meshgate_cards") and not o.get("meshgate_tiles")]
     unique = list({o.data: o for o in meshes}.values())
     total = sum(len(p.vertices) - 2 for o in unique for p in o.data.polygons) or 1
     made: dict = {}   # instances (objects sharing a mesh): one high mesh, placed by each copy's own transform
@@ -589,7 +589,17 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | Non
 
 def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=False) -> list[str]:
     meshes = [o for o in scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
-              and not o.get("meshgate_high") and not o.get("meshgate_cards")]   # fur cards keep their own material
+              and not o.get("meshgate_high") and not o.get("meshgate_cards")   # fur cards keep their own material
+              and not o.get("meshgate_tiles")]   # so do tiling surfaces (mg.tile): they repeat, not bake
+    if not meshes:
+        return []
+    # tiling surfaces (mg.tile) already hold part of the tier's texture memory: the atlas gets the rest
+    tiled = {n.image for o in scene.objects if o.type == "MESH" and o.get("meshgate_tiles")
+             for sl in o.material_slots if sl.material and sl.material.use_nodes
+             for n in sl.material.node_tree.nodes if n.type == "TEX_IMAGE" and n.image}
+    if tiled:
+        taken = sum(i.size[0] * i.size[1] * 16 / 3 / 2 ** 20 for i in tiled)
+        budget = {**budget, "max_texture_mb": max(budget.get("max_texture_mb", 64) - taken, 1.0)}
     mats = {s.material for o in meshes for s in o.material_slots if s.material}
     if len(mats) != 1:
         return [f"weathered finish skipped: needs the one palette material (found {len(mats)})"]

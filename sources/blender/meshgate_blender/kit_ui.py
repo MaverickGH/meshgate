@@ -126,7 +126,8 @@ class MESHGATE_OT_kit_build(Operator):
             scene = context.scene
         try:
             budget = export.load_profiles()["profiles"][tier]["asset"]
-            kit = modeling.Kit(tier, name=name, max_materials=budget["max_materials"], finish=look)
+            kit = modeling.Kit(tier, name=name, max_materials=budget["max_materials"], finish=look,
+                               max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"))
             g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
             exec(compile(code, path, "exec"), g)  # noqa: S102 — passed safety.check above
             g["build"](kit)
