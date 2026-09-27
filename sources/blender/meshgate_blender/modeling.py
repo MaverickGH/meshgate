@@ -144,7 +144,7 @@ class Kit:
         """Define a named colour of the model's single palette material and return the name. rgb = (r, g, b) in 0..1 or
         '#rrggbb'. rough = roughness 0..1, metal = metallic 0..1, glow = emission strength (0 = none, 1–4 = lamp, eyes).
         material = what it is made of, for the realistic finish's surface detail: "wood", "cardboard", "stone", "metal",
-        "rust", "fabric", "ground", "bone" or "plain"; by default it is read from the name (wood_dark → wood,
+        "rust", "fabric", "ground", "bone", "fur" or "plain"; by default it is read from the name (wood_dark → wood,
         cardboard_b → cardboard, iron → metal), so name colours by their material.
         At most 64 colours. Parts may also pass an (r, g, b) tuple or hex string directly as their colour."""
         if name in self._colors:
@@ -783,6 +783,50 @@ class Kit:
             data[vx.index].color = [(old[i] * keep + rgb[i] * a) / total for i in range(3)] + [min(1.0, total)]
         return weights
 
+    def eye(self, center, radius: float, iris, *, look=(0, -1, 0), pupil: str = "slit", pupil_size: float = 0.35,
+            sclera=None):
+        """A proper eye, built the way an artist builds one: a glossy ball in the iris colour (or white with `sclera=`,
+        for people), a dark ring round the iris, a lighter ring toward the pupil, and a pupil set slightly in, with
+        depth — the glossy ball catches the light like a cornea. center = (x, y, z), radius in meters; look = the
+        direction it faces (default the front, -Y); pupil = "slit" (cats, snakes), "bar" (goats: sideways) or
+        "round"; pupil_size = its width against the iris (0.2 a thin slit … 0.7 wide open). Give the iris colour glow in
+        mg.color for glowing eyes: the lighter inner ring glows brighter, the dark ring dimmer. Sit it in an eye socket.
+        Returns the eye as one piece."""
+        iname = self._color_name(iris)
+        base = self._colors[iname]
+        rgb, gl = base["rgb"], base["glow"]
+        # one glow strength for every ring: the pattern is in the colours, so soft paint keeps the glow smooth too
+        ring = self.color(f"{iname}_ring", tuple(c * 0.12 for c in rgb), rough=0.12, glow=gl)
+        inner = self.color(f"{iname}_inner", tuple(c + (1 - c) * 0.45 for c in rgb), rough=0.08, glow=gl)
+        iris_c = self.color(f"{iname}_gloss", rgb, rough=0.08, glow=gl)
+        dark = self.color("eye_pupil", (0.02, 0.02, 0.025), rough=0.05)
+        white = self._color_name(sclera) if sclera is not None else None
+        r = float(radius)
+        ball = self.part("sphere", white or iris_c, loc=(0, 0, 0), scale=(2 * r, 2 * r, 2 * r), smooth=True)
+        edge, mid, core = (48, 40, 18) if white else (78, 64, 28)   # iris rings, degrees from the front
+        chord = lambda deg: 2 * r * math.sin(math.radians(deg) / 2)   # noqa: E731 — distance on the ball from its front
+        front = (0, -r, 0)
+        if white:
+            self.paint(ball, ring, at=front, radius=chord(edge))
+            self.paint(ball, iris_c, at=front, radius=chord(edge - 5))
+        else:
+            self.paint(ball, ring, at=front, radius=chord(edge))
+            self.paint(ball, iris_c, at=front, radius=chord(mid))
+        self.paint(ball, inner, at=front, radius=chord(core))
+        w = max(0.08, min(0.9, float(pupil_size))) * r
+        if pupil == "round":
+            pup = self.part("sphere", dark, loc=(0, -r * 0.93, 0), scale=(w * 1.3, r * 0.2, w * 1.3), smooth=True)
+        elif pupil == "bar":
+            pup = self.part("sphere", dark, loc=(0, -r * 0.9, 0), scale=(r * 1.25, r * 0.22, w * 0.7), smooth=True)
+        else:
+            pup = self.part("sphere", dark, loc=(0, -r * 0.9, 0), scale=(w * 0.7, r * 0.22, r * 1.25), smooth=True)
+        obj = self.join("eye", [ball, pup])
+        d = Vector(look).normalized() if Vector(look).length > 1e-6 else Vector((0, -1, 0))
+        turn = Vector((0, -1, 0)).rotation_difference(d).to_matrix().to_4x4()
+        obj.data.transform(Matrix.Translation(Vector(center)) @ turn)
+        obj.data.update()
+        return obj
+
     # ------------------------------------------------------------------ sculpting: organic shapes
 
     def blob(self, shapes, color, *, blend: float = 1.0, detail: float = 1.0, smooth: bool = True):
@@ -1078,6 +1122,10 @@ class Kit:
         if data is not None and data.users == 0 and isinstance(data, bpy.types.Mesh):
             bpy.data.meshes.remove(data)
         bpy.context.view_layer.update()
+
+    def _cells(self) -> dict:
+        """Palette cell (u, v) → material index, for the hero model's surface relief (finish.save_high)."""
+        return {tuple(round(x, 4) for x in self._cell_uv(n)): MATERIALS.index(c["material"]) for n, c in self._colors.items()}
 
     def _finalize(self) -> list[str]:
         """After build(): palette textures, one root named after the asset, grounded and centred. Returns notes."""

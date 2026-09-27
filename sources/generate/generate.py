@@ -859,7 +859,7 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
             say(f"[{attempt}] building {', '.join(reversed(tiers))} in Blender…", stage="build", attempt=attempt)
             baking = args.finish_resolved in ("weathered", "clean")
             tex = TEXTURES[args.texture]
-            limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0) + (2400 if baking and tex > 4096 else 0)
+            limit = 600 + (len(tiers) * (900 if tex >= 4096 else 480) if baking else 0) + (2400 if baking and tex > 4096 else 0)
             report, log = run_in_blender(blender, code_path, name=name, out_dir=out_dir, tiers=tiers, timeout=limit,
                                          targets=args.targets, collision=args.collision, size=args.size,
                                          preview=not args.no_preview, seed=args.seed,

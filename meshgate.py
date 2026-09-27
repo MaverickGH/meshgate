@@ -610,8 +610,8 @@ def _check_hidden(exe: str, work: Path) -> bool:
 
 
 def _check_sculpt(exe: str, work: Path) -> bool:
-    """The artist tools (blob, skin, cut, bend, twist, sculpt) build on every tier, lighter on phones, with the bend in
-    the right place; the realistic finish bakes the phone tier's normal map from the PC model (high → low)."""
+    """The artist tools (blob, skin, cut, bend, twist, sculpt, eye) build on every tier, lighter on phones, with the bend
+    in the right place; the realistic finish bakes every tier's relief from the dense hero model (high → low)."""
     out = work / "sculpt"
     r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "sculpt_tools.py"),
                         "--name", "sculpt", "--style", "realistic", "--tiers", "pc,mobile-mid,mobile-low", "--blender", exe,
@@ -622,7 +622,8 @@ def _check_sculpt(exe: str, work: Path) -> bool:
         pc, mid, low = t["pc"], t["mobile-mid"], t["mobile-low"]
         good = (g["ok"] and pc["tris"] > mid["tris"] > low["tris"] and abs(pc["dims_m"][0] - 0.97) < 0.03
                 and abs(pc["dims_m"][2] - 0.82) < 0.03
-                and any("from the PC model" in n for n in mid["notes"]) and all(x["within_budget"] for x in t.values()))
+                and any("relief from the hero model" in n for n in mid["notes"] + pc["notes"])
+                and all(x["within_budget"] for x in t.values()))
     except Exception as exc:  # noqa: BLE001
         good = False
         print(f"  ✗ sculpt tools: {exc}")

@@ -11,7 +11,6 @@ def build(mg):
     flesh = mg.color("raw_flesh", "#8c3a3c", rough=0.45)
     inner = mg.color("inner_ear", "#b98282", rough=0.6)
     glow = mg.color("eye_glow", "#a4ff3c", rough=0.3, glow=3.0)
-    pupil = mg.color("pupil", "#0e120c", rough=0.2)
     nose = mg.color("nose", "#6b3a44", rough=0.4)
     thread = mg.color("stitch_thread", "#2b2622", rough=0.8, material="fabric")
     collar_c = mg.color("collar_leather", "#6e1f1f", rough=0.55)
@@ -92,10 +91,10 @@ def build(mg):
             mg.cut(inside, bite2)
         parts += [ear, inside]
 
-    # ---- glowing eyes with slit pupils, a nose
+    # ---- glowing eyes (iris rings, a slit pupil set in, a glossy ball), a nose
     for sx in (-1, 1):
-        parts.append(mg.part("sphere", glow, loc=(sx * 0.068, -0.145, 0.825), scale=(0.078, 0.07, 0.078)))
-        parts.append(mg.part("sphere", pupil, loc=(sx * 0.068, -0.179, 0.825), scale=(0.018, 0.008, 0.056)))
+        parts.append(mg.eye((sx * 0.068, -0.142, 0.825), 0.039, glow, look=(sx * 0.18, -1, 0.04), pupil="slit",
+                            pupil_size=0.32))
     parts.append(mg.part("sphere", nose, loc=(0, -0.207, 0.772), scale=(0.036, 0.022, 0.024)))
 
     # ---- collar with a brass bell

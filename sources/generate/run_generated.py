@@ -89,11 +89,14 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     ctx = bpy.context
     if topology == "quad":
         notes += finish.quads(ctx)
+    hero = finish_ == "weathered"   # realistic: a dense hero model with each material's relief pressed in
     if save_high:
-        finish.save_high(ctx, save_high)
+        finish.save_high(ctx, save_high, hero=hero, cells=kit._cells())
     if finish_ in ("weathered", "clean"):
-        hi = finish.load_high(ctx, high) if high and os.path.exists(high) else []
-        notes += finish.weathered(ctx, budget, tier, tmp, name, want=texture or None, clean=finish_ == "clean", high=hi)
+        src = high if high and os.path.exists(high) else (save_high if save_high and hero else None)
+        hi = finish.load_high(ctx, src) if src else []
+        notes += finish.weathered(ctx, budget, tier, tmp, name, want=texture or None, clean=finish_ == "clean", high=hi,
+                                  hero=hero and bool(hi))
     if collision != "none":
         static = [o for o in ctx.scene.objects if o.type == "MESH" and not o.animation_data
                   and not (o.parent and o.parent.animation_data)]
@@ -187,7 +190,8 @@ def main() -> int:
     image_format = "JPEG" if baked else "AUTO"
     export.FBX_TRIANGLES = args.topology == "tri"
     with tempfile.TemporaryDirectory() as tmp:
-        high = os.path.join(tmp, "high.blend") if baked and "pc" in tiers and len(tiers) > 1 else None
+        # the high model: PC geometry for the lighter tiers; for realistic also a dense hero every tier bakes from
+        high = os.path.join(tmp, "high.blend") if baked and "pc" in tiers and (len(tiers) > 1 or args.finish == "weathered") else None
         for tier in tiers:
             is_canon = tier == canonical
             try:

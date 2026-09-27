@@ -213,6 +213,7 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
 | `mg.scatter(surface, piece, count)` | Copies of a piece over a surface, stood on it, spun and scaled at random | pebbles, grass tufts, moss, spikes, rivets |
 | `mg.modify(obj, kind)` | Blender modifiers: solidify, array, displace, smooth, remesh, bevel, wireframe, subdivide, decimate, shrinkwrap | fins, vertebrae rows, terrain, cages, straps |
+| `mg.eye(center, radius, iris)` | A glossy eyeball with iris rings and a slit, bar or round pupil set in, looking where you say | characters and creatures |
 | `mg.paint(obj, colour, at=, radius=)` | Paint a region like a texture brush, also by `facing=` and height; soft edges in baked finishes | pale bellies, stripes, wounds, moss, rust |
 | `mg.model(uid, colour, size=)` | A free library model as one piece to rework; `keep=` / `drop=` boxes take just a part | a head, a paw, a whole base to repaint and sculpt |
 
@@ -221,8 +222,14 @@ map). The AI also gets short artist recipes for the kind of object it builds —
 buildings, reworking a library model — picked from the description (English or Russian), with a matching example:
 the [realistic zombie cat](../sources/generate/examples/zombie_cats/realistic/zombie_cat.py) for creatures.
 
-Density follows the tier like everything else. With a baked finish (realistic or `--pbr`) the lighter tiers bake their
-normal map **from the PC model** (high → low), so a phone model keeps the sculpted detail as shading.
+Density follows the tier like everything else. The realistic finish then works like a texturing artist:
+
+- **A hero model for the bake.** The PC build is densified (to about a million triangles) and each material's relief is
+  pressed into it — fur strands and clumps, bone pores, stone lumps and cracks, wood grain, weave. Every tier, PC
+  included, bakes its normal map from this hero, so a light mesh shows sculpted detail. With `--pbr` the lighter tiers
+  bake from the PC model.
+- **Curvature-driven wear.** Edges found by the renderer's bevel sampling and told apart by pointiness: ridges wear
+  lighter and smoother (bone, stone, wood, metal), hollows gather warm dark grime (fur roots, crevices), per material.
 
 ## Visual review: the AI looks at its model
 

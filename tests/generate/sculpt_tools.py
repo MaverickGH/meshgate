@@ -20,5 +20,7 @@ def build(mg):
                     {"ball": (0, -0.12, 0.74), "r": 0.025, "cut": True}], horn)
     mg.sculpt(head, "grab", at=(0, -0.14, 0.7), to=(0, -0.02, 0), radius=0.06)
     mg.sculpt(head, "crease", path=[(-0.05, -0.1, 0.76), (0.05, -0.1, 0.76)], radius=0.015, amount=0.008)
+    iris = mg.color("eye_glow", "#9dff3a", glow=2.0)
+    eye = mg.eye((0.035, -0.105, 0.74), 0.018, iris, look=(0.2, -1, 0), pupil="slit")
     tail = mg.skin([(0.2, 0.05, 0.62), (0.3, 0.05, 0.7), (0.35, 0.05, 0.8)], [0.03, 0.025, 0.015], wood)
-    mg.join("tools", [slab, post, h, head, tail])
+    mg.join("tools", [slab, post, h, head, eye, tail])

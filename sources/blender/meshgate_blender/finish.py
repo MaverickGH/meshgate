@@ -220,6 +220,10 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     painted = nodes.new("ShaderNodeAttribute")
     painted.attribute_name = PAINT_ATTR
     base_colour = mix(painted.outputs["Alpha"], base.outputs["Color"], painted.outputs["Color"])
+    soft_emission = None
+    if "emissive" in pal:   # glow follows the soft paint too: the palette glow scaled by painted / palette colour
+        ratio = mix(1.0, painted.outputs["Color"], base.outputs["Color"], "DIVIDE")
+        soft_emission = mix(1.0, emi.outputs["Color"], mix(painted.outputs["Alpha"], (1.0, 1.0, 1.0, 1.0), ratio), "MULTIPLY")
 
     if clean:   # exact colours; ambient occlusion goes to the ORM red, the glTF occlusion channel
         ao = nodes.new("ShaderNodeAmbientOcclusion")
@@ -232,7 +236,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
         emit, bsdf, out = nodes.new("ShaderNodeEmission"), nodes.new("ShaderNodeBsdfPrincipled"), nodes.new("ShaderNodeOutputMaterial")
         outs = {"colour": base_colour, "orm": orm_out.outputs[0]}
         if "emissive" in pal:
-            outs["emissive"] = emi.outputs["Color"]
+            outs["emissive"] = soft_emission
         return m, emit, bsdf, out, outs
 
     # colour variation: broad blotches and finer mottling, about ±20 %, less on bare metal
@@ -296,6 +300,41 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
         if r:
             rk = math_("MULTIPLY", mask.outputs[0], r)
             rough_extra = rk if rough_extra is None else math_("ADD", rough_extra, rk)
+    # curvature, the way texturing tools use it: convex edges wear lighter and smoother, hollows collect dark grime.
+    # Bevel normals find edges at any mesh density; occlusion tells ridges from hollows.
+    bev = nodes.new("ShaderNodeBevel")
+    bev.samples = 8
+    bev.inputs["Radius"].default_value = max(size * 0.012, 0.003)   # real edges, not every bump of a coat
+    bend = nodes.new("ShaderNodeVectorMath")
+    bend.operation = "DOT_PRODUCT"
+    links.new(bev.outputs["Normal"], bend.inputs[0])
+    links.new(geo.outputs["Normal"], bend.inputs[1])
+    edge = maprange(bend.outputs["Value"], 0.985, 0.8, 0.0, 1.0)
+    # ridge or hollow: an edge out in the open is convex, an edge in shadow is concave (occlusion, unlike pointiness,
+    # does not flicker with the mesh's facets)
+    ridge = maprange(ao.outputs["AO"], 0.82, 0.97, 0.0, 1.0)
+    hollow = maprange(ao.outputs["AO"], 0.75, 0.45, 0.0, 1.0)
+    wear_amt = {1: .5, 2: .35, 3: .6, 4: .75, 5: .25, 6: .1, 7: .15, 8: .7, 9: .04}   # material index → edge wear (fur: none)
+    dirt_amt = {1: .35, 2: .3, 3: .45, 4: .25, 5: .35, 6: .3, 7: .2, 8: .3, 9: .25}  # → grime in concave edges
+    wear_k, dirt_k = 0.3, 0.25
+    for k in wear_amt:
+        mk = nodes.new("ShaderNodeMath")
+        mk.operation = "COMPARE"
+        links.new(kind, mk.inputs[0])
+        mk.inputs[1].default_value, mk.inputs[2].default_value = float(k), .5
+        wear_k = math_("ADD", wear_k if not isinstance(wear_k, float) else wear_k,
+                       math_("MULTIPLY", mk.outputs[0], wear_amt[k] - 0.3))
+        dirt_k = math_("ADD", dirt_k if not isinstance(dirt_k, float) else dirt_k,
+                       math_("MULTIPLY", mk.outputs[0], dirt_amt[k] - 0.25))
+    if glow is not None:   # glowing parts stay clean
+        clean_glow = maprange(glow.outputs[0], 0.0, 0.05, 1.0, 0.0)
+        wear_k, dirt_k = math_("MULTIPLY", wear_k, clean_glow), math_("MULTIPLY", dirt_k, clean_glow)
+    wear = math_("MULTIPLY", math_("MULTIPLY", edge, ridge), wear_k)
+    grime_c = math_("MULTIPLY", math_("MULTIPLY", edge, hollow), dirt_k)   # the broad crevice dirt comes further down
+    col = mix(wear, col, mix(1.0, col, (1.3, 1.28, 1.22, 1.0), "MULTIPLY"))                  # worn edges lighter
+    col = mix(grime_c, col, mix(1.0, col, (0.42, 0.36, 0.28, 1.0), "MULTIPLY"))              # warm dark grime
+    rough = math_("MAXIMUM", math_("SUBTRACT", rough, math_("MULTIPLY", wear, 0.25)), 0.05)   # rubbed smooth
+
     # dirt: occluded corners and the lowest band near the ground, broken up by noise
     world_z = nodes.new("ShaderNodeSeparateXYZ")
     links.new(geo.outputs["Position"], world_z.inputs[0])
@@ -325,19 +364,83 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     out = nodes.new("ShaderNodeOutputMaterial")
     outs = {"colour": col, "orm": orm_out.outputs[0]}
     if "emissive" in pal:
-        outs["emissive"] = emi.outputs["Color"]
+        outs["emissive"] = soft_emission
     return m, emit, bsdf, out, outs
 
 
-def save_high(ctx, path: str) -> None:
-    """Write the built model's meshes, in world space, to a .blend: the high model lighter tiers bake normals from."""
+def _relief(kind: int, p) -> float:
+    """Surface relief in meters for a material at world point p — sculpted-in detail on the hero model. Amplitudes are
+    kept to a gentle slope (amplitude × frequency ≈ 0.1–0.35): fine detail reads as texture, not as dents."""
+    from mathutils import Vector, noise as nz
+    if kind == 9:    # fur: fine strands running down the body, gathered in soft clumps
+        return 0.00018 * nz.noise(Vector((p.x * 320, p.y * 320, p.z * 36))) + 0.0009 * nz.noise(p * 24.0)
+    if kind == 8:    # bone: a gentle undulation, fine pores and a few tiny pits
+        return (0.0003 * nz.noise(p * 30.0) + 0.00003 * nz.noise(p * 700.0)
+                - 0.00008 * max(0.0, nz.noise(p * 420.0) - 0.45))
+    if kind == 3:    # stone: lumps and thin cracks
+        return 0.0018 * nz.noise(p * 7.0) + 0.0005 * nz.noise(p * 40.0) - 0.002 * max(0.0, 0.08 - abs(nz.noise(p * 5.0)))
+    if kind == 1:    # wood: grain along the length
+        return 0.0006 * nz.noise(Vector((p.x * 30, p.y * 30, p.z * 3))) + 0.0001 * nz.noise(p * 200.0)
+    if kind == 7:    # ground: clumps and grit
+        return 0.003 * nz.noise(p * 11.0) + 0.0005 * nz.noise(p * 60.0)
+    if kind == 6:    # fabric: a weave
+        return 0.00022 * math.sin(p.x * 900) * math.sin(p.z * 900) + 0.0001 * nz.noise(p * 150.0)
+    if kind == 2:    # cardboard: corrugation showing through
+        return 0.0002 * math.sin((p.x + p.y) * 700) + 0.00015 * nz.noise(p * 90.0)
+    if kind == 5:    # rust: flaky crust
+        return 0.0003 * nz.noise(p * 110.0)
+    if kind == 4:    # metal: faint hammer marks
+        return 0.0001 * nz.noise(p * 60.0)
+    return 0.0
+
+
+def _hero(me, cells: dict, target_tris: int) -> None:
+    """Densify a mesh in place (simple subdivision: the shape stays) and press each material's relief into it."""
+    import bmesh
+    tris = sum(len(p.vertices) - 2 for p in me.polygons)
+    cuts = 0
+    while tris * 4 ** (cuts + 1) <= target_tris and cuts < 3:
+        cuts += 1
+    if cuts:
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        for _ in range(cuts):
+            bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
+        bm.to_mesh(me)
+        bm.free()
+    uv = me.uv_layers.get("UVMap")
+    kinds = [0] * len(me.vertices)
+    if uv is not None:
+        data = uv.data
+        for poly in me.polygons:
+            u, v = data[poly.loop_start].uv
+            k = cells.get((round(u, 4), round(v, 4)), 0)
+            if k:
+                for vi in poly.vertices:
+                    kinds[vi] = k
+    me.update()
+    for vx in me.vertices:
+        k = kinds[vx.index]
+        if k:
+            vx.co += vx.normal * _relief(k, vx.co)
+    me.update()
+
+
+def save_high(ctx, path: str, *, hero: bool = False, cells: dict | None = None, target_tris: int = 1_200_000) -> None:
+    """Write the built model's meshes, in world space, to a .blend: the high model the tiers bake from. hero = densify
+    it and press each material's relief in (fur strands, bone pores, stone cracks…): sculpted detail that every tier,
+    PC included, gets in its normal, colour and occlusion maps."""
     ctx.view_layer.update()
     objs = []
-    for o in ctx.scene.objects:
-        if o.type == "MESH" and not o.get("meshgate_collision_for"):
-            me = o.data.copy()
-            me.transform(o.matrix_world)
-            objs.append(bpy.data.objects.new(f"mg_high_{o.name}", me))
+    meshes = [o for o in ctx.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")]
+    total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons) or 1
+    for o in meshes:
+        me = o.data.copy()
+        me.transform(o.matrix_world)
+        if hero:
+            share = sum(len(p.vertices) - 2 for p in me.polygons) / total
+            _hero(me, cells or {}, int(target_tris * share))
+        objs.append(bpy.data.objects.new(f"mg_high_{o.name}", me))
     bpy.data.libraries.write(path, set(objs), fake_user=True)
     for o in objs:
         me = o.data
@@ -358,14 +461,14 @@ def load_high(ctx, path: str) -> list:
 
 
 def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | None = None, clean: bool = False,
-              high: list | None = None) -> list[str]:
+              high: list | None = None, hero: bool = False) -> list[str]:
     """Bake the weathered look (or, clean, the exact colours) into one full PBR texture set for every mesh of the asset:
     base colour, occlusion-roughness-metallic, emission and a normal map. want = texture size asked for. high = meshes
     of the detailed (PC) build: the normal map is baked from them onto this lighter model. Returns notes."""
     scene = ctx.scene
     high = list(high or [])
     try:
-        return _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high)
+        return _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero)
     finally:
         for o in high:
             me = o.data
@@ -374,7 +477,7 @@ def weathered(ctx, budget: dict, tier: str, tmp: str, name: str, want: int | Non
                 bpy.data.meshes.remove(me)
 
 
-def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[str]:
+def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=False) -> list[str]:
     meshes = [o for o in scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
               and not o.get("meshgate_high")]
     mats = {s.material for o in meshes for s in o.material_slots if s.material}
@@ -445,6 +548,8 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[s
                 nt.links.remove(link)
             nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
             btype = "NORMAL"
+        # relief comes from the detailed model; colours stay on the model itself, where painted edges are soft and thin
+        # parts (eyes in their sockets, whiskers) cannot pick up a neighbour's colour
         from_high = btype == "NORMAL" and bool(high)
         for i, o in enumerate(meshes):   # one object at a time into the shared image; clear only before the first
             for x in ctx.view_layer.objects:
@@ -506,6 +611,7 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high) -> list[s
         if layer is not None:
             o.data.color_attributes.remove(layer)
     bpy.data.materials.remove(bake_mat)
-    parts = [f"colour {colour_px} px"] + ([f"normal {normal_px} px" + (" from the PC model" if high else "")]
-                                          if normal_px else []) + ["occlusion"]
+    parts = [f"colour {colour_px} px"] + ([f"normal {normal_px} px"] if normal_px else []) + ["occlusion"] \
+        + ([f"relief from the {'hero' if hero else 'PC'} model ({sum(len(p.vertices) - 2 for o in high for p in o.data.polygons):,} triangles)"]
+           if high else [])
     return [f"{'clean PBR' if clean else 'weathered finish'} baked ({', '.join(parts)})"]
