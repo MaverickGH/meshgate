@@ -185,6 +185,14 @@ def _tier(context, objs, budget: dict, notes: list):
     """Bring the selection within a tier's asset budget for one export: DECIMATE modifiers first in the stack
     (so skinning still applies after), downscaled copies of oversized textures swapped into the materials."""
     added, swapped, copies = [], [], []
+    # instances (objects sharing one mesh) get one decimated mesh they all share, so the file still stores it once;
+    # a modifier on each would give every copy a mesh of its own
+    shared: dict = {}
+    for o in meshes(objs):
+        if o.data.users > 1:
+            shared.setdefault(o.data, []).append(o)
+    ratios = {me: 1.0 for me in shared}
+    made: dict = {}
     try:
         limit = budget["max_tris"]
         for _ in range(4):   # small meshes are left alone, so tighten the big ones until the budget holds
@@ -192,8 +200,18 @@ def _tier(context, objs, budget: dict, notes: list):
             if tris <= limit:
                 break
             ratio = max(0.02, limit * 0.92 / tris)
+            for me, users in shared.items():
+                if me.shape_keys or len(me.polygons) < 48:
+                    continue
+                ratios[me] = max(0.01, ratios[me] * ratio)
+                low = _decimated(context, me, ratios[me])
+                for o in users:
+                    o.data = low
+                if me in made:
+                    bpy.data.meshes.remove(made[me])
+                made[me] = low
             for o in meshes(objs):
-                if o.data.shape_keys or len(o.data.polygons) < 48:
+                if o.data.shape_keys or len(o.data.polygons) < 48 or any(o in u for u in shared.values()):
                     continue
                 mod = o.modifiers.get("meshgate_tier")
                 if mod is None:
@@ -238,6 +256,26 @@ def _tier(context, objs, budget: dict, notes: list):
             mod = o.modifiers.get(name)
             if mod:
                 o.modifiers.remove(mod)
+        for me, users in shared.items():
+            for o in users:
+                o.data = me
+            if me in made:
+                bpy.data.meshes.remove(made[me])
+
+
+def _decimated(context, me, ratio: float):
+    """A decimated copy of a mesh (collapse, as the tier modifier does), made once for all the objects sharing it."""
+    tmp = bpy.data.objects.new("meshgate_tier_tmp", me)
+    context.scene.collection.objects.link(tmp)
+    mod = tmp.modifiers.new("meshgate_tier", "DECIMATE")
+    mod.decimate_type, mod.ratio = "COLLAPSE", ratio
+    try:
+        dg = context.evaluated_depsgraph_get()
+        low = bpy.data.meshes.new_from_object(tmp.evaluated_get(dg), preserve_all_data_layers=True, depsgraph=dg)
+    finally:
+        bpy.data.objects.remove(tmp)
+    low.name = f"{me.name}_tier"
+    return low
 
 
 def apply_mesh_scale(context, objs) -> int:

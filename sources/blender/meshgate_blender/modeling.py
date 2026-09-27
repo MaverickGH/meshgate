@@ -455,14 +455,17 @@ class Kit:
 
     def scatter(self, surface, piece, count: int, *, seed: int = 0, scale=(0.8, 1.2), align: bool = True,
                 spin: bool = True, sink: float = 0.0, at=None, radius: float = 0.1, facing=None,
-                below: float | None = None, above: float | None = None):
+                below: float | None = None, above: float | None = None, instances: bool = False):
         """Copies of `piece` scattered over the surface of another piece — pebbles on ground, grass tufts, moss,
         mushrooms on a log, spikes on a shell, rivets, warts, fur tufts, leaves on a branch. count = copies on the pc
         tier (fewer on phones: ½, ¼, ⅛). The piece is modelled standing at the origin, its up along +Z; each copy is
         stood on the surface (align = up along the surface normal, else straight up), turned randomly about it (spin),
         scaled by a random factor in scale = (min, max) and sunk `sink` meters in. Limit where copies land with at +
         radius, facing (a direction the surface must face), below / above (heights). `piece` is used up (do not also
-        join it); returns one piece holding every copy."""
+        join it); returns one piece holding every copy.
+        instances=True (trees on a hill, rocks across a field, lamps along a street — big, repeated things): the
+        copies share their mesh (see instance()); sizes come from three variants within `scale`. Returns a group
+        holding the copies, to attach() or place like one piece."""
         import bmesh
         self._bake(surface)
         self._bake(piece)
@@ -494,6 +497,8 @@ class Kit:
         for t in tris:
             acc += t[4]
             cum.append(acc)
+        if instances:
+            return self._scatter_instances(piece, tris, cum, total, n, rng, scale, align, spin, sink)
         src = bmesh.new()
         src.from_mesh(piece.data)
         bmesh.ops.translate(src, verts=src.verts, vec=piece.location)   # piece space → its placed position
@@ -529,6 +534,38 @@ class Kit:
         bpy.context.collection.objects.link(obj)
         self._forget(piece)
         return obj
+
+    def _scatter_instances(self, piece, tris, cum, total, n, rng, scale, align, spin, sink):
+        """scatter(instances=True): up to three pre-scaled variants of the piece, each copy a shared-mesh placement."""
+        import bisect
+        lo, hi = (scale if isinstance(scale, (tuple, list)) else (scale, scale))
+        sizes = [lo] if abs(hi - lo) < 1e-6 else [lo + (hi - lo) * t for t in (0.0, 0.5, 1.0)]
+        variants = []
+        for k in sizes:
+            me = piece.data.copy()
+            me.transform(Matrix.Scale(float(k), 4))
+            variants.append(me)
+        group = self.group(f"{piece.name}_set")
+        for i in range(n):
+            a, b, c, nrm, _area = tris[min(bisect.bisect_left(cum, rng.random() * total), len(tris) - 1)]
+            u, v = rng.random(), rng.random()
+            if u + v > 1:
+                u, v = 1 - u, 1 - v
+            p = a + (b - a) * u + (c - a) * v
+            up = nrm if align else Vector((0, 0, 1))
+            m = up.to_track_quat("Z", "Y").to_matrix().to_4x4()
+            if spin:
+                m = m @ Matrix.Rotation(rng.uniform(0, 2 * math.pi), 4, "Z")
+            obj = bpy.data.objects.new(f"{piece.name}_{i:03d}", variants[rng.randrange(len(variants))])
+            bpy.context.collection.objects.link(obj)
+            obj.location = p - up * sink
+            obj.rotation_euler = m.to_euler()
+            obj.parent = group   # the group sits at the origin unrotated: no parent inverse needed
+        self._forget(piece)
+        for me in variants:
+            if me.users == 0:
+                bpy.data.meshes.remove(me)
+        return group
 
     def modify(self, obj, kind: str, **opts):
         """Apply one Blender modifier to a piece, the way an artist stacks them:
@@ -764,6 +801,23 @@ class Kit:
         self._bake(c)
         return c
 
+    def instance(self, piece, at=None, *, turn: float = 0.0, rot=None):
+        """A copy that shares the piece's mesh — trees in a forest, fence posts, chairs round a table, lamps down a
+        street, crates in a warehouse. The file stores the mesh once and engines can draw every copy in one go, so a
+        hundred copies cost about the memory of one (triangles still count per copy). at = where the copy's origin
+        goes (default: the piece's own place); turn = degrees about the vertical; rot = (x, y, z) radians instead.
+        Same size as the piece: for another size make another piece. Build the piece completely first — shaping or
+        painting it afterwards changes every copy, and joining a copy makes it an ordinary piece again."""
+        self._bake(piece)
+        if piece.type != "MESH":
+            raise ModelError("instance() takes a mesh piece")
+        c = piece.copy()   # shares piece.data
+        bpy.context.collection.objects.link(c)
+        if at is not None:
+            c.location = Vector(at)
+        c.rotation_euler = tuple(rot) if rot is not None else (0.0, 0.0, math.radians(float(turn)))
+        return c
+
     def join(self, name: str, parts):
         """Merge pieces into one mesh object named `name`, origin at the world origin. One mesh per rigid part:
         join everything that never moves separately (a whole prop is usually one join)."""
@@ -821,9 +875,28 @@ class Kit:
 
     # ------------------------------------------------------------------ relations: place parts by other parts
 
+    @staticmethod
+    def _world(o):
+        """o's world matrix from its own transform and its parents' (matrix_world can lag behind until an update)."""
+        m = o.matrix_basis.copy()
+        return Kit._world(o.parent) @ o.matrix_parent_inverse @ m if o.parent is not None else m
+
     def _box(self, obj):
-        self._bake(obj)
-        pts = [v.co + obj.location for v in obj.data.vertices] if obj.type == "MESH" and obj.data.vertices else [obj.location.copy()]
+        if obj.type == "EMPTY" and obj.children:   # a group (scatter instances): the box around everything in it
+            pts, todo = [], list(obj.children)
+            while todo:
+                c = todo.pop()
+                todo += list(c.children)
+                if c.type == "MESH":
+                    m = self._world(c)
+                    pts += [m @ v.co for v in c.data.vertices]
+            pts = pts or [obj.location.copy()]
+        elif obj.type == "MESH" and obj.data.users > 1:   # an instance keeps its turn: baking would unshare the mesh
+            m = self._world(obj)
+            pts = [m @ v.co for v in obj.data.vertices] or [obj.location.copy()]
+        else:
+            self._bake(obj)
+            pts = [v.co + obj.location for v in obj.data.vertices] if obj.type == "MESH" and obj.data.vertices else [obj.location.copy()]
         lo = Vector([min(p[i] for p in pts) for i in range(3)])
         hi = Vector([max(p[i] for p in pts) for i in range(3)])
         return lo, hi
@@ -1997,15 +2070,16 @@ class Kit:
         meshes = [o for o in objs if o.type == "MESH"]
         if not meshes:
             raise ModelError("build(mg) made no mesh — create parts and join them")
-        hidden = sum(self._cull_hidden(o) for o in meshes if not o.get("meshgate_cards"))
+        once = list({o.data: o for o in reversed(meshes)}.values())   # instances share a mesh: work on it once
+        hidden = sum(self._cull_hidden(o) for o in once if not o.get("meshgate_cards"))
         if hidden:
             notes.append(f"removed {hidden} hidden faces (inside other pieces)")
         if self._focus and self.level >= 1:
-            added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards")])
+            added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards") and o.data.users == 1])
             if added:
                 notes.append(f"focus: {added:,} more triangles where the model needs detail")
         if not self._faceted:
-            n = sum(self._weighted_normals(o) for o in meshes if not o.get("meshgate_cards"))
+            n = sum(self._weighted_normals(o) for o in once if not o.get("meshgate_cards"))
             if n:
                 notes.append(f"weighted normals on {n} mesh{'es' if n > 1 else ''} (clean shading on flat faces)")
         sockets = [o for o in objs if o.get("meshgate_socket") and o.parent is None]
@@ -2046,6 +2120,15 @@ class Kit:
         me = obj.data
         if not me.polygons or not any(p.use_smooth for p in me.polygons):
             return 0
+        sharing = [o for o in bpy.data.objects if o.data is me and o is not obj]
+        if sharing:   # Blender applies modifiers to single-user meshes only: finish a copy, then share it again
+            obj.data = me.copy()
+            done = Kit._weighted_normals(obj)
+            for o in sharing:
+                o.data = obj.data
+            if me.users == 0:
+                bpy.data.meshes.remove(me)
+            return done
         if hasattr(me, "use_auto_smooth"):   # ≤ 4.0: custom normals need auto smooth
             me.use_auto_smooth = True
         mod = obj.modifiers.new("weighted normals", "WEIGHTED_NORMAL")

@@ -384,8 +384,9 @@ def inspect(gltf: dict[str, Any], bin_chunk: bytes, path: Path, max_mb: float) -
     no_normal: list[str] = []
     non_tri: list[str] = []
     missing_minmax = False
-    for m in meshes:
-        mname = m.get("name") or f"mesh#{meshes.index(m)}"
+    mesh_tris = [0] * len(meshes)
+    for mi, m in enumerate(meshes):
+        mname = m.get("name") or f"mesh#{mi}"
         for p in m.get("primitives") or []:
             prim_count += 1
             attrs = p.get("attributes") or {}
@@ -400,9 +401,24 @@ def inspect(gltf: dict[str, Any], bin_chunk: bytes, path: Path, max_mb: float) -
             if pos and ("min" not in pos or "max" not in pos):
                 missing_minmax = True
             if "indices" in p and p["indices"] < len(accessors):
-                triangles += accessors[p["indices"]].get("count", 0) // 3
+                mesh_tris[mi] += accessors[p["indices"]].get("count", 0) // 3
             elif pos:
-                triangles += pos.get("count", 0) // 3
+                mesh_tris[mi] += pos.get("count", 0) // 3
+    # triangles drawn: a mesh counts once per node showing it (instances), and per GPU instance
+    # (EXT_mesh_gpu_instancing); the file stores each mesh once (unique_triangles)
+    uses = [0] * len(meshes)
+    for n in nodes:
+        mi = n.get("mesh")
+        if isinstance(mi, int) and 0 <= mi < len(meshes):
+            inst = ((n.get("extensions") or {}).get("EXT_mesh_gpu_instancing") or {}).get("attributes") or {}
+            acc = next(iter(inst.values()), None)
+            uses[mi] += accessors[acc].get("count", 1) if isinstance(acc, int) and acc < len(accessors) else 1
+    triangles = sum(t * u for t, u in zip(mesh_tris, uses))
+    unique_triangles = sum(mesh_tris)
+    instanced = sum(1 for u in uses if u > 1)
+    if instanced:
+        notes.append(f"{instanced} mesh{'es' if instanced > 1 else ''} shared by several placements (instances): "
+                     f"{unique_triangles:,} triangles stored, {triangles:,} drawn")
 
     dims = None
     bounds = world_bounds(gltf, bin_chunk)
@@ -500,7 +516,7 @@ def inspect(gltf: dict[str, Any], bin_chunk: bytes, path: Path, max_mb: float) -
         "size_mb": round(size_mb, 3),
         "bin_kb": round(len(bin_chunk) / 1024),
         "scenes": len(scenes), "nodes": len(nodes), "meshes": len(meshes), "primitives": prim_count,
-        "triangles": triangles, "dims_m": [round(d, 4) for d in dims] if dims else None,
+        "triangles": triangles, "unique_triangles": unique_triangles, "instanced_meshes": instanced, "dims_m": [round(d, 4) for d in dims] if dims else None,
         "bounds_min_m": [round(v, 4) for v in bounds[0]] if bounds else None,
         "materials": len(materials), "textures": len(gltf.get("textures") or []), "images": tex_info,
         "animations": anim_names, "skins": skin_info["count"], "joints": skin_info["joints"],

@@ -110,7 +110,8 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     after = [i for i in checks.run_checks(ctx) if i.severity != checks.INFO]
     return {"notes": notes + [f"fixed: {f}" for f in fixed], "issues": [f"[{i.code}] {i.label()}" for i in after],
             "facts": kit._facts() if tier == "pc" or save_high is not None else None,
-            "params": kit._params, "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
+            "params": kit._params, "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(),
+            "bake_colour": ctx.scene.get("mg_bake_colour"), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
                                                      for t in o.animation_data.nla_tracks})}
 
 

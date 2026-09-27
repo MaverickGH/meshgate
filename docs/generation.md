@@ -220,6 +220,7 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.rig(body, joints)` + `mg.clip(name, motion)` | A Humanoid skeleton bound with automatic weights (≤ the tier's bones per vertex); clips `idle`, `zombie_walk`, `walk`, `attack`, `hit` or keys | characters that move in the engines |
 | `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
 | `mg.scatter(surface, piece, count)` | Copies of a piece over a surface, stood on it, spun and scaled at random | pebbles, grass tufts, moss, spikes, rivets |
+| `mg.instance(piece, at, turn=)` · `mg.scatter(..., instances=True)` | Copies that share one mesh: the file stores it once, engines draw the copies together | forests, fences, street lamps, crates in a warehouse |
 | `mg.modify(obj, kind)` | Blender modifiers: solidify, array, displace, smooth, remesh, bevel, wireframe, subdivide, decimate, shrinkwrap | fins, vertebrae rows, terrain, cages, straps |
 | `mg.eye(center, radius, iris)` | A glossy eyeball with iris rings and a slit, bar or round pupil set in, looking where you say | characters and creatures |
 | `mg.paint(obj, colour, at=, radius=)` | Paint a region like a texture brush, also by `facing=` and height; soft edges in baked finishes | pale bellies, stripes, wounds, moss, rust |

@@ -42,7 +42,8 @@ Tiers built for this asset: {built}.
    stem by a little and never model surfaces nobody can see (the inside of a closed pot under the soil, a hidden
    bottom). Spend triangles on the silhouette, not on countless tiny repeats. Set pieces on and against each other with
    `mg.place` (drop onto a surface), `mg.snap` (box against box) and `mg.align` instead of guessing heights;
-   attachment points for weapons, effects and riders are `mg.socket`.
+   attachment points for weapons, effects and riders are `mg.socket`. Repeated things in a scene (trees, fence posts, lamps,
+   rocks) are built once and repeated with `mg.instance` or `mg.scatter(..., instances=True)`: one mesh, many places.
 6. Work like a 3D artist. Hard-surface things (furniture, machines, buildings, props) are blocked out of primitives,
    lathe, tube and extrude. Organic things (animals, creatures, characters, plants, roots, rocks, food, cushions,
    cloth) are sculpted: one `mg.blob` for the whole body so the shapes melt together (torso, chest, head, haunches,

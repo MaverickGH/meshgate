@@ -22,6 +22,9 @@ MARGIN = 2   # bake margin in pixels
 PAINT_ATTR = "mg_paint"   # Kit.paint's soft colour layer (removed after the bake, never exported)
 
 
+DETAIL_M = 2.0   # the largest size the weathered finish scales its wear, grime and occlusion to
+
+
 def texture_plan(budget: dict, tier: str, glow: bool, want: int | None = None,
                  normal_map: bool = True) -> tuple[int, int, int, int]:
     """(colour, orm, emissive, normal) sizes in px within the tier's texture size and memory (RGBA, +1/3 for mips).
@@ -42,6 +45,44 @@ def texture_plan(budget: dict, tier: str, glow: bool, want: int | None = None,
                 normal = n
                 break
     return colour, orm, emissive, normal
+
+
+def _bake_proxy(ctx, objs, mat):
+    """One temporary object holding every piece to bake, in world space, with their UVs and paint (layers are
+    matched by name). The pieces are hidden from rendering meanwhile, so occlusion and edge wear do not find their
+    twin surfaces."""
+    import bmesh
+    ctx.view_layer.update()
+    bm = bmesh.new()
+    for o in objs:
+        tmp = o.data.copy()
+        tmp.transform(o.matrix_world)
+        bm.from_mesh(tmp)
+        bpy.data.meshes.remove(tmp)
+        o.hide_render = True
+    me = bpy.data.meshes.new("meshgate_bake")
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(mat)
+    me.polygons.foreach_set("material_index", [0] * len(me.polygons))
+    if me.uv_layers.get("bake"):
+        me.uv_layers.active = me.uv_layers["bake"]
+    for layer in me.uv_layers:
+        layer.active_render = layer.name == "bake"
+    proxy = bpy.data.objects.new("meshgate_bake", me)
+    ctx.scene.collection.objects.link(proxy)
+    return proxy
+
+
+def _mean_brightness(img) -> float:
+    """Mean brightness of a baked image (on a small copy): a colour bake near 0 means something went wrong."""
+    small = img.copy()
+    try:
+        small.scale(32, 32)
+        px = small.pixels[:]
+        return round(sum(sum(px[i:i + 3]) / 3 for i in range(0, len(px), 4)) / (len(px) // 4), 4)
+    finally:
+        bpy.data.images.remove(small)
 
 
 def _image(name: str, px: int, non_color: bool):
@@ -78,11 +119,11 @@ def quads(ctx) -> list[str]:
     the shape allows. (GLB stays triangles — glTF stores nothing else; FBX and .blend keep the quads.)"""
     import bmesh
     total = quad = 0
+    seen = set()
     for o in ctx.scene.objects:
-        if o.type != "MESH" or o.get("meshgate_collision_for") or o.data.shape_keys:
+        if o.type != "MESH" or o.get("meshgate_collision_for") or o.data.shape_keys or o.data in seen:
             continue
-        if o.data.users > 1:
-            o.data = o.data.copy()
+        seen.add(o.data)   # instances share a mesh: pair its triangles once
         bm = bmesh.new()
         bm.from_mesh(o.data)
         bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
@@ -490,19 +531,29 @@ def save_high(ctx, path: str, *, hero: bool = False, cells: dict | None = None, 
     objs = []
     meshes = [o for o in ctx.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")
               and not o.get("meshgate_cards")]
-    total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons) or 1
+    unique = list({o.data: o for o in meshes}.values())
+    total = sum(len(p.vertices) - 2 for o in unique for p in o.data.polygons) or 1
+    made: dict = {}   # instances (objects sharing a mesh): one high mesh, placed by each copy's own transform
     for o in meshes:
-        me = o.data.copy()
-        me.transform(o.matrix_world)
-        if hero:
-            share = sum(len(p.vertices) - 2 for p in me.polygons) / total
-            _hero(me, cells or {}, int(target_tris * share))
-        objs.append(bpy.data.objects.new(f"mg_high_{o.name}", me))
+        shared = o.data.users > 1
+        if o.data not in made or not shared:
+            me = o.data.copy()
+            if not shared:
+                me.transform(o.matrix_world)
+            if hero:
+                share = sum(len(p.vertices) - 2 for p in me.polygons) / total
+                _hero(me, cells or {}, int(target_tris * share))
+            made[o.data] = me
+        h = bpy.data.objects.new(f"mg_high_{o.name}", made[o.data])
+        if shared:
+            h.matrix_world = o.matrix_world
+        objs.append(h)
     bpy.data.libraries.write(path, set(objs), fake_user=True)
     for o in objs:
         me = o.data
         bpy.data.objects.remove(o)
-        bpy.data.meshes.remove(me)
+        if me.users == 0:
+            bpy.data.meshes.remove(me)
 
 
 def load_high(ctx, path: str) -> list:
@@ -555,10 +606,9 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
     smallest = min(px for px in (colour_px, orm_px, emi_px, normal_px) if px)
     # gaps between UV islands wider than the bake margin on the smallest map, so no colour or glow bleeds across
     island_margin = min(0.02, 2.5 * MARGIN / smallest)
-    # one shared atlas: every mesh gets a "bake" UV map, unwrapped together so the islands never overlap
+    # one shared atlas: every mesh gets a "bake" UV map, unwrapped together so the islands never overlap (instances
+    # share a mesh, so they share its islands and its pixels too)
     for o in meshes:
-        if o.data.users > 1:
-            o.data = o.data.copy()
         uvs = o.data.uv_layers
         (uvs.get("bake") or uvs.new(name="bake"))
         uvs.active = uvs["bake"]
@@ -570,17 +620,19 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=island_margin)
     _tidy_uvs(island_margin)
     bpy.ops.object.mode_set(mode="OBJECT")
-    ctx.scene["mg_uv"] = json.dumps(uv_metrics(meshes, "bake"))
+    ctx.scene["mg_uv"] = json.dumps(uv_metrics(list({o.data: o for o in meshes}.values()), "bake"))
     for o in meshes:   # bakes and the viewport read the render UV map; the palette is sampled through "UVMap"
         for layer in o.data.uv_layers:
             layer.active_render = layer.name == "bake"
 
-    if any(o.data.color_attributes.get(PAINT_ATTR) for o in meshes if hasattr(o.data, "color_attributes")):
-        for o in meshes:   # pieces without soft paint get a clear layer (a missing one would read as opaque)
-            if not o.data.color_attributes.get(PAINT_ATTR):
-                layer = o.data.color_attributes.new(PAINT_ATTR, "FLOAT_COLOR", "POINT")
-                layer.data.foreach_set("color", [0.0] * (4 * len(layer.data)))
-    bake_mat, emit, bsdf, out, outs = _bake_material(pal, size, clean)
+    for o in meshes:   # pieces without soft paint get a clear layer: a missing one reads as opaque black paint
+        if hasattr(o.data, "color_attributes") and not o.data.color_attributes.get(PAINT_ATTR):
+            layer = o.data.color_attributes.new(PAINT_ATTR, "FLOAT_COLOR", "POINT")
+            layer.data.foreach_set("color", [0.0] * (4 * len(layer.data)))
+    # wear, grime, occlusion and bake rays work at the scale of a thing you hold or walk around: a scene of many
+    # metres keeps them at that scale instead of growing them with the whole scene
+    detail = min(size, DETAIL_M)
+    bake_mat, emit, bsdf, out, outs = _bake_material(pal, detail, clean)
     for o in meshes + high:
         for slot in o.material_slots:
             slot.material = bake_mat
@@ -612,23 +664,37 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
         # relief comes from the detailed model; colours stay on the model itself, where painted edges are soft and thin
         # parts (eyes in their sockets, whiskers) cannot pick up a neighbour's colour
         from_high = btype == "NORMAL" and bool(high)
-        for i, o in enumerate(meshes):   # one object at a time into the shared image; clear only before the first
+        for i, o in enumerate(bakers):   # into the shared image; clear only before the first
             for x in ctx.view_layer.objects:
                 x.select_set(x is o or (from_high and x in high))
             ctx.view_layer.objects.active = o
-            extra = {"use_selected_to_active": True, "cage_extrusion": size * 0.01, "max_ray_distance": size * 0.04} \
+            extra = {"use_selected_to_active": True, "cage_extrusion": detail * 0.01, "max_ray_distance": detail * 0.04} \
                 if from_high else {}
             bpy.ops.object.bake(type=btype, normal_space="TANGENT", margin=MARGIN, use_clear=(i == 0),
                                 target="IMAGE_TEXTURES", **extra)
         _pack(img, tmp)
         images[kind] = img
 
-    bake("basecolor", colour_px, False, outs["colour"])
-    bake("orm", orm_px, True, outs["orm"])
-    if emi_px:
-        bake("emissive", emi_px, False, outs["emissive"])
-    if normal_px:
-        bake("normal", normal_px, True)
+    # instances share a mesh and so its place in the atlas: one copy of each is enough. Several pieces bake as one
+    # temporary object — Cycles goes over the whole image for every object it bakes
+    reps = list({o.data: o for o in reversed(meshes)}.values())
+    proxy = _bake_proxy(ctx, reps, bake_mat) if len(reps) > 1 else None
+    bakers = [proxy] if proxy else reps
+    try:
+        bake("basecolor", colour_px, False, outs["colour"])
+        scene["mg_bake_colour"] = _mean_brightness(images["basecolor"])
+        bake("orm", orm_px, True, outs["orm"])
+        if emi_px:
+            bake("emissive", emi_px, False, outs["emissive"])
+        if normal_px:
+            bake("normal", normal_px, True)
+    finally:
+        if proxy:
+            me = proxy.data
+            bpy.data.objects.remove(proxy)
+            bpy.data.meshes.remove(me)
+            for o in reps:
+                o.hide_render = False
 
     # the final material: glTF-ready PBR on the new atlas
     mat = bpy.data.materials.new(f"{name}_weathered")
@@ -663,6 +729,7 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
     for o in meshes:
         for slot in o.material_slots:
             slot.material = mat
+    for o in list({o.data: o for o in meshes}.values()):   # once per mesh (instances share one)
         uvs = o.data.uv_layers
         uvs.remove(uvs["UVMap"])
         uvs["bake"].name = "UVMap"
@@ -675,4 +742,7 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
     parts = [f"colour {colour_px} px"] + ([f"normal {normal_px} px"] if normal_px else []) + ["occlusion"] \
         + ([f"relief from the {'hero' if hero else 'PC'} model ({sum(len(p.vertices) - 2 for o in high for p in o.data.polygons):,} triangles)"]
            if high else [])
-    return [f"{'clean PBR' if clean else 'weathered finish'} baked ({', '.join(parts)})"]
+    notes = [f"{'clean PBR' if clean else 'weathered finish'} baked ({', '.join(parts)})"]
+    if scene.get("mg_bake_colour", 1.0) < 0.02:
+        notes.append("the baked colour came out almost black — the colour bake failed; report this as a MeshGate bug")
+    return notes

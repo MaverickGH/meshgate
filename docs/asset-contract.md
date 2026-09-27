@@ -57,7 +57,7 @@ What exactly the validator checks (✗ — error, ⚠ — warning, `--strict` tu
 | Meters | ⚠ world extent < 1 cm (looks like mm) or > 100 m (looks like cm, or it is a scene) |
 | Origin | a note if the bottom of the asset is noticeably below the origin |
 | Transforms | ⚠ scale ≠ 1 on nodes with meshes; a note about nodes with `matrix` (not animatable) |
-| Geometry | ⚠ no `TEXCOORD_0` (UV), no `NORMAL`, primitives are not triangles |
+| Geometry | ⚠ no `TEXCOORD_0` (UV), no `NORMAL`, primitives are not triangles; triangles are counted as drawn — a mesh shown by several nodes (instances) counts once per node, while the file stores it once |
 | Materials | ⚠ no materials; materials without `pbrMetallicRoughness` (and not unlit) |
 | Rig | ⚠ skin without `inverseBindMatrices`, vertices without weights or with a sum ≠ 1, incomplete JOINTS/WEIGHTS; note: Humanoid compatibility (which bones were found/are missing) |
 | Textures | ⚠ external files (not packed), not a power of two, larger than 4096 |

@@ -521,6 +521,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_hard_surface(exe, work)
     ok &= _check_relations(exe, work)
     ok &= _check_live(exe, work)
+    ok &= _check_instances(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -844,6 +845,43 @@ def _check_live(exe: str, work: Path) -> bool:
     return good
 
 
+def _check_instances(exe: str, work: Path) -> bool:
+    """Instances (a forest scattered as shared meshes, a fence of instanced posts): the file stores each repeated mesh
+    once, copies count as drawn triangles, nothing floats — and the sharing survives tier decimation and the realistic
+    bake (whose colour must really bake)."""
+    got = {}
+    for style, tiers in (("stylized", "pc,mobile-low"), ("realistic", "mobile-mid")):
+        out = work / f"instances_{style}"
+        r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "instances.py"),
+                            "--name", "forest", "--style", style, "--tiers", tiers, "--blender", exe, "--no-preview",
+                            "--out-dir", str(out)], capture_output=True, text=True)
+        try:
+            got[style] = json.load(open(out / "gen.json"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ instances {style}: {exc}\n" + (r.stdout + r.stderr)[-800:])
+            return False
+    try:
+        def glb(style, tier):
+            g = got[style]
+            rep = json.loads(subprocess.run([sys.executable, str(ROOT / "core" / "validate_glb.py"),
+                                             str(work / f"instances_{style}" / g["report"]["tiers"][tier]["file"]), "--json"],
+                                            capture_output=True, text=True).stdout)
+            return rep[0] if isinstance(rep, list) else rep
+        pc, low, real = glb("stylized", "pc"), glb("stylized", "mobile-low"), glb("realistic", "mobile-mid")
+        good = (got["stylized"]["ok"] and got["realistic"]["ok"] and not got["stylized"]["report"]["facts"]["floating"]
+                and pc["nodes"] > 40 and pc["meshes"] <= 10 and pc["instanced_meshes"] >= 3
+                and pc["unique_triangles"] * 4 < pc["triangles"] and low["instanced_meshes"] >= 2
+                and real["instanced_meshes"] >= 2
+                and (got["realistic"]["report"]["tiers"]["mobile-mid"].get("bake_colour") or 0) > 0.03)
+        detail = {k: {x: v.get(x) for x in ("nodes", "meshes", "triangles", "unique_triangles", "instanced_meshes")}
+                  for k, v in (("pc", pc), ("mobile-low", low), ("realistic", real))}
+    except Exception as exc:  # noqa: BLE001
+        good, detail = False, str(exc)
+    if not good:
+        print(f"  ✗ instances: {detail}")
+    return good
+
+
 def _check_finish(exe: str, work: Path) -> bool:
     """The style's finish: lowpoly is faceted with fewer triangles than stylized; realistic bakes weathered textures
     (colour at the tier's size plus a normal map) and keeps one material."""
@@ -867,7 +905,8 @@ def _check_finish(exe: str, work: Path) -> bool:
         rep = rep[0] if isinstance(rep, list) else rep
         good = (gl["finish"] == "faceted" and lp["tris"] < st["tris"] and gr["finish"] == "weathered"
                 and any("weathered finish baked" in n for n in re_["notes"]) and re_["max_texture"] == 1024
-                and re_["materials"] == 1 and rep.get("textures", 0) >= 3 and re_["within_budget"])
+                and re_["materials"] == 1 and rep.get("textures", 0) >= 3 and re_["within_budget"]
+                and (re_.get("bake_colour") or 0) > 0.03)   # the colour really baked (a failed bake is black)
     except Exception as exc:  # noqa: BLE001
         good = False
         print(f"  ✗ finish: {exc}")
