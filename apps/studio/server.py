@@ -205,6 +205,84 @@ class Studio:
         self.jobs[job.id] = job
         return job
 
+    def refine(self, req: dict) -> Job:
+        """Work on a model that is already in the library, the way an artist iterates: new slider values (mg.param),
+        a change in words for the AI, or back to an earlier version. The current state is kept as a version first;
+        the build reuses the model's own settings (style, tiers, textures, topology, reference picture)."""
+        name = str(req.get("name") or "")
+        if not re.fullmatch(r"[a-z0-9_]{1,80}", name) or not (self.library / name / "gen.json").is_file():
+            raise ValueError("pick a model from the library first")
+        item = self.library / name
+        g = json.loads((item / "gen.json").read_text(encoding="utf-8"))
+        if (g.get("engine") or "kit") != "kit" or not g.get("code") or not (item / g["code"]).is_file():
+            raise ValueError("only models built from kit code can be tuned — this one came from a mesh generator")
+        change = str(req.get("change") or "").strip()[:2000]
+        params = {str(k): float(v) for k, v in (req.get("params") or {}).items() if isinstance(v, (int, float))}
+        code_src = item / g["code"]
+        version = str(req.get("version") or "")
+        if version:
+            if not re.fullmatch(r"\d{3}", version) or not (item / "versions" / version / g["code"]).is_file():
+                raise ValueError("that version is gone")
+            code_src = item / "versions" / version / g["code"]
+            try:
+                params = json.loads((item / "versions" / version / "gen.json").read_text(encoding="utf-8")).get("params") or {}
+            except (OSError, ValueError):
+                params = {}
+        # keep the current state as a version (code, settings, preview) before anything changes
+        versions = item / "versions"
+        versions.mkdir(exist_ok=True)
+        n = max([int(d.name) for d in versions.iterdir() if d.is_dir() and d.name.isdigit()] or [0]) + 1
+        snap = versions / f"{n:03d}"
+        snap.mkdir()
+        for f in (g["code"], "gen.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
+            if f and (item / f).is_file():
+                shutil.copyfile(item / f, snap / f)
+        code_path = snap / f"source_{g['code']}"   # the run reads its code from here; the result replaces the current
+        shutil.copyfile(code_src, code_path)
+        cmd = [sys.executable, str(ROOT / "meshgate.py"), "gen", *([g["description"]] if g.get("description") else []),
+               "--code", str(code_path), "--name", name, "--events", "--style", str(g.get("style") or "stylized"),
+               "--tiers", ",".join(g.get("tiers") or generate.ORDER), "--targets", str(req.get("targets") or "web,unity"),
+               "--out-dir", str(item)]
+        if float(g.get("size") or 0) > 0:
+            cmd += ["--size", str(float(g["size"]))]
+        if g.get("texture") in generate.TEXTURES and g.get("texture") != "auto":
+            cmd += ["--texture", g["texture"]]
+        if g.get("topology") in {"tri", "quad"}:
+            cmd += ["--topology", g["topology"]]
+        if g.get("pbr"):
+            cmd.append("--pbr")
+        if g.get("colors") in {"texture", "vertex"}:
+            cmd += ["--colors", g["colors"]]
+        caps = g.get("caps") or {}
+        if caps:
+            cmd += ["--tris", ",".join(f"{k}={int(v)}" for k, v in caps.items())]
+        if g.get("input_image") and (item / g["input_image"]).is_file():
+            cmd += ["--image", str(item / g["input_image"])]
+        if params:
+            cmd += ["--params", json.dumps(params)]
+        if change:
+            cmd += ["--edit", change]
+            if req.get("ai_cmd"):
+                cmd += ["--ai-cmd", str(req["ai_cmd"])]
+            else:
+                cmd += ["--ai", req.get("ai") if req.get("ai") in generate.ADAPTERS else "claude"]
+            if req.get("model"):
+                cmd += ["--model", str(req["model"])]
+        job = Job(secrets.token_hex(6), cmd, name)
+        self.jobs[job.id] = job
+        return job
+
+    def versions(self, item: Path, code: str | None) -> list[dict]:
+        out = []
+        for d in sorted((item / "versions").glob("[0-9][0-9][0-9]"), reverse=True):
+            try:
+                g = json.loads((d / "gen.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            out.append({"id": d.name, "time": d.stat().st_mtime, "params": g.get("params") or {}, "edit": g.get("edit"),
+                        "ok": g.get("ok")})
+        return out
+
     def library_items(self) -> list[dict]:
         items = []
         if not self.library.is_dir():
@@ -225,6 +303,9 @@ class Studio:
                           "input_image": g.get("input_image"), "reference_image": g.get("reference_image"),
                           "history": [{"ok": a.get("ok"), "problems": a.get("problems", [])[:6]} for a in g.get("attempts", [])],
                           "ai": g.get("ai"), "model": g.get("model"),
+                          "params": [{**p_, "value": (g.get("params") or {}).get(p_["name"], p_.get("value"))}
+                                     for p_ in rep.get("params") or []],
+                          "edit": g.get("edit"), "versions": self.versions(gen_json.parent, g.get("code")),
                           "problems": rep.get("problems", []), "time": gen_json.stat().st_mtime})
         return sorted(items, key=lambda i: i["time"], reverse=True)
 
@@ -389,6 +470,9 @@ def make_handler(studio: Studio, port_ref: list):
                     return self._json({"id": job.id, "name": job.name})
                 if url.path == "/api/gen":
                     job = studio.start(body)
+                    return self._json({"id": job.id, "name": job.name})
+                if url.path == "/api/refine":
+                    job = studio.refine(body)
                     return self._json({"id": job.id, "name": job.name})
                 m = re.match(r"^/api/jobs/([0-9a-f]+)/cancel$", url.path)
                 if m and m.group(1) in studio.jobs:

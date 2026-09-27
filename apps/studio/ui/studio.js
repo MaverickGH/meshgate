@@ -21,6 +21,16 @@ const STRINGS = {
     name: "Name", size: "Size, m", auto: "auto", tiers: "Quality tiers",
     tiers_hint: "The same model is built once per tier, with as much detail as the tier affords.", engines: "Engines",
     ai_settings: "AI and advanced", ai: "AI command line", model: "Model", model_ph: "default of the CLI",
+    tune: "Refine", tune_words: "Change in words", tune_words_ph: "Bigger ears, longer fur on the chest, eyes a little lower…",
+    tune_words_go: "Change with AI", tune_params: "Parameters", tune_rebuild: "Rebuild", tune_reset: "Defaults",
+    tune_versions: "Versions", tune_restore: "Restore", tune_no_versions: "no earlier versions yet", tune_first: "as built",
+    tune_no_params: "This model has no sliders yet — ask the AI in words to add some (mg.param).",
+    tune_mesh_hint: "Models from a mesh generator are refined by generating again; tuning works on kit models.",
+    clip_hint: "Play this clip; click again to stop",
+    meter_start: "Starting…", meter_left: "left", meter_soon: "almost there", meter_done: "done", min: "min",
+    review_word: "review", attempt_word: "attempt",
+    meter_steps: { building: "building", ask: "asking the AI", compare: "the AI compares", render: "rendering views",
+                   concept: "drawing the concept", mesh: "generating the 3D model", master: "baking the 8K master" },
     ai_cmd: "Custom command", attempts: "Attempts", review: "AI review rounds",
     review_hint: "After a clean build the AI sees its model from four sides next to the picture and improves the code", collision: "Collision", none: "none", generate: "Generate",
     generating: "Generating…", cancel: "Cancel", wireframe: "Wireframe", reveal: "Show files", progress: "Progress",
@@ -63,6 +73,16 @@ const STRINGS = {
     name: "Имя", size: "Размер, м", auto: "авто", tiers: "Уровни качества",
     tiers_hint: "Одна и та же модель строится под каждый уровень — с той детализацией, которую он позволяет.", engines: "Движки",
     ai_settings: "Нейросеть и дополнительно", ai: "ИИ в командной строке", model: "Модель", model_ph: "по умолчанию CLI",
+    tune: "Доработка", tune_words: "Изменить словами", tune_words_ph: "Уши побольше, шерсть на груди длиннее, глаза чуть ниже…",
+    tune_words_go: "Изменить с ИИ", tune_params: "Параметры", tune_rebuild: "Пересобрать", tune_reset: "По умолчанию",
+    tune_versions: "Версии", tune_restore: "Вернуть", tune_no_versions: "пока нет прошлых версий", tune_first: "как собрано",
+    tune_no_params: "У этой модели пока нет ползунков — попроси ИИ словами добавить их (mg.param).",
+    tune_mesh_hint: "Модели из нейросети дорабатываются новой генерацией; доработка работает для моделей kit.",
+    clip_hint: "Проиграть клип; ещё раз — остановить",
+    meter_start: "Запуск…", meter_left: "осталось", meter_soon: "почти готово", meter_done: "готово", min: "мин",
+    review_word: "ревью", attempt_word: "попытка",
+    meter_steps: { building: "сборка", ask: "ИИ пишет код", compare: "ИИ сравнивает", render: "рендер видов",
+                   concept: "рисуем концепт", mesh: "нейросеть делает 3D", master: "запекаем мастер 8K" },
     ai_cmd: "Своя команда", attempts: "Попытки", review: "Круги ревью ИИ",
     review_hint: "После чистой сборки ИИ видит свою модель с четырёх сторон рядом с картинкой и улучшает код", collision: "Коллизия", none: "нет", generate: "Сгенерировать",
     generating: "Генерирую…", cancel: "Отмена", wireframe: "Сетка", reveal: "Показать файлы", progress: "Ход работы",
@@ -435,6 +455,7 @@ async function show(item, tier) {
     $("still").src = fileUrl(item.name, item.preview); $("still").classList.remove("hidden");
   }
   if (!job) showHistory(item);
+  renderClips(item); renderTune(item);
   const clips = item.clips?.length ? ` · ${t("clips")}: ${item.clips.join(", ")}` : "";
   const how = item.engine === "mesh" ? `${t("engine_opts").mesh}${item.provider ? " · " + item.provider : ""}` : t("engine_opts").kit;
   const text = `${item.description || item.name}${clips} · ${how} · ${item.attempts} ${plural(item.attempts, t("attempts_forms"))}, ${item.seconds ?? "?"} ${t("seconds")}`;
@@ -508,6 +529,40 @@ function log(ev) {
 function busy(on) {
   $("go").disabled = on; $("go").textContent = on ? t("generating") : t("generate");
   $("cancel").classList.toggle("hidden", !on);
+  ["edit-go", "rebuild", "params-reset", "restore"].forEach((id) => { $(id).disabled = on; });
+  meterReset(on);
+}
+
+// progress: the generator sends one `meter` event per step (pct at its start and end, its expected seconds, the
+// seconds left); between events the bar creeps across the step by the clock, never past the step's end
+let meterState = null, meterShown = 0, meterTimer = null;
+function meterReset(on) {
+  meterState = null; meterShown = 0;
+  clearInterval(meterTimer); meterTimer = null;
+  $("meter").classList.toggle("hidden", !on);
+  $("meter-fill").style.width = "0%"; $("meter-step").textContent = on ? t("meter_start") : ""; $("meter-left").textContent = "";
+  if (on) meterTimer = setInterval(meterTick, 500);
+}
+function meterEvent(ev) { meterState = { ...ev, t0: Date.now() }; meterTick(); }
+function meterTick() {
+  const m = meterState;
+  if (!m) return;
+  const el = (Date.now() - m.t0) / 1000;
+  const inStep = m.step_s > 0 ? Math.min(0.95, el / m.step_s) : 0;
+  meterShown = Math.max(meterShown, Math.min(100, m.pct + (m.pct_end - m.pct) * inStep));
+  $("meter-fill").style.width = `${meterShown.toFixed(1)}%`;
+  $("meter").setAttribute("aria-valuenow", String(Math.round(meterShown)));
+  const left = Math.max(0, Math.round(m.eta - Math.min(el, m.step_s || el)));
+  $("meter-step").textContent = m.step ? `${stepLabel(m.step)} · ${Math.round(meterShown)}%` : `${Math.round(meterShown)}%`;
+  $("meter-left").textContent = meterShown >= 100 ? t("meter_done") : left > 0 ? `${t("meter_left")} ${fmtTime(left)}` : t("meter_soon");
+}
+function fmtTime(s) { return s >= 90 ? `~${Math.round(s / 60)} ${t("min")}` : `~${s} ${t("seconds")}`; }
+function stepLabel(step) {
+  const map = t("meter_steps");
+  return step.replace(/^(review \d+|attempt \d+): /, (_, a) => `${a.replace("review", t("review_word")).replace("attempt", t("attempt_word"))}: `)
+    .replace(/building (\S+)/, (_, tier) => `${map.building} ${status?.tiers.find((x) => x.id === tier)?.label || tier}`)
+    .replace(/^asking the AI$/, map.ask).replace(/the AI compares$/, map.compare).replace(/^rendering$|rendering$/, map.render)
+    .replace(/^drawing the concept$/, map.concept).replace(/^generating the 3D model$/, map.mesh).replace(/^8K master$/, map.master);
 }
 $("anim-on").onchange = () => { $("anim-box").classList.toggle("hidden", !$("anim-on").checked); if ($("anim-on").checked) $("anim").focus(); };
 $("form").onsubmit = async (e) => {
@@ -527,14 +582,19 @@ $("form").onsubmit = async (e) => {
   };
   $("log").replaceChildren(); $("code").textContent = "";
   document.querySelector('[data-pane="log"]').click();
+  await followJob(() => api("/api/gen", req));
+};
+
+// run a job (generate or refine) and show its progress, then the result
+async function followJob(start) {
   busy(true);
   try {
-    job = await api("/api/gen", req);
+    job = await start();
     let since = 0;
     for (;;) {
       await new Promise((r) => setTimeout(r, 700));
       const s = await api(`/api/jobs/${job.id}?since=${since}`);
-      s.lines.forEach(log); since = s.next;
+      s.lines.forEach((ev) => (ev.stage === "meter" ? meterEvent(ev) : log(ev))); since = s.next;
       if (s.done) { if (s.cancelled) log({ stage: "error", message: t("cancelled") }); break; }
     }
     await refreshLibrary();
@@ -543,7 +603,61 @@ $("form").onsubmit = async (e) => {
   } catch (err) {
     log({ stage: "error", message: err.message });
   } finally { busy(false); job = null; }
+}
+
+// ---------------------------------------------------------------- refine: words, sliders, versions, clips
+function renderClips(item) {
+  const box = $("clips");
+  const clips = item?.clips || [];
+  box.classList.toggle("hidden", !clips.length || !viewer);
+  box.replaceChildren(...clips.map((name) => {
+    const b = document.createElement("button"); b.className = "ghost"; b.textContent = name; b.title = t("clip_hint");
+    b.onclick = () => {
+      const on = !b.classList.contains("on");
+      box.querySelectorAll("button").forEach((x) => x.classList.remove("on"));
+      if (on) { b.classList.add("on"); viewer.animations.solo(name); viewer.animations.play(name); }
+      else viewer.animations.stop();
+    };
+    return b;
+  }));
+}
+function renderTune(item) {
+  const kit = item && item.engine !== "mesh" && item.code;
+  ["edit-go", "rebuild", "params-reset", "restore"].forEach((id) => { $(id).disabled = !kit || !!job; });
+  $("tune-hint").textContent = !item ? "" : !kit ? t("tune_mesh_hint") : !(item.params || []).length ? t("tune_no_params") : "";
+  $("params").replaceChildren(...(kit ? item.params || [] : []).map((p) => {
+    const row = document.createElement("label"); row.className = "param";
+    const step = p.step || (p.max - p.min) / 100;
+    const fmt = (v) => (p.step && Number.isInteger(p.step) ? String(Math.round(v)) : (+v).toFixed(Math.abs(p.max - p.min) < 1 ? 3 : 2));
+    row.innerHTML = `<span>${p.label}</span><output></output><input type="range" min="${p.min}" max="${p.max}" step="${step}" data-name="${p.name}" data-default="${p.default}">`;
+    const r = row.querySelector("input"), o = row.querySelector("output");
+    r.value = p.value ?? p.default; o.textContent = fmt(r.value);
+    r.oninput = () => { o.textContent = fmt(r.value); };
+    return row;
+  }));
+  const vs = kit ? item.versions || [] : [];
+  $("versions").replaceChildren(...(vs.length ? vs : [null]).map((v) => {
+    const o = document.createElement("option");
+    if (!v) { o.textContent = t("tune_no_versions"); o.value = ""; return o; }
+    const when = new Date(v.time * 1000).toLocaleString([], { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
+    const what = v.edit ? `“${v.edit.slice(0, 40)}”` : Object.keys(v.params || {}).length ? t("tune_params").toLowerCase() : t("tune_first");
+    o.value = v.id; o.textContent = `v${+v.id} · ${when} · ${what}`;
+    return o;
+  }));
+  $("restore").disabled = !kit || !vs.length || !!job;
+}
+const sliderValues = () => Object.fromEntries([...document.querySelectorAll("#params input[type=range]")].map((r) => [r.dataset.name, +r.value]));
+const refine = (extra) => current && followJob(() => api("/api/refine", { name: current.name, ...extra }))
+  .then(() => document.querySelector('[data-pane="tune"]').click());
+$("rebuild").onclick = () => { $("log").replaceChildren(); refine({ params: sliderValues() }); };
+$("params-reset").onclick = () => document.querySelectorAll("#params input[type=range]").forEach((r) => { r.value = r.dataset.default; r.oninput(); });
+$("edit-go").onclick = () => {
+  const change = $("edit-text").value.trim();
+  if (!change) { $("edit-text").focus(); return; }
+  $("log").replaceChildren(); document.querySelector('[data-pane="log"]').click();
+  refine({ change, params: sliderValues(), ai: $("ai").value, ai_cmd: $("ai_cmd").value, model: $("model").value });
 };
+$("restore").onclick = () => { const v = $("versions").value; if (v) { $("log").replaceChildren(); refine({ version: v }); } };
 $("cancel").onclick = () => job && api(`/api/jobs/${job.id}/cancel`, {});
 
 document.querySelectorAll(".tabs.small button").forEach((b) => {
@@ -551,6 +665,7 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
     document.querySelectorAll(".tabs.small button").forEach((x) => x.classList.toggle("on", x === b));
     $("pane-log").classList.toggle("hidden", b.dataset.pane !== "log");
     $("pane-code").classList.toggle("hidden", b.dataset.pane !== "code");
+    $("pane-tune").classList.toggle("hidden", b.dataset.pane !== "tune");
   };
 });
 

@@ -43,6 +43,7 @@ def _args():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser(description="Build AI-written MeshGate model code per quality tier")
     ap.add_argument("--code", required=True, help="python file defining build(mg)")
+    ap.add_argument("--params", default="{}", help='JSON {name: value} for mg.param (Studio sliders)')
     ap.add_argument("--name", required=True, help="asset name (ASCII, file names derive from it)")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--tiers", default="mobile-low,mobile-mid,mobile-high,pc", help="tiers to build; the richest is canonical")
@@ -74,14 +75,14 @@ def _trace(exc: BaseException) -> str:
 
 def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: str, colors: str = "texture",
                finish_: str = "none", texture: int = 0, topology: str = "tri", budget_override: dict | None = None,
-               save_high: str | None = None, high: str | None = None) -> dict:
+               save_high: str | None = None, high: str | None = None, params: dict | None = None) -> dict:
     """Fresh scene → build(mg) at the tier's detail → finalize → contract fixes. Returns notes and in-Blender issues.
     save_high = write this (PC) build's geometry to a .blend; high = such a .blend: a lighter tier bakes its normal map
     from that detailed model (high → low, as an artist bakes a sculpt onto a game mesh)."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     budget = {**export.load_profiles()["profiles"][tier]["asset"], **(budget_override or {})}
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
-                       max_influences=budget.get("max_influences", 4),
+                       max_influences=budget.get("max_influences", 4), params=params, max_tris=budget.get("max_tris"),
                        finish=finish_)
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
     exec(code_obj, g)  # noqa: S102 — code passed safety.check before reaching here
@@ -108,7 +109,8 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     fixed = checks.fix_all(ctx) if any(i.fix for i in before) else []
     after = [i for i in checks.run_checks(ctx) if i.severity != checks.INFO]
     return {"notes": notes + [f"fixed: {f}" for f in fixed], "issues": [f"[{i.code}] {i.label()}" for i in after],
-            "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
+            "facts": kit._facts() if tier == "pc" or save_high is not None else None,
+            "params": kit._params, "credits": getattr(kit, "_credits", []), "dims_m": kit._dims(), "clips": sorted({t.name for o in ctx.scene.objects if o.animation_data
                                                      for t in o.animation_data.nla_tracks})}
 
 
@@ -185,6 +187,10 @@ def main() -> int:
         report["problems"] = [f"safety: {p}" for p in found]
         return done(1)
     code_obj = compile(code, "<generated>", "exec")
+    try:
+        params = {str(k): float(v) for k, v in json.loads(args.params or "{}").items()}
+    except (ValueError, AttributeError):
+        params = {}
 
     # weathered textures are photo-like: JPEG, as for the mesh engine's bakes; the flat palette stays lossless
     baked = args.finish in ("weathered", "clean")
@@ -198,7 +204,7 @@ def main() -> int:
             try:
                 info = build_tier(code_obj, name, tier, args.seed, tmp, args.collision, args.colors, args.finish,
                                   args.texture, args.topology, save_high=high if tier == "pc" else None,
-                                  high=high if tier != "pc" else None)
+                                  high=high if tier != "pc" else None, params=params)
             except Exception as exc:  # noqa: BLE001 — every failure goes back to the AI as feedback
                 report["problems"].append(f"build(mg) failed at tier {tier}:\n{_trace(exc)}")
                 return done(1)
@@ -258,6 +264,15 @@ def main() -> int:
             for i in entry["issues"]:
                 report["problems"].append(f"tier {tier}: contract: {i}")
             report["tiers"][tier] = entry
+            facts = entry.pop("facts", None)
+            if facts and not report.get("facts"):   # measured, for the AI's next round
+                report["facts"] = facts
+                for f in facts.get("floating", []):
+                    report["advice"].append(f"geometry: the {f['what']} from line {f['line']} floats {f['gap_cm']} cm away from "
+                                            f"everything else (at {f['at']}) — sink it into the piece it belongs to")
+            declared = entry.pop("params", [])
+            if declared and not report.get("params"):   # the sliders Studio shows (the same on every tier)
+                report["params"] = declared
             for c in entry.pop("credits", []):   # library models used through mg.model: credited once per asset
                 if all(x.get("uid") != c.get("uid") for x in report.setdefault("credits", [])):
                     report["credits"].append(c)
@@ -270,7 +285,7 @@ def main() -> int:
         if args.texture > pc_max and baked and "pc" in tiers:
             # above the PC tier's limit: one more PC build baked at the full size, for renders and film
             build_tier(code_obj, name, "pc", args.seed, tmp, "none", args.colors, args.finish, args.texture, args.topology,
-                       budget_override={"max_texture": args.texture, "max_texture_mb": 4096})
+                       budget_override={"max_texture": args.texture, "max_texture_mb": 4096}, params=params)
             master = os.path.join(out, f"{name}.master.glb")
             export.export_asset(bpy.context, master, targets=(), fbx=False, validate=False, image_format=image_format)
             report["files"].append(os.path.basename(master))

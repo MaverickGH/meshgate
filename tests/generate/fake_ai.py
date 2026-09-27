@@ -12,12 +12,16 @@ import re
 
 prompt = sys.stdin.read()
 example = (Path(__file__).resolve().parents[2] / "sources" / "generate" / "examples" / "fire_hydrant.py").read_text()
-if "# Review round" in prompt:   # stage 3: the render sheet is attached; round 1 improves, round 2 is satisfied
+if "# Change the model" in prompt:   # an artist's change in words: apply it to the code it was given
+    code = re.search(r"```python\n(.*?)```", prompt.split("# Change the model", 1)[1], re.S).group(1)
+    print("Done — the body is brighter now:\n\n```python\n" + code.replace("#b3261e", "#e0452f") + "```")
+elif "# Review round" in prompt:   # stage 3: the render sheet is attached; round 1 improves, round 2 is satisfied
     m = re.search(r"Reference image: (\S+)", prompt)
     seen = bool(m and Path(m.group(1)).is_file() and Path(m.group(1)).read_bytes()[:4] == b"\x89PNG")
     code = re.search(r"```python\n(.*?)```", prompt.split("# Review round", 1)[1], re.S).group(1)
     if "Review round 1 " in prompt:
-        print(f"- the sheet image was {'attached' if seen else 'MISSING'}\n- the body colour is too dark\n\nMATCH: 6/10\n\n"
+        print(f"- the sheet image was {'attached' if seen else 'MISSING'}\n- the body colour is too dark\n\nMATCH: 6/10\n"
+              "VIEW: at=(0, 0, 0.4) from=(1, -1, 0.5) size=0.3\n\n"
               "```python\n" + code.replace("#b3261e", "#d0342a") + "```")
     else:
         print(f"- the sheet image was {'attached' if seen else 'MISSING'}\n- close to the reference now\n\nMATCH: 9/10\n\n"

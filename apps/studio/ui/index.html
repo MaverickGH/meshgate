@@ -69,6 +69,10 @@
       <button type="submit" class="primary" id="go" data-i18n="generate">Generate</button>
       <button type="button" class="ghost hidden" id="cancel" data-i18n="cancel">Cancel</button>
     </div>
+    <div class="meter hidden" id="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+      <div class="meter-bar"><i id="meter-fill"></i></div>
+      <div class="meter-text"><span id="meter-step"></span><span id="meter-left"></span></div>
+    </div>
     <p class="hint" id="ai-hint"></p>
 
     <details class="field output-settings">
@@ -144,6 +148,7 @@
     <div class="bar">
       <div class="tabs" id="tier-tabs" role="tablist"></div>
       <div class="bar-actions">
+        <div class="clips hidden" id="clips"></div>
         <button class="ghost" id="wire" data-i18n="wireframe">Wireframe</button>
         <button class="ghost" id="reveal" data-i18n="reveal">Show files</button>
       </div>
@@ -156,9 +161,30 @@
     <div class="tabs small" role="tablist">
       <button class="on" data-pane="log" data-i18n="progress">Progress</button>
       <button data-pane="code" data-i18n="code">Code</button>
+      <button data-pane="tune" data-i18n="tune">Refine</button>
     </div>
     <div class="pane" id="pane-log"><ol id="log"></ol></div>
     <div class="pane hidden" id="pane-code"><pre id="code"></pre></div>
+    <div class="pane hidden" id="pane-tune">
+      <div class="tune-block">
+        <strong data-i18n="tune_words">Change in words</strong>
+        <textarea id="edit-text" rows="3" data-i18n-placeholder="tune_words_ph" placeholder="Bigger ears, longer fur on the chest, eyes a little lower…"></textarea>
+        <button type="button" class="ghost" id="edit-go" data-i18n="tune_words_go">Change with AI</button>
+      </div>
+      <div class="tune-block">
+        <strong data-i18n="tune_params">Parameters</strong>
+        <div id="params"></div>
+        <div class="tune-row">
+          <button type="button" class="ghost" id="rebuild" data-i18n="tune_rebuild">Rebuild</button>
+          <button type="button" class="ghost" id="params-reset" data-i18n="tune_reset">Defaults</button>
+        </div>
+      </div>
+      <div class="tune-block">
+        <strong data-i18n="tune_versions">Versions</strong>
+        <div class="tune-row"><select id="versions"></select><button type="button" class="ghost" id="restore" data-i18n="tune_restore">Restore</button></div>
+      </div>
+      <small class="hint" id="tune-hint"></small>
+    </div>
   </aside>
 </main>
 

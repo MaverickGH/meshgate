@@ -254,6 +254,43 @@ REFERENCE_SHEET = ("\n# Reference: turnaround sheet\n\n`{file}` in the working f
                    "description.\n")
 
 
+def examples_dir() -> Path:
+    return keys.folder() / "examples"
+
+
+def remember_build(description: str, style: str, code: str, match: float | None) -> None:
+    """Keep a clean AI-written build as an example for later requests (a local, growing library of what worked)."""
+    if not description.strip() or not code.strip():
+        return
+    d = examples_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{slug(description, words=4)}-{int(time.time())}.json").write_text(json.dumps(
+            {"description": description.strip()[:400], "style": style, "match": match, "code": code}, ensure_ascii=False),
+            encoding="utf-8")
+    except OSError:
+        pass
+
+
+def similar_builds(description: str, style: str, limit: int = 2) -> list[dict]:
+    """The earlier clean builds whose descriptions share the most words with this one (retrieval, no model needed)."""
+    words = {w for w in re.findall(r"[a-zа-яё]{3,}", description.lower())}
+    if not words:
+        return []
+    found = []
+    for f in sorted(examples_dir().glob("*.json"))[-400:]:
+        try:
+            ex = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        other = {w for w in re.findall(r"[a-zа-яё]{3,}", ex.get("description", "").lower())}
+        overlap = len(words & other) / max(1, len(words | other))
+        bonus = 0.05 if ex.get("style") == style else 0.0
+        if overlap >= 0.25:
+            found.append((overlap + bonus + (ex.get("match") or 0) / 200, ex))
+    return [ex for _, ex in sorted(found, key=lambda t: -t[0])[:limit]]
+
+
 def recipes_for(text: str, limit: int = 2) -> list[dict]:
     """The recipes (prompts/recipes/*.md) whose keywords appear in the description or name, best match first."""
     words = set(re.findall(r"[a-zа-яё]+", text.lower()))
@@ -281,6 +318,12 @@ def build_prompt(description: str, *, name: str, style: str, size: float, tiers:
     example = ex_file.read_text(encoding="utf-8").strip()
     recipes = "".join(f"\n## {r['title']}\n\n{r['body']}\n" for r in picked)
     recipes = f"\n# How an artist builds this\n{recipes}" if recipes else ""
+    if not feedback:   # a first ask: earlier clean builds of similar things, as worked examples
+        prior = similar_builds(description, style)
+        if prior:
+            recipes += "\n# Earlier builds that worked (similar requests)\n" + "".join(
+                f"\n## {ex['description'][:120]}\n\n```python\n{chr(10).join(ex['code'].strip().splitlines()[:220])}\n```\n"
+                for ex in prior)
     return PROMPT.read_text(encoding="utf-8").format(
         description=description.strip(), name=name, style=STYLES.get(style, style) + FINISH_NOTES.get(finish, ""),
         size=f"about {size:g} m in its largest dimension" if size else "use the real-world size of the object",
@@ -465,12 +508,14 @@ def run_blender(cmd: list[str], *, timeout: int, on_line=None) -> tuple[dict, st
 def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, tiers: list[str], targets: str,
                    collision: str, size: float, preview: bool, seed: int, timeout: int = 600,
                    on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
-                   texture: int = 0, topology: str = "tri") -> tuple[dict, str]:
+                   texture: int = 0, topology: str = "tri", params: dict | None = None) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
            "--texture", str(texture), "--topology", topology,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
            "--targets", targets, "--collision", collision, "--size", str(size or 0), "--seed", str(seed),
            "--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items())]
+    if params:
+        cmd += ["--params", json.dumps(params)]
     if preview:
         cmd.append("--preview")
     return run_blender(cmd, timeout=timeout, on_line=on_line)
@@ -527,6 +572,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--model", help="model name passed to the AI CLI")
     ap.add_argument("--ai-cmd", help="any other CLI: reads the prompt on stdin (or {prompt_file}), prints the answer")
     ap.add_argument("--attempts", type=int, default=3, help="build → feedback → fix rounds (default 3)")
+    ap.add_argument("--params", metavar="JSON", help='kit: values for the model\'s mg.param sliders, e.g. {"ear_size": 0.14}')
+    ap.add_argument("--edit", metavar="TEXT", help="kit: change the model given by --code as described — the AI sees the "
+                                                   "code and the model from four sides")
     ap.add_argument("--review", type=int, default=0, metavar="N",
                     help="kit: after a clean build, show the AI its model rendered from four sides next to the reference "
                          "and let it improve the code — up to N rounds (stops at MATCH 9/10)")
@@ -644,8 +692,12 @@ def main(argv: list[str] | None = None) -> int:
         args.caps_parsed = parse_caps(args.tris, tiers)
         args.finish_resolved = resolve_finish(args.finish, args.style, args.colors, args.pbr)
         args.anims = parse_anims(args.anim)
-    except ValueError as exc:
+        args.params_parsed = {str(k): float(v) for k, v in json.loads(args.params or "{}").items()}
+    except (ValueError, AttributeError, TypeError) as exc:
         print(f"meshgate gen: {exc}")
+        return 2
+    if args.edit and not args.code:
+        print("meshgate gen: --edit changes an existing model: give its code with --code")
         return 2
     engine = args.engine
     if args.mesh:
@@ -679,9 +731,30 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copyfile(args.image, reference)
     say(f"MeshGate gen: {name} → {out_dir} (engine {engine})", stage="start", name=name, out_dir=str(out_dir),
         tiers=tiers, engine=engine)
+    meter = args.meter = Meter(say, events)
+    tex = TEXTURES[args.texture]
+    if args.concept != "none" and not args.image and args.description:
+        meter.add([("concept", "drawing the concept")])
+    if engine == "mesh":
+        if not args.mesh:
+            meter.add([(f"mesh:{args.provider or 'auto'}", "generating the 3D model")])
+        meter.add(meter.tiers(tiers, "refine" + ("-pbr" if args.pbr else ""), tex))
+    else:
+        if args.edit:
+            meter.add([("render", "rendering views"), (f"ask:{args.ai_cmd and 'custom' or args.ai}", "asking the AI")])
+        elif not args.code:
+            meter.add([(f"ask:{args.ai_cmd and 'custom' or args.ai}", "asking the AI")])
+        meter.add(meter.tiers(tiers, args.finish_resolved, tex))
+        if tex > 4096:
+            meter.add([("master", "8K master")])
+        for r in range(1, getattr(args, "review", 0) + 1):
+            meter.add([("render", f"review {r}: rendering"), (f"ask:{args.ai_cmd and 'custom' or args.ai}", f"review {r}: the AI compares")]
+                      + meter.tiers(tiers, args.finish_resolved, tex, f"review {r}: "))
+    meter.emit()
     if args.concept != "none" and not args.image and args.description:
         kind = "single" if engine == "mesh" else args.concept
         say(f"[0] drawing a concept picture ({'turnaround sheet' if kind == 'sheet' else 'one 3/4 view'})…", stage="concept")
+        meter.begin("concept")
         try:
             concept = mesh.images.text_to_image(args.description, out_dir / "concept.png", args.image_provider,
                                                 log=lambda t: say(t, stage="concept"), kind=kind, style=STYLES.get(args.style, args.style))
@@ -689,6 +762,7 @@ def main(argv: list[str] | None = None) -> int:
             say(f"✗ {exc}", stage="error")
             return 1
         say(f"    concept picture: {concept.name}", stage="concept")
+        meter.end("concept")
         args.image, reference_kind = str(concept), kind
     if reference is None and args.image and args.concept != "none":
         reference = out_dir / "input.png"
@@ -699,7 +773,8 @@ def main(argv: list[str] | None = None) -> int:
               "name": name, "description": args.description, "style": args.style, "size": args.size, "tiers": tiers,
               "colors": args.colors, "caps": args.caps_parsed, "finish": args.finish_resolved if engine == "kit" else None,
               "anims": [{"clip": n, "what": w} for n, w in args.anims] or None,
-              "texture": args.texture, "pbr": args.pbr, "topology": args.topology,
+              "texture": args.texture, "pbr": args.pbr, "topology": args.topology, "params": args.params_parsed or None,
+              "edit": args.edit,
               "engine": engine, "input_image": reference.name if reference else None, "out_dir": str(out_dir)}
     if engine == "mesh":
         report, extra = generate_mesh(args, name, out_dir, tiers, blender, str(reference) if reference else None, say)
@@ -724,6 +799,13 @@ def main(argv: list[str] | None = None) -> int:
         for ln in lines:
             say(f"  credit: {ln}", stage="credit")
     (out_dir / "gen.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    meter.finish()
+    if report.get("ok") and engine == "kit" and (not args.code or args.edit) and summary.get("code"):
+        last = next((x.get("match") for x in reversed(report.get("reviews") or []) if x.get("match") is not None), None)
+        try:
+            remember_build(args.description or "", args.style, (out_dir / summary["code"]).read_text(encoding="utf-8"), last)
+        except OSError:
+            pass
     if report.get("ok"):
         files = ", ".join(report.get("files", []))
         say(f"Result: {name} is ready in {summary['seconds']} s ({engine}): {files}"
@@ -778,6 +860,8 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
             return {"ok": False, "problems": [msg], "advice": []}, extra
         extra["provider"] = provider
         say(f"[1] {mesh.PROVIDERS[provider].INFO['label']}: {'picture' if image else 'description'} → 3D…", stage="mesh")
+        if getattr(args, "meter", None):
+            args.meter.begin(f"mesh:{args.provider or 'auto'}")
         t0 = time.time()
         try:
             got = mesh.make(provider, prompt=args.description, image=image, out_dir=out_dir,
@@ -790,14 +874,26 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
         if got["reference"] and not image:
             extra["reference_image"] = Path(got["reference"]).name
         say(f"    raw mesh in {time.time() - t0:.0f} s: {Path(raw).name}", stage="mesh")
+        if getattr(args, "meter", None):
+            args.meter.end()
     extra["raw"] = Path(raw).name if Path(raw).parent == out_dir else raw
     streamed: list = []
     say(f"[1] refining for {', '.join(reversed(tiers))} in Blender (decimate, unwrap, bake)…", stage="build")
+    meter = getattr(args, "meter", None)
+    rfin, rtex = "refine" + ("-pbr" if args.pbr else ""), TEXTURES[args.texture]
+    if meter:
+        meter.begin(f"build:{sorted(tiers, key=ORDER.index, reverse=True)[0]}:{rfin}:{rtex}")
+
+    def refine_line(line):
+        streamed.append(line)
+        say("  " + line.strip(), stage="progress")
+        if meter:
+            meter.on_line(line, tiers, rfin, rtex)
     report, log = run_refine(blender, raw, name=name, out_dir=out_dir, tiers=tiers, targets=args.targets,
                              collision=args.collision, size=args.size, turn=args.turn, detail=args.detail,
                              preview=not args.no_preview, upright=not args.no_upright,
                              vertex_srgb=args.vertex_srgb or srgb_vertex_colours(raw, extra["provider"]),
-                             on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress")),
+                             on_line=refine_line,
                              colors=args.colors, caps=args.caps_parsed, texture=TEXTURES[args.texture],
                              topology=args.topology, pbr=args.pbr)
     if any(p.startswith("Blender stopped without a report") for p in report.get("problems", [])):
@@ -823,11 +919,43 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                  reference_kind: str = "picture"):
     """AI CLI writes build(mg) → run_generated.py per tier, with the feedback loop. Returns (report, history, code)."""
     history, code, feedback, report = [], None, "", {}
-    attempts = 1 if args.code else max(1, args.attempts)
+    attempts = 1 if args.code and not args.edit else max(1, args.attempts)
     for attempt in range(1, attempts + 1):
-        if args.code:
+        if args.code and not args.edit:
             code = Path(args.code).read_text(encoding="utf-8")
             say(f"[{attempt}] running {args.code}", stage="code", attempt=attempt)
+        elif args.edit and attempt == 1:   # a change in words: the AI gets the code and the model from four sides
+            code = Path(args.code).read_text(encoding="utf-8")
+            meter = getattr(args, "meter", None)
+            sheet = None
+            current = out_dir / f"{name}.glb"
+            if current.exists():
+                say("[edit] rendering the current model from four sides…", stage="review")
+                if meter:
+                    meter.begin("render")
+                sheet = out_dir / "edit_views.png"
+                if not render_views(blender, current, sheet, reference=image):
+                    sheet = None
+                if meter:
+                    meter.end("render")
+            prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
+                                  size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
+                                  anims=args.anims, feedback=edit_block(code, args.edit, reference_name(str(sheet)) if sheet else None,
+                                                                         bool(image), current_facts(out_dir)))
+            label = args.ai_cmd or args.ai + (f" ({args.model})" if args.model else "")
+            say(f"[edit] asking {label}: {args.edit[:120]}", stage="ask", attempt=attempt)
+            if meter:
+                meter.begin(f"ask:{args.ai_cmd and 'custom' or args.ai}")
+            try:
+                answer = ask_ai(args.ai, prompt, model=args.model, ai_cmd=args.ai_cmd, timeout=args.timeout,
+                                image=str(sheet) if sheet else None)
+            except RuntimeError as exc:
+                say(f"✗ {exc}", stage="error", attempt=attempt)
+                return {"ok": False, "problems": [str(exc)], "advice": []}, history, None
+            if meter:
+                meter.end()
+            (out_dir / "edit.answer.md").write_text(answer, encoding="utf-8")
+            code = extract_code(answer)
         else:
             prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
                                   size=args.size, tiers=tiers, feedback=feedback, reference=reference_name(image),
@@ -839,6 +967,12 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                 return {"ok": False, "problems": [msg], "advice": []}, history, None
             label = args.ai_cmd or args.ai + (f" ({args.model})" if args.model else "")
             say(f"[{attempt}/{attempts}] asking {label}{' with the picture' if image else ''}…", stage="ask", attempt=attempt)
+            meter = getattr(args, "meter", None)
+            if meter and attempt > 1:   # another round: its steps join the plan
+                meter.add([(f"ask:{args.ai_cmd and 'custom' or args.ai}", f"attempt {attempt}: asking the AI")]
+                          + meter.tiers(tiers, args.finish_resolved, TEXTURES[args.texture], f"attempt {attempt}: "))
+            if meter:
+                meter.begin(f"ask:{args.ai_cmd and 'custom' or args.ai}")
             t0 = time.time()
             try:
                 answer = ask_ai(args.ai, prompt, model=args.model, ai_cmd=args.ai_cmd, timeout=args.timeout, image=image)
@@ -847,6 +981,8 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                 return {"ok": False, "problems": [str(exc)], "advice": []}, history, None
             (out_dir / f"attempt_{attempt}.answer.md").write_text(answer, encoding="utf-8")
             code = extract_code(answer)
+            if getattr(args, "meter", None):
+                args.meter.end()
             say(f"    answer in {time.time() - t0:.0f} s, {len(code.splitlines())} lines of code", stage="answer",
                 attempt=attempt, seconds=round(time.time() - t0))
         code_path = out_dir / f"attempt_{attempt}.py"
@@ -860,13 +996,27 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
             baking = args.finish_resolved in ("weathered", "clean")
             tex = TEXTURES[args.texture]
             limit = 600 + (len(tiers) * (900 if tex >= 4096 else 480) if baking else 0) + (2400 if baking and tex > 4096 else 0)
+            meter = getattr(args, "meter", None)
+            order = sorted(tiers, key=ORDER.index, reverse=True)
+            if meter:
+                meter.begin(f"build:{order[0]}:{args.finish_resolved}:{tex}")
+
+            def line_seen(line, attempt=attempt):
+                streamed.append(line)
+                say("  " + line.strip(), stage="progress", attempt=attempt)
+                if meter:
+                    meter.on_line(line, tiers, args.finish_resolved, tex)
+                    if tex > 4096 and TIER_LINE.match(line) and TIER_LINE.match(line).group(1) == order[-1]:
+                        meter.begin("master")
             report, log = run_in_blender(blender, code_path, name=name, out_dir=out_dir, tiers=tiers, timeout=limit,
                                          targets=args.targets, collision=args.collision, size=args.size,
                                          preview=not args.no_preview, seed=args.seed,
-                                         on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress", attempt=attempt)),
+                                         on_line=line_seen,
                                          colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
-                                         texture=TEXTURES[args.texture], topology=args.topology)
+                                         texture=TEXTURES[args.texture], topology=args.topology, params=args.params_parsed)
             (out_dir / f"attempt_{attempt}.blender.log").write_text(log, encoding="utf-8")
+            if meter:
+                meter.end()
             missing = missing_clips(report, args.anims)
             if missing and not args.code:   # back to the AI like any other problem
                 report["ok"] = False
@@ -888,11 +1038,120 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
     return report, history, code
 
 
+# ----------------------------------------------------------------------------
+# progress for Studio: a plan of steps, each with the seconds it took last time
+# ----------------------------------------------------------------------------
+
+TIER_SECONDS = {"none": {"pc": 10, "mobile-high": 6, "mobile-mid": 5, "mobile-low": 4},
+                "faceted": {"pc": 8, "mobile-high": 5, "mobile-mid": 4, "mobile-low": 3},
+                "clean": {"pc": 90, "mobile-high": 60, "mobile-mid": 45, "mobile-low": 30},
+                "weathered": {"pc": 300, "mobile-high": 160, "mobile-mid": 120, "mobile-low": 70},
+                "refine": {"pc": 20, "mobile-high": 12, "mobile-mid": 10, "mobile-low": 8}}
+TIER_LINE = re.compile(r"^\s*[✓✗]\s+(pc|mobile-high|mobile-mid|mobile-low)\b")
+
+
+class Meter:
+    """Progress for the desktop app. The run is planned as steps (ask the AI, build each tier, review…); each step has
+    an expected length — what it took last time on this computer (~/.meshgate/timings.json), else a default — and
+    every step change is one `meter` event: pct at the step's start and end, the step's expected seconds, the
+    seconds left. The app moves the bar smoothly inside a step, so the wait is visible."""
+
+    def __init__(self, say, on: bool):
+        self.say, self.on = say, on
+        self.steps: list[dict] = []
+        self.cur = None
+        self.path = keys.folder() / "timings.json"
+        try:
+            self.learnt = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self.learnt = {}
+
+    @staticmethod
+    def default(key: str) -> float:
+        kind, *rest = key.split(":")
+        if kind == "build":
+            tier, finish = rest[0], rest[1] if len(rest) > 1 else "none"
+            base = TIER_SECONDS.get(finish, TIER_SECONDS["none"]).get(tier, 10)
+            tex = int(rest[2]) if len(rest) > 2 and rest[2].isdigit() else 0
+            return base * (2.2 if tex >= 4096 else 1.0)
+        return {"ask": 90, "concept": 45, "mesh": 60, "render": 40, "master": 700}.get(kind, 30)
+
+    def expect(self, key: str) -> float:
+        return float(self.learnt.get(key) or self.default(key))
+
+    def add(self, keys_labels: list) -> None:
+        for key, label in keys_labels:
+            self.steps.append({"key": key, "label": label, "done": False, "exp": self.expect(key)})
+
+    def begin(self, key: str) -> None:
+        if self.cur is not None and self.cur["key"] == key and not self.cur["done"]:
+            return
+        todo = [s for s in self.steps if not s["done"]]
+        step = next((s for s in todo if s["key"] == key), None)
+        if step is None:
+            step = {"key": key, "label": key.split(":")[0], "done": False, "exp": self.expect(key)}
+            self.steps.append(step)
+        for s in todo[:todo.index(step)] if step in todo else []:   # steps passed over did not happen
+            s["done"], s["skipped"] = True, True
+        step["t0"] = time.time()
+        self.cur = step
+        self.emit()
+
+    def end(self, key: str | None = None) -> None:
+        s = self.cur
+        if s is None or (key and s["key"] != key) or s["done"]:
+            return
+        took = time.time() - s["t0"]
+        s["done"], s["took"] = True, took
+        old = self.learnt.get(s["key"])
+        self.learnt[s["key"]] = round(took if old is None else old * 0.5 + took * 0.5, 1)   # a running average
+        self.cur = None
+
+    def emit(self) -> None:
+        if not self.on:
+            return
+        live = [s for s in self.steps if not s.get("skipped")]
+        total = sum(s["exp"] for s in live) or 1.0   # expectations stay as planned; what is learnt counts next run
+        done = sum(s["exp"] for s in live if s["done"])
+        cur = self.cur["exp"] if self.cur else 0.0
+        self.say("", stage="meter", pct=round(100 * done / total, 1), pct_end=round(100 * (done + cur) / total, 1),
+                 step_s=round(cur, 1), eta=round(total - done), step=self.cur["label"] if self.cur else "")
+
+    def finish(self) -> None:
+        self.end()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.learnt, indent=1), encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+        if self.on:
+            self.say("", stage="meter", pct=100, pct_end=100, step_s=0, eta=0, step="")
+
+    def tiers(self, tiers: list[str], finish: str, texture: int, attempt_label: str = "") -> list:
+        """Build steps in the order Blender builds them (PC first)."""
+        return [(f"build:{t}:{finish}:{texture}", f"{attempt_label}building {t}") for t in sorted(tiers, key=ORDER.index, reverse=True)]
+
+    def on_line(self, line: str, tiers: list[str], finish: str, texture: int) -> None:
+        """A tier line from Blender (✓ pc …) ends that tier's step and starts the next one."""
+        m = TIER_LINE.match(line)
+        if not m:
+            return
+        key = f"build:{m.group(1)}:{finish}:{texture}"
+        self.end(key)
+        order = sorted(tiers, key=ORDER.index, reverse=True)
+        i = order.index(m.group(1)) if m.group(1) in order else -1
+        if 0 <= i < len(order) - 1:
+            self.begin(f"build:{order[i + 1]}:{finish}:{texture}")
+
+
 def render_views(blender: str, glb: Path, out: Path, reference: str | None = None, px: int = 1024, samples: int = 24,
-                 timeout: int = 900) -> bool:
-    """Four views of a built model on one sheet (with the reference picture on its left) — render_views.py in Blender."""
+                 timeout: int = 900, closeups: list | None = None) -> bool:
+    """Four views of a built model on one sheet (with the reference picture on its left) — render_views.py in Blender;
+    closeups = up to two views the AI asked for (VIEW lines), as extra tiles."""
     cmd = [blender, "-b", "--factory-startup", "-P", str(HERE / "render_views.py"), "--", str(glb), str(out), str(px),
-           str(samples), reference or ""]
+           str(samples), reference or "", json.dumps(closeups or [])]
     try:
         procs.run(cmd, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -900,16 +1159,70 @@ def render_views(blender: str, glb: Path, out: Path, reference: str | None = Non
     return out.exists()
 
 
-def review_block(code: str, round_: int, rounds: int, has_reference: bool, image_name: str) -> str:
+def current_facts(out_dir: Path) -> dict | None:
+    try:
+        return json.loads((out_dir / "gen.json").read_text(encoding="utf-8")).get("report", {}).get("facts")
+    except (OSError, ValueError):
+        return None
+
+
+def edit_block(code: str, change: str, image_name: str | None, has_reference: bool, facts: dict | None = None) -> str:
+    """The artist's request for a change, with the current code and (when there is one) the render sheet."""
+    seen = (f" The image `{image_name}` shows " + ("on the left the reference picture and on the right " if has_reference else "")
+            + "the model as it is now, from four sides.") if image_name else ""
+    return (f"\n# Change the model\n\nThe code below builds the model as it is now.{seen} The artist asks for this "
+            f"change:\n\n> {change.strip()}\n\nMake exactly that change and keep everything else as it is (the same "
+            "parts, colours, rig and clips, parameters). Return the complete updated code in one ```python block."
+            f"{facts_block(facts)}\n\n```python\n{code.strip()}\n```\n")
+
+
+def facts_block(facts: dict | None) -> str:
+    """Measured geometry facts (Kit._facts) as short lines the AI can act on — pieces named by their code line."""
+    if not facts:
+        return ""
+    lines = []
+    for f in facts.get("floating", []):
+        lines.append(f"- line {f['line']} ({f['what']}) floats {f['gap_cm']} cm away from everything that stands on the "
+                     f"ground, around {f['at']}")
+    tl = facts.get("triangles_by_line") or []
+    if tl:
+        lines.append("- triangles spent by line: " + ", ".join(f"line {t['line']} {t['what']} {round(t['share'] * 100)} %"
+                                                               for t in tl[:5]))
+    if facts.get("size_m"):
+        lines.append(f"- overall size {facts['size_m']} m (x, y, z); left/right asymmetry {round(facts.get('asymmetry', 0) * 100, 1)} % of the size")
+    return "\n\nMeasured on the built model (facts, not guesses):\n" + "\n".join(lines) if lines else ""
+
+
+def review_block(code: str, round_: int, rounds: int, has_reference: bool, image_name: str, facts: dict | None = None) -> str:
     return (f"\n# Review round {round_} of {rounds}\n\nMeshGate built the code below cleanly. The image `{image_name}` "
             "shows " + ("on the left the reference picture and on the right " if has_reference else "")
             + "your model rendered in Blender from four sides (3/4, front, side and back; a flat object from above). "
             "Look at it the way an art director would, against the reference and the description. Start your answer "
             "with up to 8 short bullet points naming the biggest differences — silhouette, proportions, pose, colours, "
-            "missing or wrong parts, parts floating in the air or sunk out of sight. Then one line `MATCH: n/10` for how "
-            "well the model matches now. Then return the complete improved code in one ```python block (the whole "
-            "build function), fixing the most important differences first. If it already matches at 9/10 or better, "
-            f"return the same code unchanged.\n\n```python\n{code.strip()}\n```\n")
+            "missing or wrong parts, parts floating in the air or sunk out of sight. Check in this order: 1 silhouette "
+            "and proportions, 2 the number and placement of the main parts, 3 parts touching where they should (see the "
+            "facts), 4 colour regions, 5 details. Then one line `MATCH: n/10` for how well the model matches now. Then "
+            "return the complete improved code in one ```python block (the whole build function), fixing the most "
+            "important differences first. If it already matches at 9/10 or better, return the same code unchanged. To "
+            "look closer next round, add up to two lines like `VIEW: at=(x, y, z) from=(dx, dy, dz) size=0.3` (a point "
+            "on the model, the direction to look from, the width in meters to frame) — they come back as close-ups."
+            f"{facts_block(facts)}\n\n```python\n{code.strip()}\n```\n")
+
+
+def parse_views(answer: str) -> list[dict]:
+    """VIEW: at=(x, y, z) from=(dx, dy, dz) size=0.3 lines — the close-ups the AI asked for (at most two)."""
+    num = r"(-?\d+(?:\.\d+)?)"
+    vec = rf"\(\s*{num}\s*,\s*{num}\s*,\s*{num}\s*\)"
+    out = []
+    for m in re.finditer(rf"VIEW:\s*at\s*=\s*{vec}(?:\s*,?\s*from\s*=\s*{vec})?(?:\s*,?\s*size\s*=\s*{num})?", answer):
+        g = m.groups()
+        view = {"at": [float(g[0]), float(g[1]), float(g[2])]}
+        if g[3] is not None:
+            view["from"] = [float(g[3]), float(g[4]), float(g[5])]
+        if g[6] is not None:
+            view["size"] = max(0.01, min(10.0, float(g[6])))
+        out.append(view)
+    return out[:2]
 
 
 def parse_review(answer: str) -> tuple[float | None, list[str]]:
@@ -927,16 +1240,33 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
     the code, rebuild in a side folder and keep the result only when it builds cleanly. Returns (report, code, reviews)."""
     reviews = []
     rounds = args.review
+    closeups: list = []
+    # every version the loop has built, with the score its own review gave it; the best one is kept at the end
+    snap0 = out_dir / "review_0"
+    snap0.mkdir(exist_ok=True)
+    for f in out_dir.iterdir():
+        if f.is_file() and (f.name.startswith(f"{name}.") or f.name == f"{name}.report.json"):
+            shutil.copyfile(f, snap0 / f.name)
+    versions = [{"code": code, "report": report, "dir": snap0, "score": None, "round": 0}]
+    cur = 0
     for r in range(1, rounds + 1):
         canon = report["tiers"][report["canonical"]]["file"]
         sheet = out_dir / f"review_{r}.png"
         say(f"[review {r}/{rounds}] rendering the model from four sides…", stage="review", round=r)
-        if not render_views(blender, out_dir / canon, sheet, reference=image):
+        meter = getattr(args, "meter", None)
+        if meter:
+            meter.begin("render")
+        rendered = render_views(blender, out_dir / canon, sheet, reference=image, closeups=closeups)
+        if meter:
+            meter.end("render")
+            meter.begin(f"ask:{args.ai_cmd and 'custom' or args.ai}")
+        if not rendered:
             say("    could not render the views — review stopped", stage="review", round=r)
             break
         prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
                               size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
-                              anims=args.anims, feedback=review_block(code, r, rounds, bool(image), reference_name(str(sheet))))
+                              anims=args.anims, feedback=review_block(code, r, rounds, bool(image), reference_name(str(sheet)),
+                                                                      report.get("facts")))
         label = args.ai_cmd or args.ai + (f" ({args.model})" if args.model else "")
         say(f"[review {r}/{rounds}] asking {label} to compare it with the {'reference' if image else 'description'}…",
             stage="review", round=r)
@@ -947,8 +1277,13 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
             say(f"    ✗ {exc} — keeping the current model", stage="review", round=r)
             break
         (out_dir / f"review_{r}.answer.md").write_text(answer, encoding="utf-8")
+        if meter:
+            meter.end()
         match, notes = parse_review(answer)
-        entry = {"round": r, "match": match, "notes": notes, "image": sheet.name, "accepted": False}
+        closeups = parse_views(answer)
+        versions[cur]["score"] = match
+        entry = {"round": r, "match": match, "notes": notes, "image": sheet.name, "accepted": False,
+                 "closeups": closeups or None}
         reviews.append(entry)
         for n in notes:
             say(f"    · {n}", stage="review", round=r)
@@ -967,12 +1302,18 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         tex = TEXTURES[args.texture]
         limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0) + (2400 if baking and tex > 4096 else 0)
         say(f"[review {r}/{rounds}] building the improved code…", stage="review", round=r)
+        order = sorted(tiers, key=ORDER.index, reverse=True)
+        if meter:
+            meter.begin(f"build:{order[0]}:{args.finish_resolved}:{tex}")
         new_report, log = run_in_blender(blender, side / f"{name}.py", name=name, out_dir=side, tiers=tiers, timeout=limit,
                                          targets=args.targets, collision=args.collision, size=args.size,
+                                         on_line=(lambda line: meter.on_line(line, tiers, args.finish_resolved, tex)) if meter else None,
                                          preview=not args.no_preview, seed=args.seed, colors=args.colors,
                                          caps=args.caps_parsed, finish=args.finish_resolved, texture=tex,
-                                         topology=args.topology)
+                                         topology=args.topology, params=args.params_parsed)
         (side / "blender.log").write_text(log, encoding="utf-8")
+        if meter:
+            meter.end()
         if not new_report.get("ok"):
             entry["problems"] = new_report.get("problems", [])[:6]
             say("    ✗ the improved code did not build cleanly — keeping the current model", stage="review", round=r)
@@ -981,7 +1322,19 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
             if f.is_file() and f.name != "blender.log":
                 shutil.copyfile(f, out_dir / f.name)
         code, report, entry["accepted"] = new_code, new_report, True
+        versions.append({"code": new_code, "report": new_report, "dir": side, "score": None, "round": r})
+        cur = len(versions) - 1
         show_tiers(report, tiers, say, r)
+    scored = [v for v in versions if v["score"] is not None]
+    if scored and versions[cur]["score"] is not None:
+        best = max(scored, key=lambda v: v["score"])
+        if best is not versions[cur] and best["score"] > versions[cur]["score"]:   # a round made it worse: go back
+            for f in best["dir"].iterdir():
+                if f.is_file() and f.name != "blender.log":
+                    shutil.copyfile(f, out_dir / f.name)
+            code, report = best["code"], best["report"]
+            say(f"    kept the version from round {best['round']} (MATCH {best['score']:g}/10 beats "
+                f"{versions[cur]['score']:g}/10)", stage="review")
     if any(e["accepted"] for e in reviews):
         final = out_dir / "views.png"
         if render_views(blender, out_dir / report["tiers"][report["canonical"]]["file"], final, reference=image):

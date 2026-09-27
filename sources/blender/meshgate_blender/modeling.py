@@ -16,6 +16,7 @@ Only methods without a leading underscore are part of the API; their docstrings 
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import random
@@ -53,6 +54,10 @@ PALETTE_PX = 256   # palette texture size (fits every tier, 32 px per colour)
 def _linear(c: float) -> float:
     """sRGB → linear (vertex colours and emission sockets are linear; the palette is written in sRGB)."""
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+SRC_ATTR = "mg_src"   # which line of build code made each vertex (geometry facts; never exported)
+_PUBLIC = {"part", "lathe", "tube", "curve", "extrude", "blob", "skin", "model", "eye", "copy", "mirror_x", "scatter"}
 
 
 def _seg_distance(p, a, b) -> float:
@@ -93,6 +98,61 @@ class rest_pose:
         return False
 
 
+def _tidy_bm(bm, size: float = 1.0) -> None:
+    """Remove what trips Blender's own mesh tools (subdivide can crash on it in 3.5 / 4.2): duplicate vertices, zero-area
+    faces and zero-length edges, loose bits; and make the normals consistent."""
+    import bmesh
+    eps = max(size * 1e-6, 1e-7)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=eps)
+    bmesh.ops.dissolve_degenerate(bm, dist=eps, edges=bm.edges)
+    _drop_duplicate_faces(bm)
+    loose = [v for v in bm.verts if not v.link_faces]
+    if loose:
+        bmesh.ops.delete(bm, geom=loose, context="VERTS")
+    if bm.faces:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+
+def _drop_duplicate_faces(bm) -> int:
+    """Delete faces lying on exactly the same vertices as another face. Re-triangulating around split edges can make
+    such twins; Blender's glTF exporter (3.5) fails on a mesh that has them."""
+    import bmesh
+    seen, twins = set(), []
+    for f in bm.faces:
+        key = frozenset(f.verts)
+        if key in seen:
+            twins.append(f)
+        else:
+            seen.add(key)
+    if twins:
+        bmesh.ops.delete(bm, geom=twins, context="FACES_ONLY")
+    return len(twins)
+
+
+def _split_edges(bm, edges, smooth: float = 0.0) -> None:
+    """Refine: split each edge in two and re-triangulate the faces around them — a plain path through Blender's mesh
+    tools (bmesh subdivide's triangle patterns crash on some meshes in 3.5 / 4.2). smooth relaxes the new vertices."""
+    import bmesh
+    edges = [e for e in edges if e.is_valid and e.is_manifold]
+    if not edges:
+        return
+    res = bmesh.ops.bisect_edges(bm, edges=edges, cuts=1)
+    new = [v for v in res.get("geom_split", []) if isinstance(v, bmesh.types.BMVert)]
+    faces = list({f for v in new for f in v.link_faces})
+    if faces:
+        bmesh.ops.triangulate(bm, faces=faces, quad_method="BEAUTY", ngon_method="BEAUTY")
+        _drop_duplicate_faces(bm)
+    if smooth and new:
+        for _ in range(2):
+            moved = {}
+            for v in new:
+                if v.link_edges:
+                    avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
+                    moved[v] = v.co.lerp(avg, 0.5 * smooth)
+            for v, co in moved.items():
+                v.co = co
+
+
 def _seg_closest(p, a, b):
     """The point on segment a–b nearest to p (sculpt pinch)."""
     ab = b - a
@@ -130,7 +190,7 @@ class Kit:
 
     def __init__(self, tier: str = "pc", seed: int = 1, name: str = "asset", tmp: str | None = None,
                  colors: str = "texture", max_materials: int | None = None, finish: str = "none",
-                 max_influences: int = 4):
+                 max_influences: int = 4, params: dict | None = None, max_tris: int | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
@@ -140,6 +200,11 @@ class Kit:
         self._groups: dict = {}
         self._max_materials = max_materials
         self._max_influences = max(1, int(max_influences))   # bones per vertex the tier allows (mg.rig)
+        self._param_values = dict(params or {})   # values set in MeshGate Studio (sliders)
+        self._params: list = []                     # what the build code declared, in order
+        self._max_tris = max_tris                   # the tier's triangle budget (focus regions stay within it)
+        self._sources: dict = {}                    # code line → what it made (geometry facts for the AI)
+        self._focus: list = []                      # (point, radius, strength) where the model needs more polygons
         self.tier = tier
         self.level = TIERS.index(tier)
         self.rng = random.Random(seed)
@@ -160,6 +225,30 @@ class Kit:
         self._reset_scene()
 
     # ------------------------------------------------------------------ public API
+
+    def param(self, name: str, default: float, lo: float, hi: float, *, label: str | None = None,
+              step: float | None = None) -> float:
+        """A number the artist can tune in MeshGate Studio with a slider, without asking the AI again: ear size, fur
+        length, how far the arms reach, how big the eyes are, how many planks, how bent the tail. Use it wherever one
+        number decides the look: `ear = mg.param("ear_size", 0.11, 0.06, 0.18, label="Ear size")`. Returns the
+        value to build with (the default until Studio sets another, always within lo…hi). step = 1 makes a whole-number
+        slider (a count, an on/off switch with 0…1). Give each name once; 3–8 well-chosen parameters are plenty."""
+        name = self._ascii(str(name))
+        lo, hi = float(min(lo, hi)), float(max(lo, hi))
+        value = float(self._param_values.get(name, default))
+        value = max(lo, min(hi, value))
+        if step:
+            value = round(value / float(step)) * float(step)
+        if all(p["name"] != name for p in self._params):
+            self._params.append({"name": name, "label": label or name.replace("_", " "), "default": float(default),
+                                 "min": lo, "max": hi, "step": float(step) if step else None, "value": value})
+        return int(value) if step and float(step).is_integer() else value
+
+    def focus(self, at, radius: float, strength: float = 1.0) -> None:
+        """Spend more polygons where they show: a face, hands, a silhouette edge a player looks at. Faces within `radius`
+        of `at` get denser (up to `strength` levels of smooth subdivision) when the model is finished, as far as the
+        tier's triangle budget allows; the rest keeps its density. Call it anywhere in build; world meters."""
+        self._focus.append((Vector(at), float(radius), max(0.0, min(2.0, float(strength)))))
 
     def at_least(self, tier: str) -> bool:
         """True when building for `tier` or a richer one — gate optional details: `if mg.at_least("mobile-high"): add bolts`.
@@ -501,6 +590,128 @@ class Kit:
         self._fix_normals(obj)
         return obj
 
+    def sweep(self, profile, path, color, *, closed_path: bool = False, cap: bool = True, smooth: bool = True,
+              scale=None, corners: str = "smooth"):
+        """Sweep a 2D profile along a smooth path — frames, mouldings, rails, rims, pipes with a shaped cross-section,
+        a sword's fuller, a tyre. profile = [(x, y), …] in meters around the path (x across, y up), a closed outline;
+        path = [(x, y, z), …] (2 or more points, smoothed like mg.curve); closed_path = a loop (a picture frame, a
+        wheel rim); scale = one factor per path point to taper the profile; corners = "sharp" keeps the path's corners
+        with mitred joints like a picture frame (else the path is a smooth spline). Returns the piece."""
+        prof = [tuple(float(c) for c in p_) for p_ in profile]
+        if len(prof) < 3:
+            raise ModelError("sweep profile needs at least three points")
+        pts = [Vector(p_) for p_ in path]
+        if len(pts) < 2:
+            raise ModelError("sweep path needs at least two points")
+        sc = [float(x) for x in scale] if scale is not None else [1.0] * len(pts)
+        if closed_path:
+            pts, sc = pts + pts[:1], sc + sc[:1]
+        steps = max(2, round({0: 2, 1: 4, 2: 6, 3: 8}[self.level] * (0.6 if self._faceted else 1.0)))
+        out_p, out_s = [], []
+        n = len(pts)
+        sharp = corners == "sharp"
+        for i in range(n - 1):
+            if sharp:   # straight runs between the given corners
+                out_p.append(pts[i])
+                out_s.append(sc[i])
+                continue
+            p0 = pts[i - 1] if i > 0 else (pts[-2] if closed_path else pts[0] * 2 - pts[1])
+            p3 = pts[i + 2] if i + 2 < n else (pts[1] if closed_path else pts[-1] * 2 - pts[-2])
+            p1, p2 = pts[i], pts[i + 1]
+            for k in range(steps):
+                t = k / steps
+                t2, t3 = t * t, t * t * t
+                out_p.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
+                out_s.append(sc[i] + (sc[i + 1] - sc[i]) * t)
+        if not closed_path:
+            out_p.append(pts[-1])
+            out_s.append(sc[-1])
+        m = len(out_p)
+        tangents = []
+        for i in range(m):
+            a = out_p[(i - 1) % m] if closed_path or i > 0 else out_p[i]
+            b = out_p[(i + 1) % m] if closed_path or i < m - 1 else out_p[i]
+            t = (b - a)
+            tangents.append(t.normalized() if t.length > 1e-9 else Vector((1, 0, 0)))
+        up = Vector((0, 0, 1)) if abs(tangents[0].z) < 0.9 else Vector((1, 0, 0))
+        side = tangents[0].cross(up).normalized()
+        verts, faces = [], []
+        k = len(prof)
+        for i, (p_, t) in enumerate(zip(out_p, tangents)):
+            side = (side - t * side.dot(t)).normalized()   # parallel transport: no twist along the path
+            upv = side.cross(t)
+            stretch, bend = 1.0, None
+            if sharp:   # a mitre: across the corner (along its bisector in the path's plane) the ring widens
+                a = out_p[(i - 1) % m] if closed_path or i > 0 else None
+                b = out_p[(i + 1) % m] if closed_path or i < m - 1 else None
+                if a is not None and b is not None:
+                    d1, d2 = (p_ - a).normalized(), (b - p_).normalized()
+                    if (d2 - d1).length > 1e-6:
+                        bend = (d2 - d1).normalized()
+                        stretch = 1.0 / max(0.3, (1 + d1.dot(d2)) / 2) ** 0.5
+            for x, y in prof:
+                o = side * x + upv * y
+                if bend is not None:
+                    o = o + bend * o.dot(bend) * (stretch - 1.0)
+                verts.append(tuple(p_ + o * out_s[i]))
+        rings = m if closed_path else m
+        for i in range(rings - (0 if closed_path else 1)):
+            j = (i + 1) % m
+            for q in range(k):
+                faces.append((i * k + q, i * k + (q + 1) % k, j * k + (q + 1) % k, j * k + q))
+        flat = []
+        if cap and not closed_path:
+            faces.append(tuple(reversed(range(k)))); flat.append(len(faces) - 1)
+            last = (m - 1) * k
+            faces.append(tuple(range(last, last + k))); flat.append(len(faces) - 1)
+        obj = self._mesh("sweep", verts, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, smooth, flat)
+        return obj
+
+    def inset(self, obj, *, facing=(0, -1, 0), amount: float = 0.01, depth: float = -0.005, each: bool = True,
+              color=None):
+        """Panels, buttons and recesses on the faces of a piece that face a direction — the hard-surface artist's
+        inset: each face (or the whole region, each=False) gets a border `amount` wide and its middle pushed `depth`
+        (negative = sunk in, positive = raised). facing = the direction those faces look (default the front, -Y);
+        color = paint the inner panels another palette colour. Best on bevelled cubes, extrusions and sweeps.
+        Returns the piece."""
+        import bmesh
+        self._bake(obj)
+        me = obj.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        tag = bm.faces.layers.int.get("mg_inner") or bm.faces.layers.int.new("mg_inner")   # before taking faces: a new layer
+        bm.normal_update()                                                                  # would invalidate them
+        d = Vector(facing).normalized()
+        # only faces wide enough to hold the border: a bevel's thin strips would fold into spikes
+        faces = [f for f in bm.faces if f.normal.dot(d) > 0.85 and min(e.calc_length() for e in f.edges) > 2.2 * abs(amount)]
+        if not faces:
+            bm.free()
+            raise ModelError("inset found no faces facing that way wide enough for that border")
+        for f in faces:
+            f[tag] = 1   # the original faces become the inner panels
+        if each:
+            bmesh.ops.inset_individual(bm, faces=faces, thickness=float(amount), depth=float(depth))
+        else:
+            bmesh.ops.inset_region(bm, faces=faces, thickness=float(amount), depth=float(depth))
+        bm.to_mesh(me)
+        bm.free()
+        me.update()
+        attr = me.attributes.get("mg_inner")
+        if color is not None and attr is not None:
+            u, v = self._cell_uv(self._color_name(color))
+            uv = me.uv_layers.active.data
+            flags = [0] * len(me.polygons)
+            attr.data.foreach_get("value", flags)
+            for poly, on in zip(me.polygons, flags):
+                if on:
+                    for li in poly.loop_indices:
+                        uv[li].uv = (u, v)
+        if attr is not None:
+            me.attributes.remove(attr)
+        return obj
+
     def extrude(self, outline, depth, color, loc=(0, 0, 0), rot=(0, 0, 0), *, bevel: float = 0.0, smooth: bool = False):
         """A flat shape with thickness — signs, blades, planks, leaves, logos, gears. outline = [(x, z), ...] polygon in
         the XZ plane (front view, may be concave, no self-crossing), extruded `depth` meters along Y, centred on y = 0."""
@@ -645,7 +856,7 @@ class Kit:
         (painted regions included), so a pale belly grows pale fur. length = hair length in meters; count = cards on
         the pc tier (½ on mobile-high, ¼ on mobile-mid, none on mobile-low where the coat texture carries it);
         droop 0 = straight out, 1 = lying flat downward; width = card width relative to its length. Limit where it
-        grows with at + radius, facing, below / above (keep it off eyes, noses and paws). Uses one fur material with
+        grows with at + radius (at snaps to the surface), facing, below / above (keep it off eyes, noses and paws). Uses one fur material with
         cutout alpha. Not in the low-poly look (returns None). Returns the fur piece — pass it to mg.join with the rest;
         mg.rig binds it too."""
         if self._faceted or self.level == 0:
@@ -657,6 +868,11 @@ class Kit:
         rng = random.Random(seed * 104729 + 7)
         sm = surface.data
         off = surface.location
+        if at is not None and sm.polygons:   # a zone centre lands on the surface (it is easy to aim inside the body)
+            bvh = BVHTree.FromPolygons([tuple(v.co + off) for v in sm.vertices], [tuple(p.vertices) for p in sm.polygons])
+            hit = bvh.find_nearest(Vector(at))
+            if hit and hit[0] is not None:
+                at = tuple(hit[0])
         sm.calc_loop_triangles()
         uv = sm.uv_layers.active.data if sm.uv_layers else None
         from .finish import PAINT_ATTR
@@ -712,7 +928,9 @@ class Kit:
                 half = w * (0.5 - 0.15 * i)   # narrower toward the tips
                 verts += [tuple(q - side * half), tuple(q + side * half)]
                 uvs += [(0.0, i / 2), (1.0, i / 2)]
-                cols += [rgb, rgb]
+                shade = (0.5, 0.88, 1.12)[i]   # a dark undercoat at the roots, sun-bleached tips
+                tone = tuple(min(1.0, c * shade) for c in rgb)
+                cols += [tone, tone]
             for i in range(2):
                 k = base + i * 2
                 faces.append((k, k + 1, k + 3, k + 2))
@@ -743,17 +961,18 @@ class Kit:
         img = bpy.data.images.new(f"{self._name}_fur_strands", px, px, alpha=True)
         rng = random.Random(11)
         data = [0.0] * (px * px * 4)
-        for _ in range(38):   # strands: thin, tapering, of varied length, a little darker at the root
-            x0 = rng.uniform(0.04, 0.96) * px
-            top = rng.uniform(0.55, 1.0)
-            lean = rng.uniform(-0.08, 0.08) * px
+        for _ in range(80):   # strands: thin, tapering, of varied length and tone
+            x0 = rng.uniform(0.03, 0.97) * px
+            top = rng.uniform(0.5, 1.0)
+            lean = rng.uniform(-0.1, 0.1) * px
+            tone = rng.uniform(0.8, 1.0)
             for y in range(px):
                 t = y / (px - 1)
                 if t > top:
                     break
-                half = 1.6 * (1 - t / top) + 0.35
-                xc = x0 + lean * t
-                shade = 0.62 + 0.38 * t
+                half = 1.05 * (1 - t / top) + 0.3
+                xc = x0 + lean * t * t
+                shade = tone * (0.75 + 0.25 * t)
                 for x in range(max(0, int(xc - half - 1)), min(px, int(xc + half + 2))):
                     cov = max(0.0, min(1.0, half + 0.5 - abs(x + 0.5 - xc)))
                     if cov > 0:
@@ -839,6 +1058,8 @@ class Kit:
             J[f"tail{i}"], J[f"tail{i + 1}"] = chain[i], chain[i + 1]
             bones.append((f"Tail{i + 1}", f"tail{i}", f"tail{i + 1}", "Hips" if i == 0 else f"Tail{i}"))
         self._bake(body)
+        self._joint_loops(body, [J[k] for k in J if k.split("_")[0] in ("shoulder", "elbow", "hand", "hip", "knee", "ankle",
+                                                                          "neck", "chest", "spine")])
         data = bpy.data.armatures.new(f"{self._name}_rig")
         arm = bpy.data.objects.new(f"{self._name}_rig", data)
         bpy.context.collection.objects.link(arm)
@@ -900,6 +1121,35 @@ class Kit:
                     grp = groups.get(name) or c.vertex_groups.get(name) or c.vertex_groups.new(name=name)
                     groups[name] = grp
                     grp.add([v.index], g.weight, "REPLACE")
+
+    def _joint_loops(self, body, joints) -> None:
+        """More edge loops where a character bends — shoulders, elbows, wrists, hips, knees, ankles, neck — so the mesh
+        folds instead of collapsing, the way an animator's topology is built. Within the tier's budget."""
+        import bmesh
+        if self.level < 1:
+            return
+        me = body.data
+        total = sum(len(p.vertices) - 2 for p in me.polygons)
+        if self._max_tris and total > 0.7 * self._max_tris:
+            return
+        from mathutils.bvhtree import BVHTree
+        off = body.location
+        bvh = BVHTree.FromPolygons([tuple(v.co + off) for v in me.vertices], [tuple(p.vertices) for p in me.polygons])
+        spots = []
+        for j in joints:
+            hit = bvh.find_nearest(j)
+            if hit and hit[0] is not None:
+                spots.append((j, max(hit[3] * 1.4, 0.01)))   # about the limb's thickness around the joint
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        _tidy_bm(bm)
+        edges = [e for e in bm.edges if e.is_manifold
+                 and any(((e.verts[0].co + e.verts[1].co) / 2 + off - c).length < r for c, r in spots)]
+        if edges and (not self._max_tris or total + len(edges) * 2 < 0.85 * self._max_tris):
+            _split_edges(bm, edges, smooth=0.5)
+            bm.to_mesh(me)
+            me.update()
+        bm.free()
 
     def _tidy_weights(self, body, arm):
         """Small separate pieces and anything left unweighted follow the nearest bone rigidly; ≤ 4 bones per vertex."""
@@ -1280,9 +1530,13 @@ class Kit:
             el.use_negative = bool(sh.get("cut"))
         extent = max((max(p[i] for p in pts) - min(p[i] for p in pts)) for i in range(3))
         cells = {0: 16, 1: 26, 2: 38, 3: 56}[self.level] * max(0.25, float(detail)) * (0.6 if self._faceted else 1.0)
-        wanted = max(extent / cells, 0.002)
+        # never finer than the tier's smallest useful cell (in meters): a small blob must not cost as much as a body
+        wanted = max(extent / cells, {0: 0.02, 1: 0.012, 2: 0.007, 3: 0.004}[self.level])
         thinnest = min((float(sh["r"]) if "r" in sh else min(float(v) for v in sh["size"])) for sh in shapes if not sh.get("cut"))
         res = max(min(wanted, thinnest * 0.6), 0.002)   # a grid coarser than a paw or an arm would lose it
+        sculpted = not self._faceted   # the artist's route: a fine surface, smoothed, then clean retopology
+        if sculpted:
+            res = max(min(res, extent / 150, thinnest * 0.3), 0.0015)
         mb.resolution = mb.render_resolution = res
         obj = bpy.data.objects.new(f"mgblob{self._blobs}", mb)
         bpy.context.collection.objects.link(obj)
@@ -1296,13 +1550,65 @@ class Kit:
             raise ModelError("blob() made no surface — shapes too small, or all of them cut")
         out = bpy.data.objects.new(f"blob{self._blobs}", me)
         bpy.context.collection.objects.link(out)
-        if res < wanted * 0.8:   # built finer to keep thin parts: thin it back to the tier's density
+        if sculpted:
+            self._clean_clay(out, wanted)
+        elif res < wanted * 0.8:   # built finer to keep thin parts: thin it back to the tier's density
             dec = out.modifiers.new("tier", "DECIMATE")
             dec.ratio = max(0.02, (res / wanted) ** 2)
             self._apply_modifiers(out)
         self._fix_normals(out)
         self._finish_piece(out, color, smooth)
         return out
+
+    def _clean_clay(self, obj, cell: float) -> None:
+        """Clay → a clean sculpt, the way artists finish one: relax the marching-cubes steps and the blend bulges while
+        keeping the volume, then rebuild the surface as even quads at the tier's density (QuadriFlow retopology), and
+        relax once more. Falls back to a decimate when QuadriFlow declines."""
+        lap = obj.modifiers.new("relax", "LAPLACIANSMOOTH")
+        lap.lambda_factor, lap.iterations = 0.6, 12
+        lap.use_volume_preserve, lap.use_normalized = True, True
+        self._apply_modifiers(obj)
+        import bmesh
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        _tidy_bm(bm, cell * 50)   # QuadriFlow needs a clean, consistently facing surface
+        broken = any(not e.is_manifold for e in bm.edges)
+        bm.to_mesh(obj.data)
+        bm.free()
+        if broken:   # a cut shape can leave edges shared by 3 faces: a fine voxel remesh makes it one closed surface
+            vox = obj.modifiers.new("watertight", "REMESH")
+            vox.mode, vox.voxel_size, vox.adaptivity = "VOXEL", max(cell * 0.35, 0.0008), 0.0
+            self._apply_modifiers(obj)
+        area = sum(p.area for p in obj.data.polygons)
+        target = max(120, int(area / (cell * cell)))   # quads of about the tier's cell size
+        before = len(obj.data.polygons)
+        ok = False
+        if target < before:
+            for o in bpy.context.view_layer.objects:
+                o.select_set(o is obj)
+            bpy.context.view_layer.objects.active = obj
+            try:
+                res = bpy.ops.object.quadriflow_remesh(target_faces=target, use_mesh_symmetry=False,
+                                                       use_preserve_sharp=False, use_preserve_boundary=False,
+                                                       smooth_normals=False, seed=0)
+                polys = obj.data.polygons
+                ok = "FINISHED" in res and len(polys) != before and \
+                    sum(1 for p in polys if len(p.vertices) == 4) >= 0.9 * len(polys)
+            except RuntimeError:
+                ok = False
+            if not ok:
+                dec = obj.modifiers.new("tier", "DECIMATE")
+                dec.ratio = max(0.02, target / max(before, 1))
+                self._apply_modifiers(obj)
+                bm = bmesh.new()
+                bm.from_mesh(obj.data)
+                _tidy_bm(bm, cell * 50)   # a decimate can leave slivers behind
+                bm.to_mesh(obj.data)
+                bm.free()
+        relax = obj.modifiers.new("relax", "LAPLACIANSMOOTH")
+        relax.lambda_factor, relax.iterations = 0.35, 3
+        relax.use_volume_preserve, relax.use_normalized = True, True
+        self._apply_modifiers(obj)
 
     def skin(self, points, radii, color, *, edges=None, smooth: bool = True):
         """An organic body grown around a skeleton — limbs, tails, tentacles, necks, roots, branches, horns, snakes.
@@ -1345,6 +1651,7 @@ class Kit:
             mod.solver = "EXACT"
         self._apply_modifiers(target)
         self._forget(cutter)
+        self._label(target)   # a boolean builds new geometry: mark it with the line of the cut
         return target
 
     def bend(self, obj, angle: float, along: str = "Z", toward: str = "-Y"):
@@ -1517,13 +1824,14 @@ class Kit:
         max_edge = max(max_edge, extent / cells)
         bm = bmesh.new()
         bm.from_mesh(obj.data)
+        _tidy_bm(bm, extent)
         off = obj.location
         for _ in range(rounds):
-            long = [e for e in bm.edges if e.calc_length() > max_edge
-                    and (near is None or near((e.verts[0].co + e.verts[1].co) / 2 + off))]
+            long = [e for e in bm.edges if e.is_manifold and e.calc_length() > max_edge   # never split a non-manifold
+                    and (near is None or near((e.verts[0].co + e.verts[1].co) / 2 + off))]   # edge: Blender crashes
             if not long or len(bm.verts) + len(long) > self._vert_cap():
                 break
-            bmesh.ops.subdivide_edges(bm, edges=long, cuts=1, use_grid_fill=True)
+            _split_edges(bm, long)
         bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
         bm.to_mesh(obj.data)
         bm.free()
@@ -1609,6 +1917,14 @@ class Kit:
         hidden = sum(self._cull_hidden(o) for o in meshes if not o.get("meshgate_cards"))
         if hidden:
             notes.append(f"removed {hidden} hidden faces (inside other pieces)")
+        if self._focus and self.level >= 1:
+            added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards")])
+            if added:
+                notes.append(f"focus: {added:,} more triangles where the model needs detail")
+        if not self._faceted:
+            n = sum(self._weighted_normals(o) for o in meshes if not o.get("meshgate_cards"))
+            if n:
+                notes.append(f"weighted normals on {n} mesh{'es' if n > 1 else ''} (clean shading on flat faces)")
         roots = [o for o in objs if o.parent is None]
         if len(roots) == 1:
             root = roots[0]
@@ -1636,6 +1952,175 @@ class Kit:
                 root.location += shift
         bpy.context.view_layer.update()
         return notes
+
+    @staticmethod
+    def _weighted_normals(obj) -> int:
+        """Weighted normals, the game artist's standard finish for hard surfaces: big flat faces keep flat shading and
+        the small bevels between them take the curvature, so a low-poly box reads clean and solid. Sharp edges stay."""
+        me = obj.data
+        if not me.polygons or not any(p.use_smooth for p in me.polygons):
+            return 0
+        if hasattr(me, "use_auto_smooth"):   # ≤ 4.0: custom normals need auto smooth
+            me.use_auto_smooth = True
+        mod = obj.modifiers.new("weighted normals", "WEIGHTED_NORMAL")
+        mod.mode, mod.weight, mod.keep_sharp = "FACE_AREA", 50, True
+        with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+            if obj.modifiers[0] is not mod:   # before an armature: normals are part of the mesh, not of the pose
+                bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=0)
+            try:
+                bpy.ops.object.modifier_apply(modifier=mod.name)
+            except RuntimeError:
+                obj.modifiers.remove(mod)
+                return 0
+        return 1
+
+    def _apply_focus(self, meshes) -> int:
+        """Smoothly subdivide the faces inside focus regions, within the tier's budget. Returns triangles added."""
+        import bmesh
+        total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons)
+        room = (self._max_tris or 10 ** 9) * 0.85 - total
+        added = 0
+        for rounds in range(2):
+            for o in meshes:
+                if room <= 0:
+                    return added
+                off = o.location
+                bm = bmesh.new()
+                bm.from_mesh(o.data)
+                _tidy_bm(bm)
+                edges = []
+                floor = {0: 0.02, 1: 0.012, 2: 0.007, 3: 0.004}[self.level] * 1.5   # already this fine: leave it
+                for e in bm.edges:
+                    mid = (e.verts[0].co + e.verts[1].co) / 2 + off
+                    if e.is_manifold and e.calc_length() > floor and any((mid - c).length < r and st > rounds
+                                                                         for c, r, st in self._focus):
+                        edges.append(e)
+                if not edges:
+                    bm.free()
+                    continue
+                before = sum(len(f.verts) - 2 for f in bm.faces)
+                est = len(edges) * 2   # a rough cost: about two triangles per split edge
+                if est > room:
+                    bm.free()
+                    continue
+                _split_edges(bm, edges, smooth=0.6)
+                after = sum(len(f.verts) - 2 for f in bm.faces)
+                bm.to_mesh(o.data)
+                bm.free()
+                o.data.update()
+                added += after - before
+                room -= after - before
+        return added
+
+    def _facts(self) -> dict:
+        """Geometry facts for the AI, measured on the built model (not guessed from a render): pieces floating free
+        of everything else, which lines of code spend the triangles, how symmetric the model is. Pieces are named by
+        the build-code line that made them."""
+        from mathutils.bvhtree import BVHTree
+        from mathutils.kdtree import KDTree
+        meshes = [o for o in bpy.context.scene.objects if o.type == "MESH" and not o.get("meshgate_cards")
+                  and not o.get("meshgate_collision_for")]
+        if not meshes:
+            return {}
+        with rest_pose():
+            pieces, tris_by_line, all_pts = [], {}, []
+            for o in meshes:
+                me = o.data
+                mw = o.matrix_world
+                src = me.attributes.get(SRC_ATTR)
+                lines = [0] * len(me.vertices)
+                if src is not None:
+                    src.data.foreach_get("value", lines)
+                for poly in me.polygons:
+                    ln = lines[poly.vertices[0]]
+                    tris_by_line[ln] = tris_by_line.get(ln, 0) + len(poly.vertices) - 2
+                parent = list(range(len(me.vertices)))
+
+                def find(i):
+                    while parent[i] != i:
+                        parent[i] = parent[parent[i]]
+                        i = parent[i]
+                    return i
+                for e in me.edges:
+                    a, b = find(e.vertices[0]), find(e.vertices[1])
+                    if a != b:
+                        parent[a] = b
+                groups: dict = {}
+                for i in range(len(me.vertices)):
+                    groups.setdefault(find(i), []).append(i)
+                world = [mw @ v.co for v in me.vertices]
+                all_pts += world[::max(1, len(world) // 3000)]
+                for verts in sorted(groups.values(), key=len, reverse=True)[:400]:
+                    pts = [world[i] for i in verts]
+                    ln = max(set(lines[i] for i in verts), key=lambda x: sum(1 for i in verts if lines[i] == x))
+                    pieces.append({"line": ln, "verts": verts, "pts": pts, "obj": o})
+            lo = Vector([min(p[i] for p in all_pts) for i in range(3)])
+            hi = Vector([max(p[i] for p in all_pts) for i in range(3)])
+            size = max(hi - lo) or 1.0
+            tol = max(0.004, 0.012 * size)
+            floating = []
+            if 1 < len(pieces):
+                # one tree over every piece's faces; a piece floats when no other piece comes within tol of it
+                verts_w, faces_w, face_piece = [], [], []
+                for k, pc in enumerate(pieces):
+                    me = pc["obj"].data
+                    vset = set(pc["verts"])
+                    base = len(verts_w)
+                    idx = {}
+                    for i in pc["verts"]:
+                        idx[i] = len(verts_w) - base
+                        verts_w.append(tuple(pc["obj"].matrix_world @ me.vertices[i].co))
+                    for poly in me.polygons:
+                        if poly.vertices[0] in vset:
+                            faces_w.append(tuple(base + idx[i] for i in poly.vertices))
+                            face_piece.append(k)
+                tree = BVHTree.FromPolygons(verts_w, faces_w) if faces_w else None
+                # contacts both ways (a leg's top touches the table top even where the top has no vertex), then what
+                # is held up: everything connected to a piece on the ground
+                touch = {k: set() for k in range(len(pieces))}
+                reach = max(tol, 0.25 * size)
+                for k, pc in enumerate(pieces):
+                    for q in pc["pts"][::max(1, len(pc["pts"]) // 80)]:
+                        nearest: dict = {}   # the closest face of each other piece
+                        for h in (tree.find_nearest_range(q, reach) if tree else []):
+                            j = face_piece[h[2]]
+                            if j != k and (j not in nearest or h[3] < nearest[j][3]):
+                                nearest[j] = h
+                        for j, h in nearest.items():
+                            # touching, or sunk into it (behind its nearest face): an ear set into a head is held
+                            if h[3] <= tol or (q - h[0]).dot(h[1]) < 0:
+                                touch[k].add(j)
+                                touch[j].add(k)
+                held = {k for k, pc in enumerate(pieces) if min(p.z for p in pc["pts"]) <= lo.z + tol}
+                todo = list(held)
+                while todo:
+                    for j in touch[todo.pop()]:
+                        if j not in held:
+                            held.add(j)
+                            todo.append(j)
+                for k, pc in enumerate(pieces):
+                    if k in held or tree is None:
+                        continue
+                    sample = pc["pts"][::max(1, len(pc["pts"]) // 60)]
+                    gap = min((h[3] for q in sample[:20] for h in tree.find_nearest_range(q, size)
+                               if face_piece[h[2]] in held), default=size)
+                    floating.append({"line": pc["line"], "what": self._sources.get(pc["line"], "piece"),
+                                     "gap_cm": round(gap * 100, 1),
+                                     "at": [round(x, 3) for x in (sum(pc["pts"], Vector()) / len(pc["pts"]))]})
+            kd = KDTree(len(all_pts))
+            for i, q in enumerate(all_pts):
+                kd.insert(q, i)
+            kd.balance()
+            cx = (lo.x + hi.x) / 2
+            mirror = sum(kd.find(Vector((2 * cx - q.x, q.y, q.z)))[2] for q in all_pts[::max(1, len(all_pts) // 500)])
+            mirror /= max(1, len(all_pts[::max(1, len(all_pts) // 500)]))
+        total = sum(tris_by_line.values()) or 1
+        top = sorted(((ln, n) for ln, n in tris_by_line.items() if ln), key=lambda t: -t[1])[:6]
+        uv = json.loads(bpy.context.scene.get("mg_uv", "{}") or "{}")
+        return {"floating": floating[:12], "uv": uv or None,
+                "triangles_by_line": [{"line": ln, "what": self._sources.get(ln, "piece"), "tris": n,
+                                       "share": round(n / total, 3)} for ln, n in top],
+                "asymmetry": round(mirror / size, 4), "size_m": [round(x, 3) for x in (hi - lo)]}
 
     @staticmethod
     def _cull_hidden(obj, eps: float = 2e-4) -> int:
@@ -1815,6 +2300,7 @@ class Kit:
 
     def _finish_piece(self, obj, color, smooth: bool, flat_faces=()):
         me = obj.data
+        self._label(obj)
         smooth = smooth and not self._faceted
         flat = set(flat_faces)
         for p in me.polygons:
@@ -1839,6 +2325,23 @@ class Kit:
             me.materials.append(self._group_material(name))
         else:
             me.materials.append(self._mat)
+
+    def _label(self, obj) -> None:
+        """Mark a piece with the line of build code that made it (an integer vertex attribute that survives joins),
+        so geometry facts can point the AI at its own code: 'the part from line 88 floats 3 cm above the rest'."""
+        import inspect
+        line, what = 0, "piece"
+        for fr in inspect.stack()[1:12]:
+            if fr.filename == "<generated>":
+                line = fr.lineno
+                break
+            if fr.function in _PUBLIC and what == "piece":
+                what = fr.function
+        me = obj.data
+        attr = me.attributes.get(SRC_ATTR) or me.attributes.new(SRC_ATTR, "INT", "POINT")
+        attr.data.foreach_set("value", [line] * len(me.vertices))
+        if line:
+            self._sources.setdefault(line, what)
 
     def _group_material(self, name: str):
         """Vertex mode: the material for a colour — shared by every colour with the same metal and glow."""

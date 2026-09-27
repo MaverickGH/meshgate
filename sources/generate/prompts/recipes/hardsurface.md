@@ -13,3 +13,6 @@ example: treasure_chest.py
 - Cables and hoses are `mg.curve`s that sag between points; rows of planks, rungs or bolts are one part plus
   `mg.modify(part, "array", count=…, offset=…)`; grilles and cages `mg.modify(box, "wireframe", thickness=…)`;
   straps `mg.modify(band, "shrinkwrap", target=…)`.
+- Panels, hatches and buttons: `mg.inset(box, facing=…, amount=…, depth=…, color=…)`; frames, mouldings, rails and
+  shaped pipes: `mg.sweep(profile, path, …, corners="sharp")` for mitred corners. MeshGate adds weighted normals
+  (clean flat faces with soft bevels) and packs the UVs evenly by itself.

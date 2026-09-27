@@ -516,6 +516,8 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_blender_tools(exe, work)
     ok &= _check_review(exe, work)
     ok &= _check_character(exe, work)
+    ok &= _check_facts(exe, work)
+    ok &= _check_hard_surface(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -692,6 +694,7 @@ def _check_review(exe: str, work: Path) -> bool:
         g = json.load(open(out / "gen.json"))
         rv = g["report"]["reviews"]
         good = (g["ok"] and [x["match"] for x in rv] == [6.0, 9.0] and rv[0]["accepted"] and not rv[1]["accepted"]
+                and rv[0].get("closeups") == [{"at": [0.0, 0.0, 0.4], "from": [1.0, -1.0, 0.5], "size": 0.3}]
                 and all("attached" in x["notes"][0] for x in rv) and "#d0342a" in (out / "review.py").read_text()
                 and (out / "views.png").exists() and (out / "review_1.png").exists())
     except Exception as exc:  # noqa: BLE001
@@ -726,6 +729,47 @@ def _check_character(exe: str, work: Path) -> bool:
         print(f"  ✗ character (rig, clips, fur): {exc}")
     if not good:
         print("  ✗ character (rig, clips, fur): " + (r.stdout + r.stderr)[-1500:])
+    return good
+
+
+def _check_facts(exe: str, work: Path) -> bool:
+    """Geometry facts: a cup floating above a table is reported by its code line (and nothing that stands is),
+    and it reaches the AI as advice."""
+    out = work / "facts"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "facts_test.py"),
+                        "--name", "facts", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        fl = g["report"]["facts"]["floating"]
+        good = (g["ok"] and [f["line"] for f in fl] == [9] and 4 <= fl[0]["gap_cm"] <= 8
+                and any("line 9" in a for a in g["report"]["advice"]) and g["report"]["tiers"]["pc"]["tris"] < 60000)
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ geometry facts: {exc}")
+    if not good:
+        print("  ✗ geometry facts: " + (r.stdout + r.stderr)[-1200:])
+    return good
+
+
+def _check_hard_surface(exe: str, work: Path) -> bool:
+    """Hard-surface tools: inset panels, a swept frame with mitred corners, weighted normals, and baked UVs that use the
+    texture well (area covered, even texel density), reported to the AI."""
+    out = work / "hard_surface"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "hard_surface.py"),
+                        "--name", "crate", "--pbr", "--tiers", "pc,mobile-low", "--blender", exe, "--no-preview",
+                        "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        pc = g["report"]["tiers"]["pc"]
+        uv = g["report"]["facts"]["uv"]
+        good = (g["ok"] and abs(pc["dims_m"][0] - 0.837) < 0.03 and abs(pc["dims_m"][2] - 0.725) < 0.03
+                and any("weighted normals" in n for n in pc["notes"]) and uv["used"] > 0.3 and uv["density_spread"] < 0.35)
+    except Exception as exc:  # noqa: BLE001
+        good = False
+        print(f"  ✗ hard surface (inset, sweep, weighted normals, UVs): {exc}")
+    if not good:
+        print("  ✗ hard surface (inset, sweep, weighted normals, UVs): " + (r.stdout + r.stderr)[-1200:])
     return good
 
 
@@ -858,6 +902,9 @@ def _check_unreal() -> int:
 
 
 def cmd_check(args) -> int:
+    # checks keep their own settings folder: test runs must not teach the progress bar or fill the example library
+    if not os.environ.get("MESHGATE_CHECK_KEEP_CONFIG"):
+        os.environ["MESHGATE_CONFIG_DIR"] = tempfile.mkdtemp(prefix="meshgate-check-config-")
     if args.target == "blender":
         return _check_blender(not args.no_generators)
     targets = ["web", "blender", "unity", "godot", "unreal"] if args.target == "all" else [args.target]

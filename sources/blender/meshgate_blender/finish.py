@@ -8,6 +8,7 @@ budget. All meshes of the asset share one fresh UV atlas and one material, so th
 
 from __future__ import annotations
 
+import json
 import math
 import os
 
@@ -419,11 +420,66 @@ def _hero(me, cells: dict, target_tris: int) -> None:
                 for vi in poly.vertices:
                     kinds[vi] = k
     me.update()
-    for vx in me.vertices:
-        k = kinds[vx.index]
+    # normals read once: moving a vertex marks them stale, and the next vx.normal would recompute the whole mesh
+    n = len(me.vertices)
+    co, nor = [0.0] * (3 * n), [0.0] * (3 * n)
+    me.vertices.foreach_get("co", co)
+    me.vertices.foreach_get("normal", nor)
+    for i, k in enumerate(kinds):
         if k:
-            vx.co += vx.normal * _relief(k, vx.co)
+            p = Vector(co[3 * i:3 * i + 3])
+            d = _relief(k, p)
+            co[3 * i:3 * i + 3] = p + Vector(nor[3 * i:3 * i + 3]) * d
+    me.vertices.foreach_set("co", co)
     me.update()
+
+
+def _tidy_uvs(margin: float) -> None:
+    """What a UV artist does after an automatic unwrap: relax the stretch, give every island the same texel density,
+    then pack tightly with rotation (exact shapes on Blender 3.6+). Each step is skipped where a version lacks it."""
+    bpy.ops.uv.select_all(action="SELECT")
+    for op, kw in ((bpy.ops.uv.minimize_stretch, {"iterations": 30}), (bpy.ops.uv.average_islands_scale, {})):
+        try:
+            op(**kw)
+        except (RuntimeError, TypeError, AttributeError):
+            pass
+    for kw in ({"shape_method": "CONCAVE", "rotate": True, "margin": margin}, {"rotate": True, "margin": margin}):
+        try:
+            bpy.ops.uv.pack_islands(**kw)
+            break
+        except (RuntimeError, TypeError):
+            continue
+
+
+def uv_metrics(meshes, layer: str) -> dict:
+    """How well the texture is used: the share of the UV square covered, and how even the texel density is (the
+    spread of UV-to-surface scale across faces, weighted by area; 0 % = perfectly even)."""
+    used, samples, total_area = 0.0, [], 0.0
+    for o in meshes:
+        me = o.data
+        uv = me.uv_layers.get(layer)
+        if uv is None:
+            continue
+        data = uv.data
+        mw = o.matrix_world
+        for poly in me.polygons:
+            pts = [data[li].uv for li in poly.loop_indices]
+            a2 = 0.0
+            for i in range(len(pts)):
+                x1, y1 = pts[i]
+                x2, y2 = pts[(i + 1) % len(pts)]
+                a2 += x1 * y2 - x2 * y1
+            uv_area = abs(a2) / 2
+            area = poly.area * abs(mw.determinant()) ** (2 / 3)
+            used += uv_area
+            if area > 1e-10 and uv_area > 0:
+                samples.append(((uv_area / area) ** 0.5, area))
+                total_area += area
+    if not samples or total_area <= 0:
+        return {}
+    mean = sum(d * a for d, a in samples) / total_area
+    var = sum(a * (d - mean) ** 2 for d, a in samples) / total_area
+    return {"used": round(min(1.0, used), 3), "density_spread": round((var ** 0.5) / mean, 3) if mean else 0.0}
 
 
 def save_high(ctx, path: str, *, hero: bool = False, cells: dict | None = None, target_tris: int = 1_200_000) -> None:
@@ -512,7 +568,9 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=island_margin)
+    _tidy_uvs(island_margin)
     bpy.ops.object.mode_set(mode="OBJECT")
+    ctx.scene["mg_uv"] = json.dumps(uv_metrics(meshes, "bake"))
     for o in meshes:   # bakes and the viewport read the render UV map; the palette is sampled through "UVMap"
         for layer in o.data.uv_layers:
             layer.active_render = layer.name == "bake"

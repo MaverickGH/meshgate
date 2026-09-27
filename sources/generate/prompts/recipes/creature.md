@@ -28,3 +28,5 @@ example: zombie_cats/realistic/zombie_cat.py
   `mg.clip("idle", "idle")`, `mg.clip("walk", "zombie_walk" or "walk")`, `mg.clip("attack", "attack")`.
 - Tails, whiskers and tentacles read best as `mg.curve` (smooth splines); fur tufts, warts or spikes can be
   `mg.scatter`ed over the body on the richer tiers.
+- Spend triangles where eyes land: `mg.focus(face_centre, radius)` on the face and hands makes them denser within
+  the budget; MeshGate reports pieces that float free by their code line — sink them into what they belong to.

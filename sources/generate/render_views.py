@@ -16,6 +16,9 @@ src, out = a[0], a[1]
 px = int(a[2]) if len(a) > 2 else 1024
 samples = int(a[3]) if len(a) > 3 else 48
 reference = a[4] if len(a) > 4 and a[4] else None
+# close-ups the AI asked for: [{"at": [x, y, z], "from": [dx, dy, dz], "size": m}, …] (up to two, as extra tiles)
+import json as _json
+closeups = (_json.loads(a[5]) if len(a) > 5 and a[5] else [])[:2]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -88,10 +91,14 @@ if (hi.z - lo.z) < 0.3 * max(hi.x - lo.x, hi.y - lo.y):   # flat things (a tile,
     views = [("three_quarter", (0.7, -1.1, 1.0)), ("top", (0.0, -0.12, 1.0)), ("front", (0, -1, 0.5)), ("back", (-0.6, 1.0, 0.9))]
 tmp = os.path.splitext(out)[0]
 tiles = []
-for name, d in views:
-    d = Vector(d).normalized()
-    cam.location = centre + d * dist
-    cam.rotation_euler = (centre - cam.location).to_track_quat("-Z", "Y").to_euler()
+shots = [(name, centre, Vector(d).normalized(), dist) for name, d in views]
+for i, c in enumerate(closeups):   # the AI's own camera: a point, the direction it looks from, the width to frame
+    look = Vector(c.get("from") or (0.6, -1, 0.4)).normalized()
+    size = max(float(c.get("size") or radius * 0.5), radius * 0.05)
+    shots.append((f"closeup{i}", Vector(c["at"]), look, size / 2 / math.sin(fov / 2) * 1.1))
+for name, target, d, dd in shots:
+    cam.location = target + d * dd
+    cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
     sc.render.filepath = f"{tmp}.{name}.png"
     bpy.ops.render.render(write_still=True)
     tiles.append(bpy.data.images.load(sc.render.filepath))
@@ -99,11 +106,16 @@ for name, d in views:
 # stitch the four views into one 2×2 sheet, with the reference picture on its left when there is one
 half = px // 2
 left = px if reference else 0
-width = left + px
+cols = 3 if closeups else 2   # close-ups take a third column: 3/4, front, close-up 1 / side, back, close-up 2
+width = left + half * cols
 pixels = [0.2, 0.25, 0.34, 1.0] * (width * px)
-for i, img in enumerate(tiles):
+order = [0, 1, 4, 2, 3, 5] if closeups else [0, 1, 2, 3]
+for slot, ti in enumerate(order):
+    if ti >= len(tiles):
+        continue
+    img = tiles[ti]
     src_px = list(img.pixels)
-    ox, oy = left + (i % 2) * half, (1 - i // 2) * half   # the four views left to right, top to bottom
+    ox, oy = left + (slot % cols) * half, (1 - slot // cols) * half   # the views left to right, top to bottom
     for row in range(half):
         s0 = row * half * 4
         d = ((oy + row) * width + ox) * 4
@@ -127,6 +139,6 @@ sheet.pixels = pixels
 sheet.filepath_raw = out
 sheet.file_format = "PNG"
 sheet.save()
-for name, _ in views:
+for name, *_ in shots:
     os.remove(f"{tmp}.{name}.png")
 print(f"MeshGate views: {out}")

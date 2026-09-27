@@ -49,12 +49,19 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
    **Auto** picks the neural mesh when there is a picture and a generator is ready.
 3. Pick a style: Stylized, Low-poly, Realistic or Toon, and the colours: **Textures** or **Vertex colours** (no textures
    at all). Optionally give a name and the size in meters.
-4. Tick the quality tiers you need; the richest one becomes the canonical `<name>.glb`. The number field next to a
-   tier is your own triangle limit for it, for when far fewer triangles are enough. Tick the engines you want
-   variants for.
-5. Press **Generate**. **Progress** shows each attempt: what the AI answered, how each tier came out and which problems
-   went back to the AI. **Code** shows the final `build(mg)` function.
-6. Switch tiers under the viewer to see what phones get and what PC gets. **Library** keeps every model you made.
+4. Set the triangle count with the one slider: the ticks are the tier budgets, every tier up to the one you land in
+   is built, and the top one gets your number as its limit. Tick the engines you want variants for.
+5. Press **Generate**. A progress bar shows the step, the percentage and about how long is left (it learns how long
+   each step takes on your computer). **Progress** shows each attempt: what the AI answered, how each tier came out
+   and which problems went back to the AI. **Code** shows the final `build(mg)` function.
+6. Switch tiers under the viewer to see what phones get and what PC gets; play a character's clips (idle, walk,
+   attack) with the buttons next to **Wireframe**. **Library** keeps every model you made.
+7. **Refine** takes a kit model further, the way an artist iterates:
+   - **Change in words** — "bigger ears, longer fur on the chest": the AI gets the code and the model from four
+     sides (next to the picture) and changes only that.
+   - **Parameters** — sliders the build code declared with `mg.param` (ear size, fur length, arm reach…); **Rebuild**
+     builds again without the AI, in seconds for stylized models.
+   - **Versions** — every change keeps the previous state (code, sliders, preview); **Restore** brings one back.
 
 ## How it is built
 

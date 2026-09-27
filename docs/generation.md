@@ -210,6 +210,10 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.cut(target, cutter)` | Boolean difference | eye sockets, a paw print in stone, windows |
 | `mg.bend` / `mg.twist` | Bend a piece from its base, twist it about its length (rings are added) | curling tails, drooping ears, horns, rope |
 | `mg.sculpt(obj, brush)` | Brushes: `grab`, `inflate`, `crease` / `ridge` / `pinch` along a path, `flatten`, `layer`, `noise`, `smooth`; points snap to the surface | snouts, eyelids, brows, lips, fingers, skull ridges, plates |
+| `mg.sweep(profile, path, colour)` | A 2D profile swept along a smooth path, or with mitred `corners="sharp"` | frames, mouldings, rails, rims, shaped pipes |
+| `mg.inset(obj, facing=, amount=, depth=)` | Panels, hatches and buttons pressed into (or raised from) the faces looking one way | sci-fi crates, doors, consoles |
+| `mg.focus(at, radius)` | More polygons where they show — a face, hands — within the tier's budget | characters, hero details |
+| `mg.param(name, default, lo, hi)` | A number the artist tunes with a slider in Studio (Refine → Parameters) without asking the AI again | ear size, fur length, arm reach, plank count |
 | `mg.fur(surface, length=, count=)` | Hair cards with cutout alpha, coloured by the painted surface under them; fewer on phones, none on mobile-low | coats, manes, tufts, grass |
 | `mg.rig(body, joints)` + `mg.clip(name, motion)` | A Humanoid skeleton bound with automatic weights (≤ the tier's bones per vertex); clips `idle`, `zombie_walk`, `walk`, `attack`, `hit` or keys | characters that move in the engines |
 | `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
@@ -223,6 +227,17 @@ Colours named fur, pelt or wool get a fur look in the realistic finish (fine str
 map). The AI also gets short artist recipes for the kind of object it builds — creatures, plants, rocks, props,
 buildings, reworking a library model — picked from the description (English or Russian), with a matching example:
 the [realistic zombie cat](../sources/generate/examples/zombie_cats/realistic/zombie_cat.py) for creatures.
+
+Every model is also measured and the facts go back to the AI with the renders: pieces floating free of everything
+that stands on the ground (named by the line of build code that made them), which lines spend the triangles, the
+size and the left/right asymmetry, and for baked finishes how much of the texture the UVs use and how even the texel
+density is. Characters get denser edge loops at the joints before binding, so elbows and knees fold instead of
+collapsing. Weighted normals finish every smooth model (flat faces stay flat, bevels take the curvature), and baked
+UVs are relaxed, evened out and packed tightly.
+
+Clay is finished the way artists finish a sculpt: built on a fine grid, relaxed with a volume-keeping smooth (no
+marching-cubes steps, no bulges where shapes meet), then retopologised into even quads at the tier's density
+(QuadriFlow). Low-poly keeps its facets.
 
 Density follows the tier like everything else. The realistic finish then works like a texturing artist:
 
@@ -240,7 +255,13 @@ viewport. MeshGate renders the model from four sides (from above for flat things
 reference picture in one image. The AI gets that image with its code, names the biggest differences — silhouette,
 proportions, colours, missing or floating parts — scores the match (`MATCH: n/10`) and returns improved code. The
 improved code is built in a side folder and replaces the model only when it builds cleanly, so a round can never make
-the result worse than a clean build. The loop stops at 9/10 or after N rounds. Every round's sheet and answer stay in
+the result worse than a clean build. The loop stops at 9/10 or after N rounds. The AI can ask for its own camera — a line
+`VIEW: at=(x, y, z) from=(dx, dy, dz) size=0.3` comes back next round as a close-up next to the four views — and it
+gets the measured facts (floating pieces, triangles per line of code) with the picture. Every built version keeps the
+score its review gave it; if a later round scores lower, the best version is the one kept.
+
+Every clean build the AI writes is also remembered on your computer (`~/.meshgate/examples`), and the next request for
+something similar gets the closest one or two as worked examples — the library of what worked grows with use. Every round's sheet and answer stay in
 the output folder (`review_1.png`, `review_1.answer.md`, final `views.png`), and `gen.json` lists the scores and notes.
 The same renderer works on its own:
 `blender -b -P sources/generate/render_views.py -- model.glb sheet.png 1024 48 reference.png`.
