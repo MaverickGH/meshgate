@@ -1,81 +1,61 @@
-"""zc_toxic_can — giant opened cat-food tin with glowing green goo, purple label, peeled metal lid."""
+"""zc_toxic_can, low-poly — the same toxic cat-food tin with few flat facets: purple label, teal fish, silver rims,
+glowing goo spilling over and pooling, bubbles rising, the dark lid floating above."""
 import math
 
 
 def build(mg):
-    steel = mg.color("steel", "#c0c4cc", rough=0.35, metal=0.7)
-    steel_lt = mg.color("steel_light", "#d4d8de", rough=0.3, metal=0.7)
-    purple = mg.color("label_purple", (0.62, 0.13, 0.78), rough=0.55, material="cardboard")
-    goo = mg.color("goo_green", (0.55, 0.88, 0.12), rough=0.25, glow=2.6, material="plain")
-    goo_dk = mg.color("goo_dark", (0.42, 0.72, 0.08), rough=0.3, glow=1.6, material="plain")
-    fish = mg.color("fish_blue", (0.16, 0.62, 0.78), rough=0.5, material="plain")
-    fish_lt = mg.color("fish_light", (0.55, 0.85, 0.9), rough=0.5, material="plain")
+    metal = mg.color("steel", "#c0c4cc", rough=0.35, metal=0.7)
+    metal_d = mg.color("steel_dark", "#5a6068", rough=0.4, metal=0.8)
+    label = mg.color("label_purple", (0.62, 0.13, 0.78), rough=0.55)
+    label_d = mg.color("label_dark", "#3d1a5a", rough=0.6)
+    fish = mg.color("fish_blue", (0.16, 0.62, 0.78), rough=0.5)
+    goo = mg.color("goo_green", (0.55, 0.88, 0.12), rough=0.25, glow=2.2)
+    segs, smooth, bub_seg = 10, False, 8
 
-    V = 16
-    R = 0.36
-    parts = []
+    R, H = 0.33, 0.62      # can radius and height
+    # ---- the tin: silver rims top and bottom, a purple label band, an inner lip the goo sits in
+    body = [mg.lathe([(0.0, 0.0), (R - 0.012, 0.0), (R + 0.012, 0.012), (R + 0.012, 0.06), (R, 0.07), (R, H - 0.07),
+                      (R + 0.012, H - 0.06), (R + 0.012, H), (R - 0.018, H + 0.006), (R - 0.026, H - 0.05), (0.0, H - 0.05)],
+                     metal, segments=segs, smooth=smooth, cap=True)]
+    body.append(mg.lathe([(R + 0.001, 0.078), (R + 0.005, 0.088), (R + 0.005, H - 0.088), (R + 0.001, H - 0.078)],
+                         label, segments=segs, smooth=smooth, cap=False))
+    # the fish on the front (-Y), a little proud of the label
+    body.append(mg.extrude([(-0.13, 0.0), (-0.05, 0.065), (0.05, 0.045), (0.12, 0.1), (0.055, 0.0), (0.12, -0.1),
+                            (0.05, -0.045), (-0.05, -0.065)], 0.012, fish, loc=(0.0, -(R + 0.008), 0.29), bevel=0.003))
+    body.append(mg.part("sphere", label_d, loc=(-0.075, -(R + 0.016), 0.305), scale=(0.022, 0.012, 0.022)))
+    can = mg.join("zc_toxic_can", body)
 
-    # --- can body: bottom rim, purple label, top rim ---
-    parts.append(mg.part("cyl", steel, loc=(0, 0, 0.045), scale=(0.76, 0.76, 0.09), vertices=V, smooth=False, bevel=0.008))
-    parts.append(mg.part("cyl", steel, loc=(0, 0, 0.11), scale=(0.735, 0.735, 0.05), vertices=V, smooth=False))
-    parts.append(mg.part("cyl", purple, loc=(0, 0, 0.405), scale=(0.72, 0.72, 0.63), vertices=V, smooth=False))
-    parts.append(mg.part("cyl", steel, loc=(0, 0, 0.70), scale=(0.735, 0.735, 0.05), vertices=V, smooth=False))
-    parts.append(mg.part("cyl", steel, loc=(0, 0, 0.775), scale=(0.76, 0.76, 0.10), vertices=V, smooth=False, bevel=0.01))
-    # inner rim lip
-    parts.append(mg.part("cyl", steel_lt, loc=(0, 0, 0.815), scale=(0.70, 0.70, 0.02), vertices=V, smooth=False))
+    # ---- the goo, one smooth mass: a dome in the tin, spilling over the rim, running down the side past the fish,
+    # pooling on the ground round the foot
+    shapes = [{"ellipsoid": (0.0, 0.0, H - 0.015), "size": (R - 0.01, R - 0.01, 0.06)}]
+    for bx, by in ((-0.1, 0.05), (0.08, -0.07), (0.03, 0.12)):   # lumps on its surface
+        shapes.append({"ball": (bx, by, H + 0.03), "r": 0.035})
+    r_out = R + 0.016
+    for deg, z_end in ((-55, 0.03), (-128, 0.4), (-20, 0.34), (160, 0.3), (40, 0.46)):
+        a = math.radians(deg)
+        x, y = math.cos(a), math.sin(a)
+        shapes += [{"ellipsoid": (x * R, y * R, H), "size": (0.07, 0.07, 0.035)},                       # over the rim
+                   {"capsule": ((x * r_out, y * r_out, H - 0.01), (x * r_out, y * r_out, z_end + 0.03)), "r": 0.026},
+                   {"ball": (x * (r_out + 0.004), y * (r_out + 0.004), z_end + 0.02), "r": 0.036}]        # its drop
+    a = math.radians(-55)
+    shapes.append({"ellipsoid": (math.cos(a) * (R + 0.13), math.sin(a) * (R + 0.13), 0.004), "size": (0.16, 0.12, 0.014)})
+    for deg, dist, rx in ((-150, 0.1, 0.1), (100, 0.08, 0.08), (30, 0.12, 0.07)):   # more puddles round the foot
+        a = math.radians(deg)
+        shapes.append({"ellipsoid": (math.cos(a) * (R + dist), math.sin(a) * (R + dist), 0.003), "size": (rx, rx * 0.8, 0.011)})
+    goo_mass = mg.blob(shapes, goo, blend=0.85)
+    mg.attach(goo_mass, can)
+    # bubbles rising in a column toward the lid
+    for bx, by, bz, br in ((0.02, -0.02, H + 0.12, 0.04), (-0.03, 0.01, H + 0.22, 0.032), (0.01, 0.02, H + 0.3, 0.026)):
+        mg.attach(mg.part("sphere", goo, loc=(bx, by, bz), scale=(br * 2,) * 3, segments=bub_seg), can)
 
-    # --- goo filling the top and its bubbling surface ---
-    parts.append(mg.part("cyl", goo, loc=(0, 0, 0.755), scale=(0.68, 0.68, 0.12), vertices=V, smooth=False))
-    parts.append(mg.part("sphere", goo, loc=(0, 0, 0.82), scale=(0.68, 0.68, 0.18), segments=V, smooth=False))
-    # surface bubbles poking up
-    for i in range(3):
-        a = i * 2.1
-        rr = 0.14 + 0.05 * i
-        parts.append(mg.part("sphere", goo, loc=(rr * math.cos(a), rr * math.sin(a), 0.87 + 0.02 * i),
-                             scale=(0.16, 0.16, 0.16), segments=12, smooth=False))
-
-    # --- drips spilling over the rim down the label ---
-    drip_ang = [-0.5, 0.1, 0.7, 1.4, -1.2]
-    for k, a in enumerate(drip_ang):
-        x, y = R * math.cos(a), R * math.sin(a)
-        ln = 0.16 + 0.10 * ((k * 7) % 3)
-        top = 0.78
-        parts.append(mg.part("cyl", goo, loc=(x, y, top - ln / 2), scale=(0.09, 0.06, ln), vertices=8, smooth=False))
-        parts.append(mg.part("sphere", goo, loc=(x, y, top - ln), scale=(0.11, 0.08, 0.11), segments=10, smooth=False))
-        parts.append(mg.part("sphere", goo, loc=(x, y, top + 0.01), scale=(0.13, 0.09, 0.08), segments=10, smooth=False))
-
-    # --- fish emblem on the front label (-Y) ---
-    fout = [(-0.15, 0.0), (-0.02, 0.07), (0.14, 0.10), (0.06, 0.0), (0.14, -0.10), (-0.02, -0.07)]
-    parts.append(mg.extrude(fout, 0.03, fish, loc=(0, -0.355, 0.40), smooth=False))
-    if mg.at_least("mobile-high"):
-        parts.append(mg.part("cyl", fish_lt, loc=(-0.08, -0.375, 0.40), scale=(0.05, 0.02, 0.05),
-                             rot=(math.pi / 2, 0, 0), vertices=10, smooth=False))
-        parts.append(mg.part("cyl", fish_lt, loc=(0.04, -0.375, 0.40), scale=(0.04, 0.02, 0.10),
-                             rot=(math.pi / 2, 0, 0), vertices=8, smooth=False))
-
-    # --- puddles on the ground ---
-    pud = [(0.0, 0.55, 0.20), (-0.52, 0.30, 0.15), (0.48, -0.25, 0.14), (0.15, -0.55, 0.13)]
-    for (px, py, pr) in pud:
-        parts.append(mg.part("sphere", goo_dk, loc=(px, py, 0.02), scale=(pr * 2.2, pr * 2.2, 0.07),
-                             segments=12, smooth=False))
-        parts.append(mg.part("sphere", goo, loc=(px, py, 0.03), scale=(pr * 1.5, pr * 1.5, 0.06),
-                             segments=10, smooth=False))
-
-    # --- rising bubbles between can and lid ---
-    for bx, by, bz, br in [(0.02, 0.05, 1.02, 0.13), (-0.1, 0.0, 0.95, 0.08), (0.08, -0.04, 1.14, 0.09), (-0.03, 0.02, 1.22, 0.07)]:
-        parts.append(mg.part("sphere", goo, loc=(bx, by, bz), scale=(br, br, br), segments=10, smooth=False))
-
-    can = mg.join("zc_toxic_can", parts)
-
-    # --- the lid, floating well above the goo and tilted, as in the concept ---
-    lid_dark = mg.color("steel_dark", "#6a707a", rough=0.4, metal=0.8)
-    L, tilt = (0.0, -0.02, 1.5), (0.3, -0.12, 0.0)
-    lp = []
-    for dz, sc, col, verts in ((-0.01, 0.76, lid_dark, V), (0.02, 0.72, lid_dark, V), (0.04, 0.58, steel, V),
-                               (0.055, 0.36, lid_dark, V), (0.065, 0.14, steel, 12)):
-        lp.append(mg.part("cyl", col, loc=(L[0], L[1], L[2] + dz), scale=(sc * 0.85, sc * 0.85, 0.03 if dz < 0 else 0.02),
-                          rot=tilt, vertices=verts, smooth=False))
-    lid = mg.join("zc_toxic_can_lid", lp)
-    mg.pivot(lid, L)
+    # ---- the lid, dark, floating above and tilted; it bobs a little (the pack calls the clip "bubbles")
+    Rl = R + 0.005
+    lid = mg.join("zc_toxic_lid", [
+        mg.lathe([(0.0, 0.0), (Rl - 0.02, 0.0), (Rl, 0.012), (Rl, 0.026), (Rl - 0.02, 0.034), (0.0, 0.03)], metal_d,
+                 segments=segs, smooth=smooth, cap=True),
+        mg.lathe([(0.12, 0.031), (0.13, 0.036), (0.14, 0.031)], metal, segments=segs, smooth=smooth, cap=False),
+        mg.part("cyl", metal, loc=(0, 0, 0.04), scale=(0.07, 0.07, 0.02), vertices=bub_seg)])
     mg.attach(lid, can)
-    mg.animate(lid, "bubbles", [(0, L), (45, (L[0], L[1], L[2] + 0.03)), (90, L)], path="location")
+    L = (0.0, 0.02, H + 0.52)
+    mg.animate(lid, "bubbles", [(1, (-0.18, 0.1, 0.2)), (60, (-0.18, 0.1, 0.2))], path="rotation_euler")
+    mg.animate(lid, "bubbles", [(1, L), (30, (L[0], L[1], L[2] + 0.04)), (60, L)], path="location")

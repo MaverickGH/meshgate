@@ -1,65 +1,53 @@
-"""Cat-shaped tombstone: stone slab with two pointed cat ears, a carved paw print, on a low stone base with glowing green goo."""
+"""zc_tombstone_cat, realistic — the same cat tombstone in weathered grey stone: slab with short ears and a
+scooped top, a carved paw print, a two-step base, moss clumps along the base, glowing goo pooling in front."""
 import math
 
 
 def build(mg):
-    stone = mg.color("stone_light", "#a39c93", rough=0.85, material="stone")
-    stone_dark = mg.color("stone_dark", "#38383a", rough=0.7, material="stone")
-    stone_base = mg.color("stone_base", "#978f86", rough=0.88, material="stone")
+    stone = mg.color("stone_light", "#8e887f", rough=0.88, material="stone")
+    base = mg.color("stone_base", "#817b72", rough=0.9, material="stone")
+    pad = mg.color("stone_dark", "#3a3836", rough=0.75, material="stone")
     goo = mg.color("goo_ooze", "#7ede2c", rough=0.35, glow=2.2, material="plain")
+    moss = mg.color("moss_green", "#3c5222", rough=0.95, material="ground")
+    scoop, bevel, pad_sides, goo_seg = 12, 0.014, 24, 20
 
     parts = []
+    depth = 0.13        # slab thickness
+    top = 0.95          # the shoulders of the slab (the ears rise above)
+    # ---- the slab, seen from the front: a cat's head — two short ears at the corners, a gentle scoop between them
+    outline = [(-0.34, 0.12), (-0.34, top), (-0.3, top + 0.15), (-0.19, top + 0.01)]
+    for i in range(1, scoop):
+        t = i / scoop
+        outline.append((-0.19 + 0.38 * t, top + 0.01 - 0.035 * math.sin(math.pi * t)))
+    outline += [(0.19, top + 0.01), (0.3, top + 0.15), (0.34, top), (0.34, 0.12)]
+    parts.append(mg.extrude(outline, depth, stone, bevel=bevel, smooth=False))
+    # ---- a two-step base
+    parts.append(mg.part("cube", base, loc=(0, 0, 0.05), scale=(0.84, 0.34, 0.1), bevel=bevel))
+    parts.append(mg.part("cube", base, loc=(0, 0, 0.125), scale=(0.74, 0.26, 0.05), bevel=bevel))
 
-    # ---- low stone base (two stacked tiers) ----
-    parts.append(mg.part("cube", stone_base, loc=(0, 0, 0.045), scale=(0.82, 0.46, 0.09), bevel=0.012))
-    parts.append(mg.part("cube", stone_base, loc=(0, 0, 0.12), scale=(0.55, 0.36, 0.07), bevel=0.01))
+    # ---- the paw print, carved dark and set just proud of the front face: one pad, four toes apart from it
+    fy = -depth / 2 - 0.004
+    parts.append(mg.part("cyl", pad, loc=(0, fy, 0.5), scale=(0.2, 0.2, 0.012), rot=(math.pi / 2, 0, 0),
+                         vertices=pad_sides, bevel=0.004))
+    for tx, tz in ((-0.115, 0.61), (-0.042, 0.655), (0.042, 0.655), (0.115, 0.61)):
+        parts.append(mg.part("cyl", pad, loc=(tx, fy, tz), scale=(0.07, 0.07, 0.012), rot=(math.pi / 2, 0, 0),
+                             vertices=pad_sides, bevel=0.003))
+    tomb = mg.join("zc_tombstone_cat", parts)
 
-    # ---- main slab with cat-ear silhouette (front view outline, front faces -Y) ----
-    outline = [(-0.35, 0.12), (-0.35, 0.82), (-0.31, 1.08), (-0.16, 0.8)]
-    for i in range(1, 9):   # the scooped top between the ears
-        t = i / 9
-        outline.append((-0.16 + 0.32 * t, 0.8 - 0.12 * math.sin(math.pi * t)))
-    outline += [(0.16, 0.8), (0.31, 1.08), (0.35, 0.82), (0.35, 0.12)]
-    slab = mg.extrude(outline, 0.16, stone, loc=(0, 0, 0), bevel=0.018, smooth=False)
-    parts.append(slab)
-
-    fy = -0.075  # front face plane (protruding pads)
-
-    # ---- paw print: large central pad ----
-    parts.append(mg.part("sphere", stone_dark, loc=(0, fy, 0.47),
-                         scale=(0.17, 0.07, 0.13), smooth=True))
-
-    # ---- four toe beans in an arc above ----
-    toe = mg.part("sphere", stone_dark, loc=(-0.14, fy, 0.585),
-                  scale=(0.085, 0.055, 0.08), smooth=True)
-    parts.append(toe)
-    parts.append(mg.mirror_x(toe))
-    toe2 = mg.part("sphere", stone_dark, loc=(-0.05, fy, 0.665),
-                   scale=(0.085, 0.055, 0.085), smooth=True)
-    parts.append(toe2)
-    parts.append(mg.mirror_x(toe2))
-
-    # ---- glowing green goo ----
-    # puddle spreading on the base
-    parts.append(mg.part("sphere", goo, loc=(0.02, 0.06, 0.10), scale=(0.34, 0.24, 0.05), smooth=True))
-    # bright blob spilling off the right side of the base
-    parts.append(mg.part("sphere", goo, loc=(0.42, -0.02, 0.06), scale=(0.12, 0.12, 0.11), smooth=True))
-
+    # ---- glowing goo, one smooth mass: welling out under the slab, running over the base's front edge, pooling
+    shapes = [{"ellipsoid": (0.03, -0.12, 0.155), "size": (0.06, 0.045, 0.025)},
+              {"capsule": ((0.03, -0.15, 0.15), (0.035, -0.18, 0.02)), "r": 0.03},
+              {"ellipsoid": (0.04, -0.29, 0.004), "size": (0.17, 0.12, 0.016)},
+              {"capsule": ((0.035, -0.18, 0.012), (0.04, -0.26, 0.006)), "r": 0.022}]
     if mg.at_least("mobile-mid"):
-        # smaller drips down the front and across the base
-        for x, y, z, s in [(-0.30, -0.12, 0.09, 0.05), (0.30, 0.10, 0.09, 0.045),
-                           (-0.24, -0.11, 0.32, 0.035), (0.10, -0.13, 0.20, 0.03),
-                           (0.46, 0.06, 0.05, 0.05)]:
-            parts.append(mg.part("sphere", goo, loc=(x, y, z),
-                                 scale=(s, s * 0.9, s * 0.8), smooth=True))
+        shapes += [{"ellipsoid": (0.3, -0.36, 0.003), "size": (0.05, 0.04, 0.01)},
+                   {"ellipsoid": (-0.3, -0.3, 0.003), "size": (0.04, 0.035, 0.009)}]
+    mg.blob(shapes, goo, blend=0.8)
 
-    if mg.at_least("mobile-high"):
-        # fine speckles of ooze near the ground
-        for _ in range(10):
-            x = mg.rng.uniform(-0.36, 0.46)
-            y = mg.rng.uniform(-0.15, 0.15)
-            r = mg.rng.uniform(0.012, 0.03)
-            parts.append(mg.part("sphere", goo, loc=(x, y, 0.10),
-                                 scale=(r, r, r * 0.6), smooth=True))
-
-    mg.join("zc_tombstone_cat", parts)
+    mg.sculpt(tomb, "noise", amount=0.003, scale=18)   # a worn, uneven stone face
+    # moss clumps in the corner between the slab and the base, and on the base's top
+    clump = mg.part("ico", moss, loc=(0, 0, 0), scale=(0.11, 0.09, 0.04), subdiv=1)
+    corners = ((-0.36, -0.12), (0.36, 0.1), (-0.3, 0.14))
+    for k, (cx, cy) in enumerate(corners):   # clumps gathered in a few corners, not sprinkled
+        mg.scatter(tomb, clump if k == len(corners) - 1 else mg.copy(clump), 6, seed=int(cx * 100), scale=(0.6, 1.2), facing=(0, 0, 1), below=0.16,
+                   at=(cx, cy, 0.15), radius=0.12, sink=0.01)

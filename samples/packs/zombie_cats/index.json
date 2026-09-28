@@ -116,12 +116,12 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_tombstone_cat.fbx",
-      "tris": 10244,
+      "tris": 5358,
       "clips": [],
       "dims_m": [
-        0.82,
-        1.0779,
-        0.6425
+        0.84,
+        1.1107,
+        0.5819
       ],
       "bones": 0,
       "variants": [
@@ -132,17 +132,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_tombstone_cat.mobile-high.glb",
-          "tris": 5756,
+          "tris": 2878,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_tombstone_cat.mobile-mid.glb",
-          "tris": 3480,
+          "tris": 1852,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_tombstone_cat.mobile-low.glb",
-          "tris": 760,
+          "tris": 1264,
           "within_budget": true
         }
       }
@@ -192,12 +192,12 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_cardboard_barricade.fbx",
-      "tris": 8879,
+      "tris": 8910,
       "clips": [],
       "dims_m": [
-        1.84,
+        1.81,
         1.33,
-        0.67
+        0.66
       ],
       "bones": 0,
       "variants": [
@@ -208,7 +208,7 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_cardboard_barricade.mobile-high.glb",
-          "tris": 3982,
+          "tris": 4002,
           "within_budget": true
         },
         "mobile-mid": {
@@ -229,14 +229,14 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_toxic_can.fbx",
-      "tris": 20776,
+      "tris": 14288,
       "clips": [
         "bubbles"
       ],
       "dims_m": [
-        1.0,
-        1.2642,
-        1.1546
+        0.9358,
+        1.2966,
+        0.9703
       ],
       "bones": 0,
       "variants": [
@@ -247,17 +247,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_toxic_can.mobile-high.glb",
-          "tris": 12682,
+          "tris": 7918,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_toxic_can.mobile-mid.glb",
-          "tris": 6270,
+          "tris": 5574,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_toxic_can.mobile-low.glb",
-          "tris": 2125,
+          "tris": 3902,
           "within_budget": true
         }
       }
@@ -307,12 +307,12 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_bones_pile.fbx",
-      "tris": 7324,
+      "tris": 9996,
       "clips": [],
       "dims_m": [
         0.6671,
         0.1971,
-        0.2509
+        0.4674
       ],
       "bones": 0,
       "variants": [
@@ -321,17 +321,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_bones_pile.mobile-high.glb",
-          "tris": 4368,
+          "tris": 6150,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_bones_pile.mobile-mid.glb",
-          "tris": 2320,
+          "tris": 3498,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_bones_pile.mobile-low.glb",
-          "tris": 923,
+          "tris": 1506,
           "within_budget": true
         }
       }
@@ -342,12 +342,12 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_scratch_post_ruin.fbx",
-      "tris": 25831,
+      "tris": 23847,
       "clips": [],
       "dims_m": [
-        0.8115,
-        1.1575,
-        0.5708
+        0.6248,
+        1.07,
+        0.56
       ],
       "bones": 0,
       "variants": [
@@ -358,17 +358,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_scratch_post_ruin.mobile-high.glb",
-          "tris": 14926,
+          "tris": 14304,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_scratch_post_ruin.mobile-mid.glb",
-          "tris": 7567,
+          "tris": 7366,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_scratch_post_ruin.mobile-low.glb",
-          "tris": 2338,
+          "tris": 2489,
           "within_budget": true
         }
       }
@@ -379,14 +379,14 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_zombie_cat.fbx",
-      "tris": 44086,
+      "tris": 41363,
       "clips": [
         "idle",
         "shamble"
       ],
       "dims_m": [
-        0.4808,
-        1.0881,
+        0.514,
+        1.0812,
         0.6161
       ],
       "bones": 25,
@@ -396,17 +396,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_zombie_cat.mobile-high.glb",
-          "tris": 14653,
+          "tris": 19049,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_zombie_cat.mobile-mid.glb",
-          "tris": 6620,
+          "tris": 6004,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_zombie_cat.mobile-low.glb",
-          "tris": 2268,
+          "tris": 2677,
           "within_budget": true
         }
       }
@@ -416,7 +416,7 @@
       "title": "Diorama: zombie cat street",
       "kind": "scene",
       "fbx": null,
-      "tris": 360983,
+      "tris": 332387,
       "clips": [
         "bubbles",
         "idle",
@@ -434,17 +434,17 @@
       "tiers": {
         "mobile-low": {
           "file": "zc_diorama.mobile-low.glb",
-          "tris": 50638,
+          "tris": 50190,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_diorama.mobile-mid.glb",
-          "tris": 131747,
+          "tris": 132260,
           "within_budget": true
         },
         "mobile-high": {
           "file": "zc_diorama.mobile-high.glb",
-          "tris": 275969,
+          "tris": 275943,
           "within_budget": true
         }
       }

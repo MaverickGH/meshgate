@@ -10,7 +10,7 @@ def build(mg):
     mg.color("nail", "#2e2117", rough=0.7, metal=0.4, material="rust")
 
     parts = []
-    w = 0.13           # picket width
+    w = 0.17           # picket width (wide boards, as in the concept)
     pd = 0.03          # picket thickness (depth along Y)
     py = -0.035        # picket front plane
     ry = 0.02          # rail plane
@@ -31,8 +31,6 @@ def build(mg):
     for x in (-1.0, 1.0):
         parts.append(mg.part("cube", "wood_post", loc=(x, post_y, H/2),
                              scale=(0.09, 0.08, H), bevel=0.006))
-        parts.append(mg.part("cube", "wood_cap", loc=(x, post_y, H - 0.03),
-                             scale=(0.095, 0.085, 0.06), bevel=0.006))
 
     # --- rails (slightly tilted for a broken look) ---
     for z in (0.78, 0.40):

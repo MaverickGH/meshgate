@@ -54,7 +54,7 @@ def build(mg):
 
     # cardboard-roll "wheels" at the front base corners
     for wx in (-0.80, 0.80):
-        P.append(mg.part("cyl", card_d, loc=(wx, -0.31, 0.13), scale=(0.24, 0.24, 0.12),   # clear of the box front
+        P.append(mg.part("cyl", card_d, loc=(wx, -0.31, 0.09), scale=(0.17, 0.17, 0.1),   # clear of the box front
                          rot=(math.pi / 2, 0, 0), vertices=16))
 
     # dented corner accents (only when there is budget)

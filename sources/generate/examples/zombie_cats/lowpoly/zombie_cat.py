@@ -10,7 +10,7 @@ def build(mg):
     ears = mg.param("ear_size", 1.25, 0.7, 1.7, label="Ear size")
     eye_r = mg.param("eye_size", 0.042, 0.03, 0.055, label="Eye size")
     head_k = mg.param("head_size", 1.0, 0.8, 1.25, label="Head size")
-    fur = mg.color("cat_fur", "#6f7c61", rough=0.85, material="fur")
+    fur = mg.color("cat_fur", "#5f6c52", rough=0.85, material="fur")
     pale = mg.color("pale_fur", "#ece6d8", rough=0.85, material="fur")
     dark = mg.color("dark_fur", "#5f6a52", rough=0.9, material="fur")
     inner = mg.color("inner_ear", "#e8a0a8", rough=0.6)
@@ -21,7 +21,8 @@ def build(mg):
     gold = mg.color("bell_brass", "#d9ae45", rough=0.3, metal=1.0)
 
     hz = 0.8   # head centre height
-    # ---- the body: one piece of clay — a big round head, a pear body, short legs, arms hanging at the sides
+    # ---- the body: one piece of clay — a big round head, a pear body and short legs. Arms, the white belly, muzzle,
+    # paws and feet are pieces of their own, so their edges are clean shapes, as in the concept
     shapes = [
         {"ellipsoid": (0, 0.02, 0.33), "size": (0.17, 0.14, 0.12)},                     # hips
         {"ellipsoid": (0, 0.0, 0.46), "size": (0.155, 0.13, 0.15)},                      # belly
@@ -29,30 +30,26 @@ def build(mg):
         {"ball": (0, 0.0, 0.66), "r": 0.09},                                             # neck
         {"ellipsoid": (0, -0.01, hz), "size": (0.2 * head_k, 0.175 * head_k, 0.17 * head_k)},   # head
         {"ball": (-0.1, -0.1, hz - 0.05), "r": 0.075}, {"ball": (0.1, -0.1, hz - 0.05), "r": 0.075},   # cheeks
-        {"ball": (-0.038, -0.172, hz - 0.045), "r": 0.045}, {"ball": (0.038, -0.172, hz - 0.045), "r": 0.045},  # muzzle
-        {"ball": (0, -0.15, hz - 0.085), "r": 0.036},                                    # chin
     ]
     for sx in (-1, 1):
-        shapes += [
-            {"capsule": ((sx * 0.1, 0.02, 0.3), (sx * 0.105, 0.0, 0.08)), "r": 0.07},     # legs
-            {"ellipsoid": (sx * 0.105, -0.04, 0.042), "size": (0.078, 0.11, 0.045)},      # feet
-            {"capsule": ((sx * 0.135, 0.0, 0.6), (sx * 0.175, -0.02, 0.45)), "r": 0.05},  # upper arms
-            {"capsule": ((sx * 0.175, -0.02, 0.45), (sx * 0.18, -0.03, 0.37)), "r": 0.044},   # forearms
-            {"ball": (sx * 0.18, -0.035, 0.34), "r": 0.052},                                # paws
-        ]
+        shapes.append({"capsule": ((sx * 0.1, 0.02, 0.3), (sx * 0.105, 0.0, 0.07)), "r": 0.07})     # legs
     body = mg.blob(shapes, fur, blend=0.9, detail=0.45)
     mg.focus((0, -0.12, hz), 0.14)   # the face is where players look: more polygons there
-    mg.focus((0, -0.14, 0.47), 0.13)  # and a clean edge round the white belly
-
-    # ---- painted like the concept: white muzzle, an oval belly, white paws and feet, a darker back
-    mg.paint(body, pale, at=(0, -0.18, hz - 0.06), radius=0.075, rough=0.1, seed=1)
-    mg.paint(body, pale, at=(0, -0.14, 0.47), radius=0.12, facing=(0, -1, 0), rough=0.0, seed=2)   # a clean oval
-    mg.paint(body, pale, at=(0, -0.04, 0.02), radius=0.2, below=0.075, rough=0.2, seed=3)   # feet
+    mg.paint(body, dark, at=(0, 0.13, 0.6), radius=0.2, facing=(0, 1, 0.3), rough=0.4, seed=4)   # a darker back
+    white = [
+        mg.part("sphere", pale, loc=(0, -0.118, 0.47), scale=(0.2, 0.07, 0.24)),                   # the belly oval
+        mg.part("sphere", pale, loc=(-0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085)),     # muzzle
+        mg.part("sphere", pale, loc=(0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085)),
+        mg.part("sphere", pale, loc=(0, -0.152, hz - 0.085), scale=(0.072, 0.065, 0.06)),         # chin
+    ]
+    limbs = []
     for sx in (-1, 1):
-        mg.paint(body, pale, at=(sx * 0.18, -0.035, 0.34), radius=0.06, rough=0.0, seed=7 + sx)   # paws
-    mg.paint(body, dark, at=(0, 0.13, 0.6), radius=0.2, facing=(0, 1, 0.3), rough=0.4, seed=4)
+        limbs.append(mg.tube([(sx * 0.14, 0.0, 0.61), (sx * 0.185, -0.015, 0.5), (sx * 0.205, -0.025, 0.4)], 0.0, fur,
+                             radii=[0.05, 0.046, 0.042], sides=6))                                  # arm
+        white.append(mg.part("sphere", pale, loc=(sx * 0.207, -0.03, 0.37), scale=(0.1, 0.1, 0.095)))   # paw
+        white.append(mg.part("sphere", pale, loc=(sx * 0.105, -0.045, 0.045), scale=(0.155, 0.21, 0.09)))  # foot
 
-    # ---- a few sculpted features: a mouth, the nose bridge, eyelids, toes
+    # ---- a few sculpted features: a mouth and the eyelids
     mouth = [[(0, -0.215, hz - 0.07), (sx * 0.035, -0.205, hz - 0.078), (sx * 0.06, -0.185, hz - 0.07)] for sx in (-1, 1)]
     for m in mouth:
         mg.sculpt(body, "crease", path=m, radius=0.007, amount=0.004)
@@ -60,11 +57,8 @@ def build(mg):
         cx, cz = sx * 0.07, hz + 0.03
         upper = [(cx + 0.05 * math.cos(math.radians(a)), -0.17, cz + 0.045 * math.sin(math.radians(a))) for a in range(20, 170, 25)]
         mg.sculpt(body, "ridge", path=upper, radius=0.012, amount=0.008)
-        for dx in (-0.025, 0.0, 0.025):   # toes
-            toe = [(sx * 0.105 + dx, -0.15, 0.03), (sx * 0.105 + dx, -0.12, 0.065)]
-            mg.sculpt(body, "crease", path=toe, radius=0.007, amount=0.005)
 
-    parts = [body]
+    parts = [body, *white, *limbs]
 
     # ---- big ears with pink insides
     for sx in (-1, 1):
@@ -106,8 +100,8 @@ def build(mg):
     # ---- a skeleton for the engines (Humanoid bone names) and zombie clips
     mg.rig(body, {"hips": (0, 0.02, 0.33), "spine": (0, 0.0, 0.44), "chest": (0, 0.0, 0.57), "neck": (0, 0.0, 0.66),
                   "head": (0, -0.01, 0.7), "head_top": (0, -0.01, 0.98),
-                  "shoulder_l": (0.135, 0.0, 0.6), "elbow_l": (0.175, -0.02, 0.45), "hand_l": (0.18, -0.03, 0.37),
-                  "fingers_l": (0.18, -0.035, 0.3), "hip_l": (0.1, 0.02, 0.3), "knee_l": (0.103, 0.01, 0.18),
+                  "shoulder_l": (0.135, 0.0, 0.6), "elbow_l": (0.185, -0.015, 0.5), "hand_l": (0.205, -0.025, 0.4),
+                  "fingers_l": (0.207, -0.03, 0.33), "hip_l": (0.1, 0.02, 0.3), "knee_l": (0.103, 0.01, 0.18),
                   "ankle_l": (0.105, 0.0, 0.07), "toe_l": (0.105, -0.12, 0.03)},
            tail=[(0, 0.12, 0.32), (0.02, 0.24, 0.3), (0.06, 0.33, 0.38), (0.1, 0.36, 0.52), (0.12, 0.33, 0.62)])
     mg.clip("idle", "idle")

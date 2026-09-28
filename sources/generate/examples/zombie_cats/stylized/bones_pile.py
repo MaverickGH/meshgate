@@ -46,10 +46,12 @@ def build(mg):
     # the tail fin: a fan standing up at the end of the spine
     parts.append(mg.extrude([(0.0, 0.0), (0.1, 0.085), (0.07, 0.0), (0.1, -0.085)], 0.016, bone,
                             loc=(x1 - 0.005, 0.0, z + 0.005), bevel=0.004))
-    mg.join("zc_bones_pile", parts)
+    fish = mg.join("zc_bones_pile", parts)
+    # a second, smaller skeleton lying across behind it: a pile, as in the concept
+    mg.attach(mg.copy(fish, loc=(0.02, 0.06, 0.0), rot=(0, 0, 1.2), scale=(0.75, 0.75, 0.75)), fish)
 
     # two loose little bones on the ground beside it
-    for (bx, by, a, ln) in ((0.05, 0.16, 0.6, 0.12), (-0.12, 0.18, -0.3, 0.09)):
+    for (bx, by, a, ln) in ((0.22, -0.12, 0.6, 0.12), (-0.22, 0.2, -0.3, 0.09)):
         dx, dy = math.cos(a) * ln / 2, math.sin(a) * ln / 2
         loose = [mg.tube([(bx - dx, by - dy, 0.012), (bx + dx, by + dy, 0.012)], 0.009, bone_d, sides=6, smooth=smooth)]
         for s in (-1, 1):

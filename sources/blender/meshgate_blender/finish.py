@@ -333,8 +333,8 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
             math_("ADD", math_("MULTIPLY", clumps, .8), math_("MULTIPLY", small, .4)), .1),                        # ground
         8: (mix(math_("MULTIPLY", crevice, .5), mix(math_("MULTIPLY", pores, .35), col, (.35, .3, .22, 1.0)), (.55, .45, .28, 1.0)),
             math_("MULTIPLY", pores, -.5), 0.0),                                                                     # bone
-        9: (shade(shade(col, maprange(strands, .3, .7, .78, 1.12)), maprange(tufts, .3, .7, .85, 1.1)),
-            math_("ADD", math_("MULTIPLY", strands, .9), math_("MULTIPLY", tufts, .5)), .08),                     # fur
+        9: (shade(shade(col, maprange(strands, .3, .7, .93, 1.05)), maprange(tufts, .3, .7, .94, 1.05)),
+            math_("ADD", math_("MULTIPLY", strands, .35), math_("MULTIPLY", tufts, .3)), .08),                    # fur: soft
     }
     relief, rough_extra = None, None
     for k, (c, h, r) in looks.items():

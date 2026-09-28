@@ -30,15 +30,15 @@ version, and the Unity and Godot tests load every asset against this `index.json
 | `zc_ground_tile.glb` | Ground tile (paw prints) | 1,094 → 5,741 | 2.00×0.05×2.00 | — | — | — |
 | `zc_road_tile.glb` | Road tile (fish marks) | 67 → 758 | 2.00×0.11×2.00 | — | — | — |
 | `zc_fence_broken.glb` | Broken fence (cat-ear pickets) | 1,354 → 4,943 | 1.95×1.10×0.23 | — | — | zc_fence_broken.unreal.fbx, zc_fence_broken.godot.glb |
-| `zc_tombstone_cat.glb` | Cat tombstone | 760 → 10,244 | 0.82×1.08×0.64 | — | — | zc_tombstone_cat.unreal.fbx, zc_tombstone_cat.godot.glb |
+| `zc_tombstone_cat.glb` | Cat tombstone | 1,264 → 5,358 | 0.84×1.11×0.58 | — | — | zc_tombstone_cat.unreal.fbx, zc_tombstone_cat.godot.glb |
 | `zc_dead_tree.glb` | Dead tree + yarn | 371 → 2,336 | 1.58×2.61×0.89 | yarn_swing | — | zc_dead_tree.unreal.fbx, zc_dead_tree.godot.glb |
-| `zc_cardboard_barricade.glb` | Box barricade (hiding cat) | 680 → 8,879 | 1.84×1.33×0.67 | — | — | zc_cardboard_barricade.unreal.fbx, zc_cardboard_barricade.godot.glb |
-| `zc_toxic_can.glb` | Toxic cat food can | 2,125 → 20,776 | 1.00×1.26×1.15 | bubbles | — | zc_toxic_can.unreal.fbx, zc_toxic_can.godot.glb |
+| `zc_cardboard_barricade.glb` | Box barricade (hiding cat) | 680 → 8,910 | 1.81×1.33×0.66 | — | — | zc_cardboard_barricade.unreal.fbx, zc_cardboard_barricade.godot.glb |
+| `zc_toxic_can.glb` | Toxic cat food can | 3,902 → 14,288 | 0.94×1.30×0.97 | bubbles | — | zc_toxic_can.unreal.fbx, zc_toxic_can.godot.glb |
 | `zc_street_lamp.glb` | Fish street lamp | 294 → 8,218 | 0.56×3.15×0.96 | swing | — | zc_street_lamp.unreal.fbx, zc_street_lamp.godot.glb |
-| `zc_bones_pile.glb` | Fish bones | 923 → 7,324 | 0.67×0.20×0.25 | — | — | — |
-| `zc_scratch_post_ruin.glb` | Ruined scratching post | 2,338 → 25,831 | 0.81×1.16×0.57 | — | — | zc_scratch_post_ruin.unreal.fbx, zc_scratch_post_ruin.godot.glb |
-| `zc_zombie_cat.glb` | Zombie cat (Humanoid, idle/shamble) | 2,268 → 44,086 | 0.48×1.09×0.62 | idle, shamble | 25 | — |
-| `zc_diorama.glb` | Diorama: zombie cat street | 50,636 → 360,983 | 8.00×3.15×8.00 | bubbles, idle, shamble, swing, yarn_swing | 75 | — |
+| `zc_bones_pile.glb` | Fish bones | 1,506 → 9,996 | 0.67×0.20×0.47 | — | — | — |
+| `zc_scratch_post_ruin.glb` | Ruined scratching post | 2,489 → 23,847 | 0.62×1.07×0.56 | — | — | zc_scratch_post_ruin.unreal.fbx, zc_scratch_post_ruin.godot.glb |
+| `zc_zombie_cat.glb` | Zombie cat (Humanoid, idle/shamble) | 2,677 → 41,363 | 0.51×1.08×0.62 | idle, shamble | 25 | — |
+| `zc_diorama.glb` | Diorama: zombie cat street | 50,190 → 332,387 | 8.00×3.15×8.00 | bubbles, idle, shamble, swing, yarn_swing | 75 | — |
 
 Every asset also has `<name>.fbx` (except the diorama). All files satisfy the contract with `--strict`.
 
