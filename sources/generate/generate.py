@@ -1196,10 +1196,30 @@ def facts_block(facts: dict | None) -> str:
     return "\n\nMeasured on the built model (facts, not guesses):\n" + "\n".join(lines) if lines else ""
 
 
-def review_block(code: str, round_: int, rounds: int, has_reference: bool, image_name: str, facts: dict | None = None) -> str:
+def match_block(match: dict | None) -> str:
+    """How the reference and the model compare on the sheet (render_views.py's matched view), for the review."""
+    if not match:
+        return ""
+    return (f" Its left block shows at the top the reference and your model from the angle that matches it best "
+            f"({match['yaw_deg']}° round from the front), and below them their outlines laid over each other: white where "
+            f"they agree, red where only the reference has shape, blue where only your model has. Silhouette match "
+            f"{match['iou']:.2f} (1.0 = the same outline); make the red and blue areas small — they are the proportions "
+            "to fix first.")
+
+
+def read_match(sheet: Path) -> dict | None:
+    try:
+        return json.loads(sheet.with_suffix(".match.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def review_block(code: str, round_: int, rounds: int, has_reference: bool, image_name: str, facts: dict | None = None,
+                 match: dict | None = None) -> str:
     return (f"\n# Review round {round_} of {rounds}\n\nMeshGate built the code below cleanly. The image `{image_name}` "
             "shows " + ("on the left the reference picture and on the right " if has_reference else "")
-            + "your model rendered in Blender from four sides (3/4, front, side and back; a flat object from above). "
+            + "your model rendered in Blender from four sides (3/4, front, side and back; a flat object from above)."
+            + match_block(match) + " "
             "Look at it the way an art director would, against the reference and the description. Start your answer "
             "with up to 8 short bullet points naming the biggest differences — silhouette, proportions, pose, colours, "
             "missing or wrong parts, parts floating in the air or sunk out of sight. Check in this order: 1 silhouette "
@@ -1266,10 +1286,13 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         if not rendered:
             say("    could not render the views — review stopped", stage="review", round=r)
             break
+        m = read_match(sheet)
+        if m:
+            say(f"    silhouette match with the reference: {m['iou']:.2f} (from {m['yaw_deg']}° round)", stage="review", round=r)
         prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
                               size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
                               anims=args.anims, feedback=review_block(code, r, rounds, bool(image), reference_name(str(sheet)),
-                                                                      report.get("facts")))
+                                                                      report.get("facts"), read_match(sheet)))
         label = args.ai_cmd or args.ai + (f" ({args.model})" if args.model else "")
         say(f"[review {r}/{rounds}] asking {label} to compare it with the {'reference' if image else 'description'}…",
             stage="review", round=r)
@@ -1286,7 +1309,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         closeups = parse_views(answer)
         versions[cur]["score"] = match
         entry = {"round": r, "match": match, "notes": notes, "image": sheet.name, "accepted": False,
-                 "closeups": closeups or None}
+                 "closeups": closeups or None, "silhouette": (read_match(sheet) or {}).get("iou")}
         reviews.append(entry)
         for n in notes:
             say(f"    · {n}", stage="review", round=r)

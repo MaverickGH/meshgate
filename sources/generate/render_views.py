@@ -93,6 +93,113 @@ if (hi.z - lo.z) < 0.3 * max(hi.x - lo.x, hi.y - lo.y):   # flat things (a tile,
 tmp = os.path.splitext(out)[0]
 tiles = []
 shots = [(name, centre, Vector(d).normalized(), dist) for name, d in views]
+
+
+def _mask_crop(mask, n=64):
+    """A silhouette cropped to its box and fitted, aspect kept, into an n × n square (for comparing outlines)."""
+    import numpy as np
+    ys, xs = np.nonzero(mask)
+    if len(xs) < 8:
+        return None
+    m = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    h, w = m.shape
+    k = n / max(h, w)
+    out_ = np.zeros((n, n), bool)
+    hh, ww = max(1, int(h * k)), max(1, int(w * k))
+    yi = (np.arange(hh) / k).astype(int).clip(0, h - 1)
+    xi = (np.arange(ww) / k).astype(int).clip(0, w - 1)
+    oy, ox = (n - hh) // 2, (n - ww) // 2
+    out_[oy:oy + hh, ox:ox + ww] = m[yi][:, xi]
+    return out_
+
+
+def _main_shape(mask):
+    """The largest connected shape of a mask with its holes filled (a picture's shadow specks and background noise go)."""
+    import numpy as np
+    h, w = mask.shape
+    label = np.zeros((h, w), int)
+    best, best_n, k = 0, 0, 0
+    for y0 in range(h):
+        for x0 in range(w):
+            if not mask[y0, x0] or label[y0, x0]:
+                continue
+            k += 1
+            stack, n = [(y0, x0)], 0
+            label[y0, x0] = k
+            while stack:
+                y, x = stack.pop()
+                n += 1
+                for yy, xx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                    if 0 <= yy < h and 0 <= xx < w and mask[yy, xx] and not label[yy, xx]:
+                        label[yy, xx] = k
+                        stack.append((yy, xx))
+            if n > best_n:
+                best, best_n = k, n
+    shape = label == best
+    outside = np.zeros((h, w), bool)   # fill holes: everything the border cannot reach around the shape
+    stack = [(y, x) for y in range(h) for x in (0, w - 1)] + [(y, x) for x in range(w) for y in (0, h - 1)]
+    while stack:
+        y, x = stack.pop()
+        if 0 <= y < h and 0 <= x < w and not outside[y, x] and not shape[y, x]:
+            outside[y, x] = True
+            stack += [(y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)]
+    return ~outside
+
+
+match = None
+if reference:
+    # the view that matches the reference: its outline (the background is the border's colour) against the model's
+    # silhouette from a ring of angles; the best one is rendered next to the picture, with the outlines overlaid
+    import numpy as np
+    rimg = bpy.data.images.load(os.path.abspath(reference))
+    rw_, rh_ = rimg.size
+    ra = np.array(rimg.pixels[:]).reshape(rh_, rw_, rimg.channels)[..., :3]
+    border = np.concatenate([ra[0], ra[-1], ra[:, 0], ra[:, -1]])
+    bgc = np.median(border, axis=0)
+    step = max(1, max(rw_, rh_) // 160)   # a small copy is enough for an outline
+    small = ra[::step, ::step]
+    ref_mask = np.linalg.norm(small - bgc, axis=-1) > 0.15
+    # a shadow is the background, only darker: the same hue at a lower brightness — not part of the object
+    lum, bg_lum = small.mean(-1, keepdims=True), max(float(bgc.mean()), 1e-3)
+    hue_off = np.linalg.norm(small / np.maximum(lum, 1e-3) - bgc / bg_lum, axis=-1)
+    ref_mask &= ~((lum[..., 0] < bg_lum) & (hue_off < 0.25))
+    ref_sil = _mask_crop(_main_shape(ref_mask))
+    if ref_sil is not None:
+        floor.hide_render = True
+        engine, film = sc.render.engine, sc.render.film_transparent
+        sc.render.engine = "BLENDER_WORKBENCH"
+        sc.render.film_transparent = True
+        rx, ry = sc.render.resolution_x, sc.render.resolution_y
+        sc.render.resolution_x = sc.render.resolution_y = 128
+        best = None
+        for elev in (0.1, 0.45):
+            for yaw in range(-70, 71, 20):
+                a_ = math.radians(yaw)
+                d = Vector((math.sin(a_), -math.cos(a_), elev)).normalized()
+                cam.location = centre + d * dist
+                cam.rotation_euler = (centre - cam.location).to_track_quat("-Z", "Y").to_euler()
+                sc.render.filepath = f"{tmp}.sil.png"
+                bpy.ops.render.render(write_still=True)
+                si = bpy.data.images.load(sc.render.filepath)
+                sil = _mask_crop(np.array(si.pixels[:]).reshape(128, 128, 4)[..., 3] > 0.5)
+                bpy.data.images.remove(si)
+                if sil is None:
+                    continue
+                iou = float((sil & ref_sil).sum()) / max(1, (sil | ref_sil).sum())
+                if best is None or iou > best[0]:
+                    best = (iou, yaw, elev, d, sil)
+        os.remove(f"{tmp}.sil.png")
+        sc.render.engine, sc.render.film_transparent = engine, film
+        sc.render.resolution_x, sc.render.resolution_y = rx, ry
+        floor.hide_render = False
+        if best:
+            match = {"iou": round(best[0], 3), "yaw_deg": best[1], "elevation": best[2]}
+            shots.append(("matched", centre, best[3], dist))
+            both = np.zeros((64, 64, 3))
+            both[best[4] & ref_sil] = (1, 1, 1)
+            both[ref_sil & ~best[4]] = (0.9, 0.2, 0.2)
+            both[best[4] & ~ref_sil] = (0.25, 0.45, 1.0)
+            match["_overlay"] = both
 for i, c in enumerate(closeups):   # the AI's own camera: a point, the direction it looks from, the width to frame
     look = Vector(c.get("from") or (0.6, -1, 0.4)).normalized()
     size = max(float(c.get("size") or radius * 0.5), radius * 0.05)
@@ -110,9 +217,10 @@ left = px if reference else 0
 cols = 3 if closeups else 2   # close-ups take a third column: 3/4, front, close-up 1 / side, back, close-up 2
 width = left + half * cols
 pixels = [0.2, 0.25, 0.34, 1.0] * (width * px)
-order = [0, 1, 4, 2, 3, 5] if closeups else [0, 1, 2, 3]
+close_idx = [len(views) + i for i in range(len(closeups))] + [None, None]
+order = [0, 1, close_idx[0], 2, 3, close_idx[1]] if closeups else [0, 1, 2, 3]
 for slot, ti in enumerate(order):
-    if ti >= len(tiles):
+    if ti is None or ti >= len(tiles):
         continue
     img = tiles[ti]
     src_px = list(img.pixels)
@@ -121,20 +229,34 @@ for slot, ti in enumerate(order):
         s0 = row * half * 4
         d = ((oy + row) * width + ox) * 4
         pixels[d:d + half * 4] = src_px[s0:s0 + half * 4]
+def _paste(img_rgb, ox, oy, box):
+    """Paste an (h, w, 3) float array fitted into a box × box square at (ox, oy) of the sheet (rows bottom-up)."""
+    import numpy as np
+    h, w = img_rgb.shape[:2]
+    k = min(box / w, box / h)
+    ww, hh = max(1, int(w * k)), max(1, int(h * k))
+    yi = (np.arange(hh) / k).astype(int).clip(0, h - 1)
+    xi = (np.arange(ww) / k).astype(int).clip(0, w - 1)
+    fit = img_rgb[yi][:, xi]
+    x0, y0 = ox + (box - ww) // 2, oy + (box - hh) // 2
+    for row in range(hh):
+        d = ((y0 + row) * width + x0) * 4
+        line = [0.0] * (ww * 4)
+        line[0::4], line[1::4], line[2::4], line[3::4] = list(fit[row, :, 0]), list(fit[row, :, 1]), list(fit[row, :, 2]), [1.0] * ww
+        pixels[d:d + ww * 4] = line
+
+
 if reference:
+    import numpy as np
     ref = bpy.data.images.load(os.path.abspath(reference))
-    rw, rh = ref.size
-    k = min(px / rw, px / rh)
-    w, h = max(1, int(rw * k)), max(1, int(rh * k))
-    ref.scale(w, h)
-    rp = list(ref.pixels)
-    ch = ref.channels
-    ox, oy = (px - w) // 2, (px - h) // 2
-    for row in range(h):
-        for col in range(w):
-            si = (row * w + col) * ch
-            d = ((oy + row) * width + ox + col) * 4
-            pixels[d:d + 3] = rp[si:si + 3]
+    rgb = np.array(ref.pixels[:]).reshape(ref.size[1], ref.size[0], ref.channels)[..., :3]
+    if match:   # the picture and the matched view side by side on top, their outlines overlaid below
+        _paste(rgb, 0, half, half)
+        mt = tiles[[n for n, *_ in shots].index("matched")]
+        _paste(np.array(mt.pixels[:]).reshape(half, half, 4)[..., :3], half, half, half)
+        _paste(match.pop("_overlay"), 0, 0, half)
+    else:
+        _paste(rgb, 0, 0, px)
 sheet = bpy.data.images.new("sheet", width, px, alpha=False)
 sheet.pixels = pixels
 sheet.filepath_raw = out
@@ -142,4 +264,9 @@ sheet.file_format = "PNG"
 sheet.save()
 for name, *_ in shots:
     os.remove(f"{tmp}.{name}.png")
+if match:
+    with open(os.path.splitext(out)[0] + ".match.json", "w") as f:
+        _json.dump(match, f)
+    print(f"MeshGate views: best match with the reference {match['iou']:.2f} at {match['yaw_deg']}° round, "
+          f"elevation {match['elevation']}")
 print(f"MeshGate views: {out}")

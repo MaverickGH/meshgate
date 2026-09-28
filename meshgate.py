@@ -704,7 +704,8 @@ def _check_review(exe: str, work: Path) -> bool:
         good = (g["ok"] and [x["match"] for x in rv] == [6.0, 9.0] and rv[0]["accepted"] and not rv[1]["accepted"]
                 and rv[0].get("closeups") == [{"at": [0.0, 0.0, 0.4], "from": [1.0, -1.0, 0.5], "size": 0.3}]
                 and all("attached" in x["notes"][0] for x in rv) and "#d0342a" in (out / "review.py").read_text()
-                and (out / "views.png").exists() and (out / "review_1.png").exists())
+                and (out / "views.png").exists() and (out / "review_1.png").exists()
+                and all(0.05 < (x.get("silhouette") or 0) <= 1 for x in rv))   # the model matched against the picture
     except Exception as exc:  # noqa: BLE001
         good = False
         print(f"  ✗ visual review loop: {exc}")

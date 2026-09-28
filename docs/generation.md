@@ -267,6 +267,13 @@ the result worse than a clean build. The loop stops at 9/10 or after N rounds. T
 gets the measured facts (floating pieces, triangles per line of code) with the picture. Every built version keeps the
 score its review gave it; if a later round scores lower, the best version is the one kept.
 
+With a reference picture the sheet also compares the two directly: MeshGate cuts the picture's outline from its
+background (shadows left out), renders the model's silhouette from a ring of angles and picks the one that matches best.
+The picture and the model from that angle stand side by side, and below them the two outlines are laid over each other —
+white where they agree, red where only the picture has shape, blue where only the model has. The AI gets the silhouette
+match as a number (1.0 = the same outline) and is told to shrink the red and blue areas first; `gen.json` keeps it per
+round.
+
 Every clean build the AI writes is also remembered on your computer (`~/.meshgate/examples`), and the next request for
 something similar gets the closest one or two as worked examples — the library of what worked grows with use. Every round's sheet and answer stay in
 the output folder (`review_1.png`, `review_1.answer.md`, final `views.png`), and `gen.json` lists the scores and notes.

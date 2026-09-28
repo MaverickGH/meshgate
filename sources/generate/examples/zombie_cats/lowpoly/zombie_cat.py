@@ -33,21 +33,21 @@ def build(mg):
     ]
     for sx in (-1, 1):
         shapes.append({"capsule": ((sx * 0.1, 0.02, 0.3), (sx * 0.105, 0.0, 0.07)), "r": 0.07})     # legs
-    body = mg.blob(shapes, fur, blend=0.9, detail=0.45)
+    body = mg.blob(shapes, fur, blend=0.9, detail=0.22)   # coarse clay: big flat facets, as in the concept
     mg.focus((0, -0.12, hz), 0.14)   # the face is where players look: more polygons there
     mg.paint(body, dark, at=(0, 0.13, 0.6), radius=0.2, facing=(0, 1, 0.3), rough=0.4, seed=4)   # a darker back
     white = [
-        mg.part("sphere", pale, loc=(0, -0.118, 0.47), scale=(0.2, 0.07, 0.24)),                   # the belly oval
-        mg.part("sphere", pale, loc=(-0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085)),     # muzzle
-        mg.part("sphere", pale, loc=(0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085)),
-        mg.part("sphere", pale, loc=(0, -0.152, hz - 0.085), scale=(0.072, 0.065, 0.06)),         # chin
+        mg.part("sphere", pale, loc=(0, -0.118, 0.47), scale=(0.2, 0.07, 0.24), segments=7, ring_count=5),                   # the belly oval
+        mg.part("sphere", pale, loc=(-0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085), segments=7, ring_count=5),     # muzzle
+        mg.part("sphere", pale, loc=(0.036, -0.172, hz - 0.045), scale=(0.1, 0.085, 0.085), segments=7, ring_count=5),
+        mg.part("sphere", pale, loc=(0, -0.152, hz - 0.085), scale=(0.072, 0.065, 0.06), segments=7, ring_count=5),         # chin
     ]
     limbs = []
     for sx in (-1, 1):
         limbs.append(mg.tube([(sx * 0.14, 0.0, 0.61), (sx * 0.185, -0.015, 0.5), (sx * 0.205, -0.025, 0.4)], 0.0, fur,
-                             radii=[0.05, 0.046, 0.042], sides=6))                                  # arm
-        white.append(mg.part("sphere", pale, loc=(sx * 0.207, -0.03, 0.37), scale=(0.1, 0.1, 0.095)))   # paw
-        white.append(mg.part("sphere", pale, loc=(sx * 0.105, -0.045, 0.045), scale=(0.155, 0.21, 0.09)))  # foot
+                             radii=[0.05, 0.046, 0.042], sides=5))                                  # arm
+        white.append(mg.part("sphere", pale, loc=(sx * 0.207, -0.03, 0.37), scale=(0.1, 0.1, 0.095), segments=7, ring_count=5))   # paw
+        white.append(mg.part("sphere", pale, loc=(sx * 0.105, -0.045, 0.045), scale=(0.155, 0.21, 0.09), segments=7, ring_count=5))  # foot
 
     # ---- a few sculpted features: a mouth and the eyelids
     mouth = [[(0, -0.215, hz - 0.07), (sx * 0.035, -0.205, hz - 0.078), (sx * 0.06, -0.185, hz - 0.07)] for sx in (-1, 1)]
@@ -63,21 +63,21 @@ def build(mg):
     # ---- big ears with pink insides
     for sx in (-1, 1):
         ear = mg.part("cone", fur, loc=(sx * 0.12, -0.01, hz + 0.13 + 0.04 * ears), scale=(0.13 * ears, 0.06 * ears, 0.17 * ears),
-                      rot=(0.08, sx * 0.3, 0))
+                      rot=(0.08, sx * 0.3, 0), vertices=4)
         inside = mg.part("cone", inner, loc=(sx * 0.118, -0.036, hz + 0.12 + 0.035 * ears), scale=(0.09 * ears, 0.02 * ears, 0.12 * ears),
-                         rot=(0.08, sx * 0.3, 0))
+                         rot=(0.08, sx * 0.3, 0), vertices=4)
         parts += [ear, inside]
 
     # ---- green eyes with a slit pupil (a soft glow, not a lamp), a pink nose
     for sx in (-1, 1):
         parts.append(mg.eye((sx * 0.07, -0.15, hz + 0.03), eye_r, iris, look=(sx * 0.1, -1, 0.0), pupil="round",
                             pupil_size=0.42))
-    parts.append(mg.part("sphere", nose, loc=(0, -0.222, hz - 0.03), scale=(0.034, 0.02, 0.022)))
+    parts.append(mg.part("sphere", nose, loc=(0, -0.222, hz - 0.03), scale=(0.034, 0.02, 0.022), segments=7, ring_count=5))
 
     # ---- collar with a brass bell
     parts.append(mg.part("torus", collar_c, loc=(0, -0.01, 0.668), scale=(0.132, 0.128, 0.132), rot=(0.18, 0, 0),
-                         major_radius=1.0, minor_radius=0.2))
-    bell = mg.part("sphere", gold, loc=(0, -0.138, 0.638), scale=(0.05, 0.05, 0.05))
+                         major_radius=1.0, minor_radius=0.2, major_segments=8, minor_segments=4))
+    bell = mg.part("sphere", gold, loc=(0, -0.138, 0.638), scale=(0.05, 0.05, 0.05), segments=7, ring_count=5)
     slot = mg.part("cube", gold, loc=(0, -0.165, 0.628), scale=(0.034, 0.03, 0.006))
     mg.cut(bell, slot)
     parts.append(bell)

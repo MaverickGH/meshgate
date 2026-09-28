@@ -291,6 +291,11 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.92, 1.06),
                 maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.95, 1.04))
     var = mix(math_("MULTIPLY", metal, 0.7), var, 1.0)
+    fur_kind = nodes.new("ShaderNodeMath")   # fur keeps an even coat: its colour lives in the strands, not in blotches
+    fur_kind.operation = "COMPARE"
+    links.new(math_("FLOOR", math_("MULTIPLY", sep_orm.outputs[0], 16.0)), fur_kind.inputs[0])
+    fur_kind.inputs[1].default_value, fur_kind.inputs[2].default_value = 9.0, 0.5
+    var = mix(math_("MULTIPLY", fur_kind.outputs[0], 0.85), var, 1.0)
     col = mix(1.0, base_colour, var, "MULTIPLY")
     ao = nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 16
@@ -333,7 +338,7 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
             math_("ADD", math_("MULTIPLY", clumps, .8), math_("MULTIPLY", small, .4)), .1),                        # ground
         8: (mix(math_("MULTIPLY", crevice, .5), mix(math_("MULTIPLY", pores, .35), col, (.35, .3, .22, 1.0)), (.55, .45, .28, 1.0)),
             math_("MULTIPLY", pores, -.5), 0.0),                                                                     # bone
-        9: (shade(shade(col, maprange(strands, .3, .7, .93, 1.05)), maprange(tufts, .3, .7, .94, 1.05)),
+        9: (shade(shade(col, maprange(strands, .3, .7, .95, 1.03)), maprange(tufts, .3, .7, .985, 1.015)),
             math_("ADD", math_("MULTIPLY", strands, .35), math_("MULTIPLY", tufts, .3)), .08),                    # fur: soft
     }
     relief, rough_extra = None, None
@@ -681,6 +686,10 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
         # relief comes from the detailed model; colours stay on the model itself, where painted edges are soft and thin
         # parts (eyes in their sockets, whiskers) cannot pick up a neighbour's colour
         from_high = btype == "NORMAL" and bool(high)
+        # the detailed model is only the source of the relief: while colour and occlusion bake it must not be in the
+        # scene, or occlusion rays catch its surface, pressed a hair above or below this one, as dark blotches
+        for h in high:
+            h.hide_render = not from_high
         for i, o in enumerate(bakers):   # into the shared image; clear only before the first
             for x in ctx.view_layer.objects:
                 x.select_set(x is o or (from_high and x in high))
@@ -706,6 +715,8 @@ def _weathered(ctx, scene, budget, tier, tmp, name, want, clean, high, hero=Fals
         if normal_px:
             bake("normal", normal_px, True)
     finally:
+        for h in high:
+            h.hide_render = False
         if proxy:
             me = proxy.data
             bpy.data.objects.remove(proxy)
