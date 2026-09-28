@@ -56,6 +56,7 @@ def _linear(c: float) -> float:
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+UNFIGHT = 0.0008   # how far a face lying flat on another piece's face is moved out (meters)
 SRC_ATTR = "mg_src"   # which line of build code made each vertex (geometry facts; never exported)
 _PUBLIC = {"part", "lathe", "tube", "curve", "extrude", "blob", "skin", "model", "eye", "copy", "mirror_x", "scatter"}
 
@@ -1597,6 +1598,13 @@ class Kit:
             if not painted and self.level == 3:   # a small region may fall between the faces of a coarse tier
                 raise ModelError(f"paint({color!r}) touched no faces — check at / radius / facing / heights")
             return obj
+        if centre is not None and not self._faceted:
+            # faces are painted whole, so on a sparse mesh the region's edge follows its facets (a ragged belly patch):
+            # split the edges along the edge of the region first, so it comes out round
+            band = max(radius * 0.2, 0.01)
+            self._refine(obj, max(radius / 7, 0.004), rounds=3, near=lambda q: abs((q - centre).length - radius) < band)
+            me = obj.data
+            uv = me.uv_layers.active.data
         for p in me.polygons:
             c = p.center + off
             wobble = 1.0 + rough * 0.8 * mnoise.noise(c * (1.8 / max(radius, 0.01)) + jitter) if rough else 1.0
@@ -2140,6 +2148,9 @@ class Kit:
             added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards") and o.data.users == 1])
             if added:
                 notes.append(f"focus: {added:,} more triangles where the model needs detail")
+        fought = sum(self._unfight(o) for o in once if not o.get("meshgate_cards"))
+        if fought:
+            notes.append(f"moved {fought} faces {UNFIGHT * 1000:g} mm off surfaces they lay flat on (they would flicker)")
         thinned = self._fit_cards()
         if thinned:
             notes.append(f"fur thinned to {thinned} % of its cards to stay within the tier's triangle budget")
@@ -2348,6 +2359,66 @@ class Kit:
                 obj.modifiers.remove(mod)
                 return 0
         return 1
+
+    @staticmethod
+    def _unfight(obj) -> int:
+        """Faces of one piece lying flat on a face of another piece, facing the same way — a cap flush with a post's
+        top, a wheel's face in the box front, a decal set exactly on the surface. Engines draw such pairs flickering
+        (z-fighting) or black. The smaller piece's faces are moved a hair out along their normals. Returns faces moved."""
+        import bmesh
+        from mathutils.bvhtree import BVHTree
+        if obj.data.shape_keys or len(obj.data.polygons) > 60000:
+            return 0
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.faces.ensure_lookup_table()
+        island = {}
+        sizes = []
+        for f in bm.faces:
+            if f.index in island:
+                continue
+            k, stack, n = len(sizes), [f], 0
+            island[f.index] = k
+            while stack:
+                g = stack.pop()
+                n += 1
+                for e in g.edges:
+                    for h in e.link_faces:
+                        if h.index not in island:
+                            island[h.index] = k
+                            stack.append(h)
+            sizes.append(n)
+        if len(sizes) < 2:
+            bm.free()
+            return 0
+        tree = BVHTree.FromBMesh(bm)
+        eps = 0.0004
+        moved = set()
+        for f in bm.faces:
+            k = island[f.index]
+            c, nrm = f.calc_center_median(), f.normal
+            for co, hn, j, d in tree.find_nearest_range(c, eps):
+                if j is None or island[j] == k or hn.dot(nrm) < 0.995:
+                    continue
+                # f's centre lies on the other face: they overlap there. Move the smaller piece's face.
+                other = bm.faces[j]
+                if sizes[k] < sizes[island[j]] or (sizes[k] == sizes[island[j]] and k < island[j]):
+                    moved.add(f.index)
+                else:
+                    moved.add(other.index)
+        if moved:
+            push: dict = {}
+            for i in moved:
+                f = bm.faces[i]
+                for v in f.verts:
+                    push[v] = push.get(v, Vector()) + f.normal
+            for v, d in push.items():
+                if d.length > 1e-9:
+                    v.co += d.normalized() * UNFIGHT
+            bm.to_mesh(obj.data)
+            obj.data.update()
+        bm.free()
+        return len(moved)
 
     def _fit_cards(self) -> int:
         """Fur cards are the part a tier can lose most gracefully: when the model is over its triangle budget, drop a

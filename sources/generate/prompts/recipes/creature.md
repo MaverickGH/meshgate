@@ -30,3 +30,6 @@ example: zombie_cats/realistic/zombie_cat.py
   `mg.scatter`ed over the body on the richer tiers.
 - Spend triangles where eyes land: `mg.focus(face_centre, radius)` on the face and hands makes them denser within
   the budget; MeshGate reports pieces that float free by their code line — sink them into what they belong to.
+- Markings with crisp edges (a white belly or chest, the muzzle, paws, socks) are pieces of their own set on the body
+  — `mg.part("sphere", pale, …)` flattened onto the surface — and arms that hang free are tubes of their own; paint
+  is for soft, fading patches. Fur cards shimmer at game resolution: use them for a few tufts, not a whole coat.

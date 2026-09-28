@@ -45,6 +45,10 @@ Tiers built for this asset: {built}.
    attachment points for weapons, effects and riders are `mg.socket`. Repeated things in a scene (trees, fence posts, lamps,
    rocks) are built once and repeated with `mg.instance` or `mg.scatter(..., instances=True)`: one mesh, many places. Big
    surfaces (walls, floors, roads, roofs, ground) take a tiling material from `mg.tile` instead of a flat colour.
+   Clean shapes read better than paint. A white belly, a muzzle, socks, a label or a patch with a crisp edge is a
+   piece of its own (a flattened sphere set on the body, an extruded plate), not `mg.paint` on a coarse mesh. Goo,
+   slime and melting things are one `mg.blob` (a dome, the drips down the side, the puddle), not tubes stuck on.
+   Decals and plates sit at least 2 mm proud of the surface they are on; nothing lies exactly flat on another face.
 6. Work like a 3D artist. Hard-surface things (furniture, machines, buildings, props) are blocked out of primitives,
    lathe, tube and extrude. Organic things (animals, creatures, characters, plants, roots, rocks, food, cushions,
    cloth) are sculpted: one `mg.blob` for the whole body so the shapes melt together (torso, chest, head, haunches,

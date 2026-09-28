@@ -379,7 +379,7 @@
       "kind": "asset",
       "made_with": "kit, stylized",
       "fbx": "zc_zombie_cat.fbx",
-      "tris": 41363,
+      "tris": 44292,
       "clips": [
         "idle",
         "shamble"
@@ -396,17 +396,17 @@
       "tiers": {
         "mobile-high": {
           "file": "zc_zombie_cat.mobile-high.glb",
-          "tris": 19049,
+          "tris": 23587,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_zombie_cat.mobile-mid.glb",
-          "tris": 6004,
+          "tris": 7925,
           "within_budget": true
         },
         "mobile-low": {
           "file": "zc_zombie_cat.mobile-low.glb",
-          "tris": 2677,
+          "tris": 3917,
           "within_budget": true
         }
       }
@@ -416,7 +416,7 @@
       "title": "Diorama: zombie cat street",
       "kind": "scene",
       "fbx": null,
-      "tris": 332387,
+      "tris": 341174,
       "clips": [
         "bubbles",
         "idle",
@@ -434,17 +434,17 @@
       "tiers": {
         "mobile-low": {
           "file": "zc_diorama.mobile-low.glb",
-          "tris": 50190,
+          "tris": 50333,
           "within_budget": true
         },
         "mobile-mid": {
           "file": "zc_diorama.mobile-mid.glb",
-          "tris": 132260,
+          "tris": 132099,
           "within_budget": true
         },
         "mobile-high": {
           "file": "zc_diorama.mobile-high.glb",
-          "tris": 275943,
+          "tris": 275938,
           "within_budget": true
         }
       }

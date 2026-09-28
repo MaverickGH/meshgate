@@ -16,3 +16,6 @@ example: treasure_chest.py
 - Panels, hatches and buttons: `mg.inset(box, facing=…, amount=…, depth=…, color=…)`; frames, mouldings, rails and
   shaped pipes: `mg.sweep(profile, path, …, corners="sharp")` for mitred corners. MeshGate adds weighted normals
   (clean flat faces with soft bevels) and packs the UVs evenly by itself.
+- Liquids and goo pouring over an edge are one `mg.blob`: the pool on top, the lip over the rim, the drips down the
+  side hugging the surface, the puddle on the ground. Parts that must touch (a platform on its post, a lid on its
+  box) meet exactly: build them from the same measurements, then `mg.place` / `mg.snap` them.

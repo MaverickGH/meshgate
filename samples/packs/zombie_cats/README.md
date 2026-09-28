@@ -37,8 +37,8 @@ version, and the Unity and Godot tests load every asset against this `index.json
 | `zc_street_lamp.glb` | Fish street lamp | 294 → 8,218 | 0.56×3.15×0.96 | swing | — | zc_street_lamp.unreal.fbx, zc_street_lamp.godot.glb |
 | `zc_bones_pile.glb` | Fish bones | 1,506 → 9,996 | 0.67×0.20×0.47 | — | — | — |
 | `zc_scratch_post_ruin.glb` | Ruined scratching post | 2,489 → 23,847 | 0.62×1.07×0.56 | — | — | zc_scratch_post_ruin.unreal.fbx, zc_scratch_post_ruin.godot.glb |
-| `zc_zombie_cat.glb` | Zombie cat (Humanoid, idle/shamble) | 2,677 → 41,363 | 0.51×1.08×0.62 | idle, shamble | 25 | — |
-| `zc_diorama.glb` | Diorama: zombie cat street | 50,190 → 332,387 | 8.00×3.15×8.00 | bubbles, idle, shamble, swing, yarn_swing | 75 | — |
+| `zc_zombie_cat.glb` | Zombie cat (Humanoid, idle/shamble) | 3,917 → 44,292 | 0.51×1.08×0.62 | idle, shamble | 25 | — |
+| `zc_diorama.glb` | Diorama: zombie cat street | 50,333 → 341,174 | 8.00×3.15×8.00 | bubbles, idle, shamble, swing, yarn_swing | 75 | — |
 
 Every asset also has `<name>.fbx` (except the diorama). All files satisfy the contract with `--strict`.
 

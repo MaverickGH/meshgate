@@ -525,6 +525,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_instances(exe, work)
     ok &= _check_tiles(exe, work)
     ok &= _check_modules(exe, work)
+    ok &= _check_flush(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -939,6 +940,26 @@ def _check_modules(exe: str, work: Path) -> bool:
         good, detail = False, f"{exc}: " + (r.stdout + r.stderr)[-600:]
     if not good:
         print(f"  ✗ modular kit: {detail}")
+    return good
+
+
+def _check_flush(exe: str, work: Path) -> bool:
+    """Pieces lying flat on each other (a cap flush with a post's top, a plate on a crate's face): MeshGate moves the
+    smaller piece's faces a hair off, and says so, so engines do not draw them flickering."""
+    out = work / "flush"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "flush_parts.py"),
+                        "--name", "flush_set", "--tiers", "pc", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        notes = g["report"]["tiers"]["pc"]["notes"]
+        moved = [n for n in notes if "they would flicker" in n]
+        count = int(moved[0].split()[1]) if moved else 0
+        good = g["ok"] and count >= 5   # the cap's top and four sides, and the plate's back
+    except Exception as exc:  # noqa: BLE001
+        good, notes = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ flush parts: {notes}")
     return good
 
 

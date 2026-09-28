@@ -238,7 +238,9 @@ that stands on the ground (named by the line of build code that made them), whic
 size and the left/right asymmetry, and for baked finishes how much of the texture the UVs use and how even the texel
 density is. Characters get denser edge loops at the joints before binding, so elbows and knees fold instead of
 collapsing. Weighted normals finish every smooth model (flat faces stay flat, bevels take the curvature), and baked
-UVs are relaxed, evened out and packed tightly.
+UVs are relaxed, evened out and packed tightly. Faces of one piece lying exactly flat on another's (a cap flush with a post, a plate
+on a crate) are moved a hair apart, so engines do not draw them flickering, and `mg.paint` on the flat-colour looks
+splits the mesh along the painted region's edge first, so a patch comes out round instead of following the facets.
 
 Clay is finished the way artists finish a sculpt: built on a fine grid, relaxed with a volume-keeping smooth (no
 marching-cubes steps, no bulges where shapes meet), then retopologised into even quads at the tier's density
