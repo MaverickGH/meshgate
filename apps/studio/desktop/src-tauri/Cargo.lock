@@ -1779,7 +1779,7 @@ dependencies = [
 
 [[package]]
 name = "meshgate-studio"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "serde_json",
  "tauri",

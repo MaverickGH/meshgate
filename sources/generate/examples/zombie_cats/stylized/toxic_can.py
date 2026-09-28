@@ -1,5 +1,5 @@
 """zc_toxic_can — a giant opened cat-food tin, after the concept: purple label with a teal fish, silver rims,
-glowing green goo spilling over the rim and down the side into puddles, bubbles rising, the dark lid floating above."""
+glowing green goo spilling over the rim and down the side into puddles, bubbles rising, the dark lid pushed up askew by the goo."""
 import math
 
 
@@ -44,11 +44,12 @@ def build(mg):
         shapes.append({"ellipsoid": (math.cos(a) * (R + dist), math.sin(a) * (R + dist), 0.003), "size": (rx, rx * 0.8, 0.011)})
     goo_mass = mg.blob(shapes, goo, blend=0.85)
     mg.attach(goo_mass, can)
-    # bubbles rising in a column toward the lid
-    for bx, by, bz, br in ((0.02, -0.02, H + 0.12, 0.04), (-0.03, 0.01, H + 0.22, 0.032), (0.01, 0.02, H + 0.3, 0.026)):
+    # bubbles rising out of the gap under the lid
+    for bx, by, bz, br in ((0.05, -0.22, H + 0.1, 0.03), (-0.06, -0.3, H + 0.2, 0.026), (0.02, -0.34, H + 0.29, 0.02)):
         mg.attach(mg.part("sphere", goo, loc=(bx, by, bz), scale=(br * 2,) * 3, segments=bub_seg), can)
 
-    # ---- the lid, dark, floating above and tilted; it bobs a little (the pack calls the clip "bubbles")
+    # ---- the lid, dark, pushed up askew: its back edge rests on the rim, the front lifts on the goo; it rattles a
+    # little (the pack calls the clip "bubbles")
     Rl = R + 0.005
     lid = mg.join("zc_toxic_lid", [
         mg.lathe([(0.0, 0.0), (Rl - 0.02, 0.0), (Rl, 0.012), (Rl, 0.026), (Rl - 0.02, 0.034), (0.0, 0.03)], metal_d,
@@ -56,6 +57,6 @@ def build(mg):
         mg.lathe([(0.12, 0.031), (0.13, 0.036), (0.14, 0.031)], metal, segments=segs, smooth=smooth, cap=False),
         mg.part("cyl", metal, loc=(0, 0, 0.04), scale=(0.07, 0.07, 0.02), vertices=bub_seg)])
     mg.attach(lid, can)
-    L = (0.0, 0.02, H + 0.52)
-    mg.animate(lid, "bubbles", [(1, (-0.18, 0.1, 0.2)), (60, (-0.18, 0.1, 0.2))], path="rotation_euler")
-    mg.animate(lid, "bubbles", [(1, L), (30, (L[0], L[1], L[2] + 0.04)), (60, L)], path="location")
+    L = (0.0, 0.05, H + 0.085)
+    mg.animate(lid, "bubbles", [(1, (-0.25, 0.0, 0.2)), (30, (-0.29, 0.0, 0.2)), (60, (-0.25, 0.0, 0.2))], path="rotation_euler")
+    mg.animate(lid, "bubbles", [(1, L), (30, (L[0], L[1], L[2] + 0.012)), (60, L)], path="location")

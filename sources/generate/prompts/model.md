@@ -38,24 +38,31 @@ Tiers built for this asset: {built}.
    a wheel, a propeller) stay separate: `mg.pivot` them to the hinge or axle, `mg.attach` them to the body and give
    them an `mg.animate` clip — only when the description implies motion.
 5. Closed, solid shapes. No floating parts, no single planes as walls, no text. Overlapping pieces are fine: MeshGate
-   deletes faces hidden inside another closed piece of the same mesh, so sink an arm into a body or a spine into a
-   stem by a little and never model surfaces nobody can see (the inside of a closed pot under the soil, a hidden
+   deletes faces hidden inside another closed piece of the same mesh (on a rigged character only where both follow
+   the same bone), so sink a spine into a stem by a little and never model surfaces nobody can see (the inside of a closed pot under the soil, a hidden
    bottom). Spend triangles on the silhouette, not on countless tiny repeats. Set pieces on and against each other with
    `mg.place` (drop onto a surface), `mg.snap` (box against box) and `mg.align` instead of guessing heights;
    attachment points for weapons, effects and riders are `mg.socket`. Repeated things in a scene (trees, fence posts, lamps,
    rocks) are built once and repeated with `mg.instance` or `mg.scatter(..., instances=True)`: one mesh, many places. Big
    surfaces (walls, floors, roads, roofs, ground) take a tiling material from `mg.tile` instead of a flat colour.
-   Clean shapes read better than paint. A white belly, a muzzle, socks, a label or a patch with a crisp edge is a
-   piece of its own (a flattened sphere set on the body, an extruded plate), not `mg.paint` on a coarse mesh. Goo,
+   Clean shapes read better than paint. A white belly, a bib, a face mask, a label or a patch with a crisp edge that
+   lies on a surface is `mg.patch(body, colour, at=…, size=(w, h))` (projected onto it, never sticking out); round
+   bumps (a muzzle, paws, socks) are pieces of their own; `mg.paint` is for soft, fading colour. Goo,
    slime and melting things are one `mg.blob` (a dome, the drips down the side, the puddle), not tubes stuck on.
    Decals and plates sit at least 2 mm proud of the surface they are on; nothing lies exactly flat on another face.
-6. Work like a 3D artist. Hard-surface things (furniture, machines, buildings, props) are blocked out of primitives,
-   lathe, tube and extrude. Organic things (animals, creatures, characters, plants, roots, rocks, food, cushions,
-   cloth) are sculpted: one `mg.blob` for the whole body so the shapes melt together (torso, chest, head, haunches,
-   muzzle as overlapping balls and ellipsoids; "cut" shapes for eye sockets), `mg.skin` for limbs, tails, tentacles and
-   branches, then `mg.sculpt` brushes (pull a snout, inflate cheeks, crease eyelids and folds, roughen stone and bark),
-   `mg.cut` to carve and `mg.bend` / `mg.twist` for curves. Never build a creature out of separate spheres and
-   cylinders stacked together. Eyes, claws, collars and other hard details stay ordinary parts.
+6. Work like a 3D artist, and read the shapes in the reference before you pick a tool: a thing that is round
+   everywhere looks like a clay doll. Hard-surface things (furniture, machines, buildings, props) are blocked out of
+   primitives, lathe, tube and extrude; round hard edges with `bevel=` (with `subdiv=` for soft ones), which also gives
+   the support loops a subdivided edge needs. A toy, mascot or cartoon character is soft blocks (`mg.part("cube", …,
+   bevel=, subdiv=1, smooth=True)` — body, head, arms, legs) melted into one skin with `mg.union(blocks, fillet=0.02)`:
+   the seams become rounded blends and the character bends as one body. Join the arms at the shoulder and leave a gap
+   (2 cm and more) down the sides, so an arm swings free instead of dragging the body's skin with it. Real animals,
+   creatures, plants, roots, rocks, food and cloth are sculpted: `mg.blob` for lumpy masses, `mg.skin` for limbs,
+   tails, tentacles and branches, then `mg.sculpt` brushes, `mg.cut` to carve, `mg.bend` / `mg.twist` for curves,
+   `mg.cast` to square a blob up toward a block and `mg.symmetrize` to make a face exactly symmetric. Never stack a
+   creature out of separate spheres and cylinders. Eyes, claws, collars, whiskers and other hard details stay ordinary
+   parts: on a rigged character they follow the surface they sit on. Spend triangles on the silhouette and the face;
+   flat sides need few (MeshGate keeps texture density even across parts and merges flat low-poly facets itself).
 7. The style decides the look, the description decides the object. Words like "cute", "nice" or "милый" in a
    realistic style mean an appealing, well-proportioned real object, not a cartoon. Never give an object eyes, a
    mouth, cheeks or a face unless the description asks for a face or calls it a character.

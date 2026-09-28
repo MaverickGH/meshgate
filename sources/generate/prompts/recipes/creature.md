@@ -1,15 +1,23 @@
 ---
 title: Creatures and characters
 keywords: cat, kitten, dog, puppy, animal, creature, character, monster, zombie, beast, bird, fish, frog, mouse, rat, rabbit, bear, fox, wolf, horse, dragon, pet, mascot, person, human, figure, doll, plush, toy, кот, кошка, котёнок, котенок, собака, щенок, животное, зверь, существо, персонаж, монстр, зомби, птица, рыба, мышь, кролик, медведь, лиса, волк, лошадь, дракон, человек, фигурка, кукла, игрушка
-example: zombie_cats/realistic/zombie_cat.py
+example: zombie_cats/stylized/zombie_cat.py
 ---
-- Block the whole body as ONE `mg.blob`: hips, belly, chest, neck, head, cheeks, muzzle, chin as overlapping balls
-  and ellipsoids; limbs as capsules inside the same blob so shoulders and hips melt in. Cut eye sockets with
-  `"cut": True` balls and sit the eyeballs in them.
+- Read the shapes in the reference before choosing a tool, and do not default to balls: a character that is round
+  everywhere looks like a clay doll. A toy / vinyl-figure / game-mascot character is blocks with soft edges — a boxy
+  body with a flat front, a wide head box sitting right on the shoulders, straight arm and leg blocks — each a
+  `mg.part("cube", …, bevel=…, subdiv=1, smooth=True)` (bevel about ¼ of the block's thinnest side; the low-poly
+  finish turns it into one flat chamfer), all melted into one skin with `mg.union(blocks, fillet=0.02–0.03)` —
+  round shoulder pieces join the arms to the body, a gap runs down the sides. Keep balls for what is round in the picture: paws, a muzzle, eyes, a belly
+  patch. An organic body that bends (a real animal, a snake, a tentacle) is ONE `mg.skin` over a skeleton of points
+  with `edges=` for the branches — clean quads with loops at every joint. A single `mg.blob` of balls is for lumpy
+  things only (a slime, a boulder). Sink touching blocks a centimetre into each other, or leave a clear gap (2 cm
+  and more): a gap of a few millimetres bakes into a dark smudge.
 - Proportions first, detail later: for a cartoon or chibi look the head is 30–40 % of the height; for a real animal
   measure against the real one (a house cat: body 0.45 m, shoulder 0.25 m, head 0.1 m).
-- A pose sells the character: arms forward for a zombie, weight on one leg, a tilted head. Put it in the shapes
-  (capsule end points), not in rotations afterwards.
+- A pose sells the character, but model the arms relaxed at the sides: the clips move them (a zombie walk holds them
+  out in front), and the A-Pose / T-Pose setting raises them for the file's rest pose. Weight on one leg or a tilted
+  head goes in the skeleton points, not in rotations afterwards.
 - Paint the coat like a real animal: pale muzzle, chest and belly (`facing=(0, -1, 0)`), darker back and head top
   (`facing=(0, 1, 0)` / `(0, 0, 1)`), socks (`below=`), stripes as small overlapping regions; `rough=0.3–0.6` for
   natural edges. Colours named "fur" get the fur material in the realistic finish.
@@ -30,6 +38,6 @@ example: zombie_cats/realistic/zombie_cat.py
   `mg.scatter`ed over the body on the richer tiers.
 - Spend triangles where eyes land: `mg.focus(face_centre, radius)` on the face and hands makes them denser within
   the budget; MeshGate reports pieces that float free by their code line — sink them into what they belong to.
-- Markings with crisp edges (a white belly or chest, the muzzle, paws, socks) are pieces of their own set on the body
-  — `mg.part("sphere", pale, …)` flattened onto the surface — and arms that hang free are tubes of their own; paint
-  is for soft, fading patches. Fur cards shimmer at game resolution: use them for a few tufts, not a whole coat.
+- Markings with crisp edges that lie on the body (a white belly or chest, a bib, a face mask) are `mg.patch(body_piece,
+  pale, at=…, size=(w, h))` — projected onto the surface, so they never stick out at their edges; round bumps (a
+  muzzle, paws, socks) are pieces of their own; paint is for soft, fading patches. Fur cards shimmer at game resolution: use them for a few tufts, not a whole coat.

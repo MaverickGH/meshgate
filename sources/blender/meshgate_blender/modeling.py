@@ -186,15 +186,28 @@ def _rgb(value) -> tuple[float, float, float]:
     raise ModelError(f"colour {value!r}: use (r, g, b) in 0..1 or '#rrggbb'")
 
 
+# the rest pose a rigged character is exported in: "none" = as modelled, "a" = arms 45° down (A-pose), "t" = arms
+# straight out to the sides (T-pose) — the bind poses retargeting and Humanoid setups expect
+POSES = ("none", "a", "t")
+ARM_DROP = {"a": 45.0, "t": 0.0}   # degrees below horizontal
+
+
 class Kit:
     """The `mg` object passed to build(mg)."""
 
     def __init__(self, tier: str = "pc", seed: int = 1, name: str = "asset", tmp: str | None = None,
                  colors: str = "texture", max_materials: int | None = None, finish: str = "none",
                  max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
-                 max_texture: int | None = None, max_texture_mb: float | None = None):
+                 max_texture: int | None = None, max_texture_mb: float | None = None, pose: str = "none",
+                 outline: bool = False, fit: list | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
+        if pose not in POSES:
+            raise ModelError(f"unknown pose {pose!r} — use {', '.join(POSES)}")
+        self._pose = pose                           # the rest pose of rigged characters (mg.rig): none, a or t
+        self._outline = bool(outline) and finish in ("none", "faceted")   # toon ink line (baked finishes: one material)
+        self._fit = [tuple(float(x) for x in b) for b in (fit or []) if len(b) == 3]   # (from, to, width ratio) bands
+        self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
         # "vertex": no textures at all — each part's colour goes into the COLOR_0 vertex attribute, and parts share a
         # few materials grouped by metal and glow (glTF has no per-vertex roughness, so it is averaged per group).
@@ -307,13 +320,16 @@ class Kit:
         return name
 
     def part(self, kind: str, color, loc=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0), *, smooth: bool | None = None,
-             subdiv: int = 0, bevel: float = 0.0, taper: float | None = None, exact: bool = False, **size):
+             subdiv: int = 0, bevel: float = 0.0, taper: float | None = None, exact: bool = False,
+             bevel_segments: int | None = None, **size):
         """One primitive piece. kind: "cube" (1 m edge), "sphere" and "ico" (radius 0.5), "cyl" and "cone" (radius 0.5,
         depth 1, along Z), "torus" (major 1, minor 0.25, lies in XY), "plane" (1 m), all centred on `loc` before scaling.
         scale = size along the primitive's OWN axes before rotation: scale=(0.2, 0.2, 1.5) + rot=(0, math.pi/2, 0) is a
         cylinder 0.2 m thick and 1.5 m long lying along X. rot = Euler radians (x, y, z). For a rod between two points use
         tube([a, b], radius). smooth = smooth shading (default: round kinds).
-        subdiv = subdivision levels (tier-adjusted), bevel = bevel width in meters for crisp but soft edges.
+        subdiv = subdivision levels (tier-adjusted), bevel = bevel width in meters for crisp but soft edges;
+        bevel_segments = its steps (default: the tier's; the low-poly look uses one flat chamfer — 2 rounds a big
+        low-poly block, a head or a body, into a few clean facets).
         taper = scale of every vertex above the piece's centre, i.e. the top face (0.5 = top half as wide, 0 = a point):
         tapered posts, pyramids (cube + taper=0), truncated cones. Extra size keywords pass to Blender:
         segments/ring_count (sphere), vertices/radius/depth (cyl), radius1/radius2 (cone), major_radius/minor_radius (torus).
@@ -348,7 +364,10 @@ class Kit:
         if bevel:
             m = obj.modifiers.new("bevel", "BEVEL")
             m.width = float(bevel)
-            m.segments = self._detail["bevel"]
+            if bevel_segments:
+                m.segments = max(1, int(bevel_segments))
+            else:   # a wide rounding in one step is a chamfer that turns a soft block into an octagon: two at least
+                m.segments = max(self._detail["bevel"], 2 if float(bevel) >= 0.04 and not self._faceted else 1)
             m.limit_method = "ANGLE"
         # round kinds already get more segments on richer tiers; an extra subdivision level on top would multiply
         # them again (a pc sphere with subdiv=1 went from 29k to 200k triangles), so they only lose levels on light tiers
@@ -879,6 +898,15 @@ class Kit:
                         p.data = p.data.copy()
                     _paint_layer(p.data)
         parts = [p for p in parts if p is not None]
+        if self._faceted or self.level == 0:
+            # big faces bend by their corners: a patch lying on them as a piece of its own slides into them when a
+            # rigged body moves; as part of the same skin it bends with it exactly
+            for patch in [p for p in parts if p.get("meshgate_patch_on")]:
+                host = next((p for p in parts if p is not patch and p.name == patch["meshgate_patch_on"]), None)
+                if host is not None:
+                    del patch["meshgate_patch_on"]
+                    self.union([host, patch])
+                    parts = [p for p in parts if p is not patch]
         cards = [p for p in parts if p.get("meshgate_cards")]   # fur keeps its own cutout material: a child, not merged
         parts = [p for p in parts if not p.get("meshgate_cards")]
         if not parts:
@@ -1035,13 +1063,17 @@ class Kit:
         """Keyframe an object into an animation clip. keys = [(frame, value), ...] at 30 fps; path = "rotation_euler"
         (value = (x, y, z) radians), "location" ((x, y, z) meters, relative to the parent) or "scale". Parts keyed under
         the same clip name play together as one clip in the engines. Make loops end on the value they start with; for a
-        continuous spin key 0 → ±2π with smooth=False (the wrap is seamless)."""
+        continuous spin key 0 → ±2π with smooth=False (the wrap is seamless). The piece rests where the clip starts (its
+        first key): a file opened without playing the clip shows it there too."""
         if path not in {"rotation_euler", "location", "scale"}:
             raise ModelError("animate path must be rotation_euler, location or scale")
         ad = obj.animation_data or obj.animation_data_create()
         ad.action = bpy.data.actions.new(f"{self._ascii(clip)}_{obj.name}")
         obj.rotation_mode = "XYZ"
-        rest = tuple(getattr(obj, path))
+        keys = sorted(keys, key=lambda k: k[0])
+        # at rest the piece is where its clip starts: a lid keyed into place above a tin would otherwise sit at the
+        # origin (inside the tin) in every viewer and engine that does not play the clip
+        rest = tuple(keys[0][1]) if keys else tuple(getattr(obj, path))
         for frame, value in keys:
             setattr(obj, path, value)
             obj.keyframe_insert(path, frame=int(frame))
@@ -1229,7 +1261,8 @@ class Kit:
         optional "spine" (between hips and chest), "fingers_l" (the hand's tip) and "toe_end_l". The character's left
         is +X; the right side is mirrored unless you give "_r" joints too (mirror=False). tail = [(x, y, z), …] adds a
         tail chain (Tail1, Tail2, …). The body bends smoothly (automatic weights); small separate pieces — eyes, a
-        collar, whiskers, claws — follow their nearest bone rigidly. Returns the armature; add clips with mg.clip."""
+        collar, whiskers, claws — follow their nearest bone rigidly. Model the arms relaxed: with the A-pose or T-pose
+        setting the rig raises them into that pose itself. Returns the armature; add clips with mg.clip."""
         need = ["hips", "chest", "neck", "head", "head_top", "shoulder_l", "elbow_l", "hand_l", "hip_l", "knee_l",
                 "ankle_l", "toe_l"]
         missing = [k for k in need if k not in joints]
@@ -1263,6 +1296,8 @@ class Kit:
             J[f"tail{i}"], J[f"tail{i + 1}"] = chain[i], chain[i + 1]
             bones.append((f"Tail{i + 1}", f"tail{i}", f"tail{i + 1}", "Hips" if i == 0 else f"Tail{i}"))
         self._bake(body)
+        if self._faceted or self.level == 0:   # big faces bend only where they have vertices: rings at hips, spine, chest
+            self._rings(body, [J[k].z for k in ("hips", "spine", "chest", "neck")])
         self._joint_loops(body, [J[k] for k in J if k.split("_")[0] in ("shoulder", "elbow", "hand", "hip", "knee", "ankle",
                                                                           "neck", "chest", "spine")])
         data = bpy.data.armatures.new(f"{self._name}_rig")
@@ -1298,8 +1333,72 @@ class Kit:
                 body.vertex_groups.new(name=name)
         self._tidy_weights(body, arm)
         self._bind_cards(body, arm)
+        self._set_pose(arm)
         self._rig = arm
         return arm
+
+    def _set_pose(self, arm) -> None:
+        """A-pose / T-pose: raise the arms, straight, into the chosen pose and make that the rest pose — the meshes are
+        deformed into it and the bones moved, so the file's bind pose is the A or T the engines' retargeting expects.
+        The rotations are kept (_pose_c): clips still play as they were designed, from the modelled pose."""
+        from mathutils import Quaternion
+        if self._pose == "none":
+            return
+        drop = math.radians(ARM_DROP[self._pose])
+        for pb in arm.pose.bones:
+            pb.rotation_mode = "QUATERNION"
+        for side, sx in (("Left", 1), ("Right", -1)):
+            want = Vector((sx * math.cos(drop), 0.0, -math.sin(drop)))
+            acc = Quaternion()   # what the bones above have turned (the collarbone stays)
+            for name in (f"{side}UpperArm", f"{side}LowerArm", f"{side}Hand"):
+                b = arm.data.bones.get(name)
+                if b is None:
+                    break
+                d = (b.tail_local - b.head_local).normalized()
+                q = d.rotation_difference(acc.inverted() @ want)
+                rest = b.matrix_local.to_quaternion()
+                arm.pose.bones[name].rotation_quaternion = rest.inverted() @ q @ rest
+                acc = acc @ q
+                self._pose_c[name] = acc.copy()
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        for o in list(bpy.data.objects):   # every mesh the skeleton moves takes the new pose as its shape
+            if o.type != "MESH" or not any(m.type == "ARMATURE" and m.object is arm for m in o.modifiers):
+                continue
+            ev = o.evaluated_get(dg)
+            me = ev.to_mesh()
+            co = [0.0] * (3 * len(me.vertices))
+            me.vertices.foreach_get("co", co)
+            ev.to_mesh_clear()
+            if len(co) == 3 * len(o.data.vertices):
+                o.data.vertices.foreach_set("co", co)
+                o.data.update()
+        posed = {name: arm.pose.bones[name].matrix.copy() for name in self._pose_c}
+        for o in bpy.context.view_layer.objects:
+            o.select_set(o is arm)
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="EDIT")
+        for name, m in posed.items():
+            arm.data.edit_bones[name].matrix = m
+        bpy.ops.object.mode_set(mode="OBJECT")
+        for pb in arm.pose.bones:
+            pb.rotation_quaternion = Quaternion()
+
+    @staticmethod
+    def _rings(body, heights) -> None:
+        """Cut the mesh across at these world heights (edge rings round the body), the loops a low-poly character's
+        torso needs to bend at the spine; a cut across a flat face leaves it flat."""
+        import bmesh
+        me = body.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        off = body.matrix_world.translation.z
+        for z in sorted(set(round(h, 4) for h in heights)):
+            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+            bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-4, plane_co=(0, 0, z - off), plane_no=(0, 0, 1))
+        bm.to_mesh(me)
+        bm.free()
+        me.update()
 
     def _bind_cards(self, body, arm):
         """Fur cards on the body follow the skeleton: each card vertex copies the weights of the nearest body vertex."""
@@ -1348,16 +1447,109 @@ class Kit:
         bm = bmesh.new()
         bm.from_mesh(me)
         _tidy_bm(bm)
-        edges = [e for e in bm.edges if e.is_manifold
+        # only the pieces a joint lies in bend there: a belly patch or a collar over a joint keeps its own smooth surface
+        bm.verts.index_update()
+        cos = [tuple(v.co + off) for v in bm.verts]
+        seen, bending = set(), set()
+        for f in bm.faces:
+            if f in seen:
+                continue
+            stack, faces = [f], []
+            seen.add(f)
+            while stack:
+                g = stack.pop()
+                faces.append(g)
+                for e in g.edges:
+                    for h in e.link_faces:
+                        if h not in seen:
+                            seen.add(h)
+                            stack.append(h)
+            if self._inside_of(cos, [tuple(v.index for v in g.verts) for g in faces], [Vector(j) for j in joints]):
+                bending.update(v for g in faces for v in g.verts)
+        edges = [e for e in bm.edges if e.is_manifold and e.verts[0] in bending
                  and any(((e.verts[0].co + e.verts[1].co) / 2 + off - c).length < r for c, r in spots)]
         if edges and (not self._max_tris or total + len(edges) * 2 < 0.85 * self._max_tris):
-            _split_edges(bm, edges, smooth=0.5)
+            # low-poly: the new loops stay in their faces — moved vertices would break the flat facets into crumples
+            _split_edges(bm, edges, smooth=0.0 if self._faceted else 0.5)
             bm.to_mesh(me)
             me.update()
         bm.free()
 
+    @staticmethod
+    def _inside_of(cos, polys, points) -> set:
+        """Indices of `points` inside the closed surface (cos, polys). Two tests must agree: the nearest face's side
+        (unsure on the edges of thin pieces) and ray parity."""
+        from mathutils.bvhtree import BVHTree
+        if not polys:
+            return set()
+        bvh = BVHTree.FromPolygons(cos, polys)
+        ray = Vector((0.1234, 0.3171, 0.9403)).normalized()   # skewed so it rarely runs along an edge
+        found = set()
+        for n_, q in enumerate(points):
+            hit = bvh.find_nearest(q)
+            if hit[0] is None or (q - hit[0]).dot(hit[1]) >= 0:
+                continue
+            hits, origin = 0, q.copy()
+            for _ in range(64):
+                h = bvh.ray_cast(origin, ray)
+                if h[0] is None:
+                    break
+                hits += 1
+                origin = h[0] + ray * 1e-6
+            if hits % 2 == 1:
+                found.add(n_)
+        return found
+
+    @staticmethod
+    def _bones_inside(me, mw, verts, segs) -> set:
+        """Names of the bones whose segment passes through the closed piece made of `verts` (world space)."""
+        keep = set(verts)
+        polys = [tuple(p.vertices) for p in me.polygons if p.vertices[0] in keep]
+        cos = [tuple(mw @ v.co) for v in me.vertices]
+        ts = (0.2, 0.35, 0.5, 0.65, 0.8)
+        pts = [a.lerp(b, t) for _, a, b in segs for t in ts]
+        hit = Kit._inside_of(cos, polys, pts)
+        return {segs[k // len(ts)][0] for k in hit}
+
+    @staticmethod
+    def _smooth_weights(body, verts, ours, rounds: int = 4) -> None:
+        """Soften the weights across the skin (each vertex blends toward its neighbours), the way a rigger smooths
+        automatic weights: joints then bend in a soft curve in every engine, instead of creasing where one bone's
+        weight stops (Blender's Corrective Smooth would only help inside Blender)."""
+        me = body.data
+        keep = set(verts)
+        if not keep:
+            return
+        nbr: dict = {i: [] for i in keep}
+        for e in me.edges:
+            a, b = e.vertices
+            if a in keep and b in keep:
+                nbr[a].append(b)
+                nbr[b].append(a)
+        w = {i: {g.group: g.weight for g in me.vertices[i].groups if g.group in ours} for i in keep}
+        for _ in range(rounds):
+            new = {}
+            for i, ns in nbr.items():
+                if not ns:
+                    new[i] = w[i]
+                    continue
+                acc = {gi: x * 0.5 for gi, x in w[i].items()}
+                for j in ns:
+                    for gi, x in w[j].items():
+                        acc[gi] = acc.get(gi, 0.0) + x * 0.5 / len(ns)
+                new[i] = acc
+            w = new
+        groups = body.vertex_groups
+        for i, ws in w.items():
+            for gi in ours:
+                if gi not in ws:
+                    groups[gi].remove([i])
+            for gi, x in ws.items():
+                groups[gi].add([i], x, "REPLACE")
+
     def _tidy_weights(self, body, arm):
-        """Small separate pieces and anything left unweighted follow the nearest bone rigidly; ≤ 4 bones per vertex."""
+        """Weights a game character can use: pieces a bone runs through follow those bones, pieces stuck onto them take
+        the weights of the surface under them, anything left over blends its nearest bones; ≤ 4 bones per vertex."""
         me = body.data
         n = len(me.vertices)
         parent = list(range(n))
@@ -1379,25 +1571,98 @@ class Kit:
         groups = body.vertex_groups
         mw = body.matrix_world
         ours = set(idx.values())
+        # 1. pieces a bone runs through (the body, a limb, a head, a foot) keep their smooth heat weights, but only
+        # from those bones: heat weights also reach across a gap, and a collar then stretches whenever an arm moves
+        attached = []
+        hosts = []
         for verts in islands.values():
-            weighted = [sum(g.weight for g in me.vertices[i].groups if g.group in ours) for i in verts]
-            if len(verts) >= 0.03 * n:   # the body: heat weights stay; unweighted vertices blend their nearest bones
-                for i, w in zip(verts, weighted):
-                    if w > 1e-4:
-                        continue
-                    c = mw @ me.vertices[i].co
-                    ds = sorted(((_seg_distance(c, s[1], s[2]), s[0]) for s in segs))
-                    near = [(d, b) for d, b in ds[:4] if d <= ds[0][0] * 1.6 + 0.004]
-                    ws = [(b, 1.0 / (d + 0.004) ** 4) for d, b in near]
-                    tot = sum(x for _, x in ws)
-                    for b, x in ws:
-                        groups[b].add([i], x / tot, "REPLACE")
+            inside = self._bones_inside(me, mw, verts, segs) if len(verts) >= 8 else set()
+            if not inside:
+                attached.append(verts)
                 continue
-            c = sum((mw @ me.vertices[i].co for i in verts), Vector()) / len(verts)
-            bone = min(segs, key=lambda s: _seg_distance(c, s[1], s[2]))[0]
+            hosts.append(verts)
+            allowed = {idx[b] for b in inside if b in idx}
+            pool = [sg for sg in segs if sg[0] in inside]
             for g in groups:
-                g.remove(verts)
-            groups[bone].add(verts, 1.0, "REPLACE")
+                if g.index in ours and g.index not in allowed:
+                    g.remove(verts)
+            for i in verts:   # vertices the heat left out blend their nearest bones of the piece
+                if sum(g.weight for g in me.vertices[i].groups if g.group in ours) > 1e-4:
+                    continue
+                c = mw @ me.vertices[i].co
+                ds = sorted(((_seg_distance(c, s[1], s[2]), s[0]) for s in pool))
+                near = [(d, b) for d, b in ds[:4] if d <= ds[0][0] * 1.6 + 0.004]
+                ws = [(b, 1.0 / (d + 0.004) ** 4) for d, b in near]
+                tot = sum(x for _, x in ws)
+                for b, x in ws:
+                    groups[b].add([i], x / tot, "REPLACE")
+        # 2. pieces with no bone inside — a belly patch, whiskers, eyes, a nose, ears, a collar — take the weights of
+        # the surface they sit on (as Blender's Data Transfer does): they bend with the body instead of each hanging
+        # on one bone and sliding out of it when the body moves
+        self._smooth_weights(body, [i for verts in hosts for i in verts], ours)   # before the copies: they match it
+        if hosts and attached and self._faceted:
+            # low-poly faces are big: split them into the triangles the engines will draw anyway, so a patch follows
+            # the very surface that bends under it (a quad folds along one diagonal when the body moves)
+            import bmesh
+            bm = bmesh.new()
+            bm.from_mesh(me)
+            bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 3], quad_method="BEAUTY", ngon_method="BEAUTY")
+            bm.to_mesh(me)
+            bm.free()
+            me.update()
+        if hosts and attached:
+            from mathutils.bvhtree import BVHTree
+            from mathutils.interpolate import poly_3d_calc
+            wv = [mw @ v.co for v in me.vertices]
+            wts = [{g.group: g.weight for g in v.groups if g.group in ours and g.weight > 1e-4} for v in me.vertices]
+            trees = []   # one per host piece: an attached piece follows only the piece it sits on
+            for verts in hosts:
+                keep = set(verts)
+                polys = [tuple(p.vertices) for p in me.polygons if p.vertices[0] in keep]
+                if polys:
+                    trees.append((BVHTree.FromPolygons([tuple(c) for c in wv], polys), polys))
+            for verts in attached:
+                if not trees:
+                    break
+                pts = [wv[i] for i in verts]
+                step = max(1, len(pts) // 200)
+                tree, polys = min(trees, key=lambda t: min((t[0].find_nearest(q)[3] or 1e9) for q in pts[::step]))
+                for g in groups:
+                    g.remove(verts)
+                # the weights of the surface point right under each vertex, blended across its face (not the nearest
+                # corners: on a big low-poly face those belong to other bones and the piece would sink in)
+                copied, dist = [], []
+                for q in pts:
+                    loc, _, fi, d = tree.find_nearest(q)
+                    acc: dict = {}
+                    if fi is not None:
+                        poly = polys[fi]
+                        bary = poly_3d_calc([wv[i] for i in poly], loc)
+                        for i, b in zip(poly, bary):
+                            for gi, w in wts[i].items():
+                                acc[gi] = acc.get(gi, 0.0) + w * b
+                    tot = sum(acc.values()) or 1.0
+                    copied.append({gi: w / tot for gi, w in acc.items() if w > 1e-5})
+                    dist.append(d or 0.0)
+                if max(dist) > 0.02:
+                    # it stands off the surface (a collar, an eye, a whisker, a bell): a rigid accessory — the whole
+                    # piece follows the weights where it touches, so it moves and never bends out of shape
+                    touch = [c for c, d in zip(copied, dist) if d <= min(dist) + 0.01]
+                    avg: dict = {}
+                    for c in touch:
+                        for gi, w in c.items():
+                            avg[gi] = avg.get(gi, 0.0) + w / len(touch)
+                    copied = [avg] * len(verts)
+                for i, c in zip(verts, copied):   # a patch lying on the body bends with it, vertex by vertex
+                    for gi, w in c.items():
+                        groups[gi].add([i], w, "REPLACE")
+        elif attached:   # no piece holds a bone (an odd rig): each piece follows its nearest bone rigidly
+            for verts in attached:
+                c = sum((mw @ me.vertices[i].co for i in verts), Vector()) / len(verts)
+                bone = min(segs, key=lambda s: _seg_distance(c, s[1], s[2]))[0]
+                for g in groups:
+                    g.remove(verts)
+                groups[bone].add(verts, 1.0, "REPLACE")
         for v in me.vertices:
             gs = sorted(((g.group, g.weight) for g in v.groups if g.weight > 1e-4), key=lambda t: -t[1])
             keep, drop = gs[:self._max_influences], gs[self._max_influences:]
@@ -1426,10 +1691,16 @@ class Kit:
         keys = _preset(motion, [b.name for b in arm.data.bones], float(strength)) if isinstance(motion, str) else motion
         if not keys:
             raise ModelError(f"clip: unknown motion {motion!r} — use idle, zombie_walk, walk, attack, hit or keys")
+        posed = self._pose_c   # A-pose / T-pose rigs: bone → how far it was raised from the modelled pose
         if motion == "zombie_walk":   # arms modelled hanging at the sides: a zombie holds them out in front
             for side in ("Left", "Right"):
                 b = arm.data.bones.get(f"{side}UpperArm")
-                if b is None or (b.tail_local - b.head_local).normalized().z > -0.5:
+                if b is None:
+                    continue
+                d = (b.tail_local - b.head_local).normalized()
+                if b.name in posed:
+                    d = posed[b.name].inverted() @ d   # the direction it was modelled in
+                if d.z > -0.5:
                     continue
                 for f in keys:
                     x, y, z = keys[f].get(f"{side}UpperArm", (0, 0, 0))
@@ -1439,7 +1710,7 @@ class Kit:
         for pb in arm.pose.bones:
             pb.rotation_mode = "QUATERNION"
         frames = sorted(int(f) for f in keys)
-        used = {b for f in frames for b in keys[f]}
+        used = {b for f in frames for b in keys[f]} | set(posed)   # raised arms are keyed back down too
         for f in frames:
             pose = keys[f]
             for bname in used:
@@ -1454,6 +1725,9 @@ class Kit:
                     continue
                 rot = pose.get(bname, (0, 0, 0))
                 q_world = Euler([math.radians(a) for a in rot], "XYZ").to_quaternion()
+                if bname in posed:   # the motion as designed, from the modelled pose: undo the raise, then move
+                    up = posed.get(pb.parent.name, Quaternion()) if pb.parent else Quaternion()
+                    q_world = up @ q_world @ posed[bname].inverted()
                 rest = pb.bone.matrix_local.to_quaternion()
                 pb.rotation_quaternion = rest.inverted() @ q_world @ rest
                 pb.keyframe_insert("rotation_quaternion", frame=f)
@@ -1562,6 +1836,130 @@ class Kit:
         if all(c.get("uid") != uid for c in self._credits):
             self._credits.append({k_: credit.get(k_) for k_ in ("uid", "name", "author", "author_url", "url", "license",
                                                                  "license_name", "license_url")})
+        return obj
+
+    def cast(self, obj, shape: str = "cube", factor: float = 0.5, *, axes: str = "xyz"):
+        """Push a piece toward a pure shape — "cube" squares up a soft, clay-like blob (a head, a body, a boulder that
+        should read as a block), "sphere" rounds it, "cylinder" makes it a column. factor 0…1 = how far (0.3–0.6 keeps
+        its character); axes = which directions it acts along. Works best on pieces with enough vertices (blob, skin,
+        subdivided parts). Returns the piece."""
+        kinds = {"cube": "CUBOID", "sphere": "SPHERE", "cylinder": "CYLINDER"}
+        if shape not in kinds:
+            raise ModelError(f"cast shape {shape!r} — use cube, sphere or cylinder")
+        self._bake(obj)
+        m = obj.modifiers.new("cast", "CAST")
+        m.cast_type = kinds[shape]
+        m.factor = max(0.0, min(1.0, float(factor)))
+        m.use_x, m.use_y, m.use_z = ("x" in axes, "y" in axes, "z" in axes)
+        m.use_radius_as_size = False
+        self._apply_modifiers(obj)
+        return obj
+
+    def symmetrize(self, obj, keep: str = "+x"):
+        """Make a piece exactly mirror-symmetric left to right about x = 0 — after sculpt noise, a cut or scattered
+        detail that should match on both sides of a face or a body. keep = the side copied over the other ("+x" is
+        the character's left, "-x" its right). Returns the piece."""
+        import bmesh
+        if keep not in ("+x", "-x"):
+            raise ModelError("symmetrize keep= '+x' or '-x'")
+        self._bake(obj)
+        off = obj.location.x
+        me = obj.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        _tidy_bm(bm)
+        for v in bm.verts:   # the mirror plane is the world's x = 0, not the piece's own origin
+            v.co.x += off
+        bmesh.ops.symmetrize(bm, input=bm.verts[:] + bm.edges[:] + bm.faces[:], direction="X" if keep == "+x" else "-X",
+                             dist=1e-4)
+        for v in bm.verts:
+            v.co.x -= off
+        bm.to_mesh(me)
+        bm.free()
+        me.update()
+        return obj
+
+    def patch(self, on, color, at, size, *, facing=(0, -1, 0), thickness: float = 0.006, dome: float = 0.0,
+              smooth: bool = True):
+        """A marking with crisp edges that lies ON a piece's surface and follows its curve — a white belly or chest, a
+        bib, a face mask, a patch of moss, a label on a bottle, a bandage. Unlike a flattened sphere set on the body it
+        never sticks out at its edges: the oval is projected onto `on` along `facing`. at = its centre (x, y, z), size =
+        (width, height) of the oval in meters as seen from `facing` (the side it is on: (0, -1, 0) the front, (0, 0, 1)
+        the top); thickness = how far it stands off the surface in the middle (its rim a third of that); dome = an
+        extra bulge in the middle in meters (a round belly). Put it in the parts list like any piece."""
+        from mathutils.bvhtree import BVHTree
+        f = Vector(facing)
+        if f.length < 1e-9:
+            raise ModelError("patch: facing must be a direction such as (0, -1, 0)")
+        f.normalize()
+        w, h = (float(size[0]) / 2, float(size[1]) / 2)
+        if w <= 0 or h <= 0:
+            raise ModelError("patch: size = (width, height), both above 0")
+        self._bake(on)
+        mw = on.matrix_world
+        bvh = BVHTree.FromPolygons([tuple(mw @ v.co) for v in on.data.vertices], [tuple(p.vertices) for p in on.data.polygons])
+        up = Vector((0, 0, 1)) if abs(f.z) < 0.9 else Vector((0, 1, 0))
+        u = f.cross(up).normalized()
+        v = u.cross(f).normalized()
+        c = Vector(at)
+        if self._faceted or self.level == 0:   # coarse faces are far from the true curve: stand clear of them
+            thickness = max(thickness, 0.012)
+        rings = max(2, round({0: 3, 1: 4, 2: 6, 3: 8}[self.level] * (0.5 if self._faceted else 1.0)))
+        n = self.seg(24)
+        if not self._faceted:   # a smooth body bulges between sparse samples and would poke through the patch
+            rings, n = max(rings, 4), max(n, 16)
+        reach = max(w, h) * 2 + 0.3
+        rim = thickness / 3
+        top, bottom = [], []
+        missed = 0
+        for i in range(rings + 1):
+            r = i / rings
+            for k in range(1 if i == 0 else n):
+                a = 2 * math.pi * k / n
+                p0 = c + u * (w * r * math.cos(a)) + v * (h * r * math.sin(a))
+                hit = bvh.ray_cast(p0 + f * reach, -f)
+                q = hit[0] if hit[0] is not None else None
+                if q is None:
+                    missed += 1
+                    q = bvh.find_nearest(p0)[0] or p0
+                lift = rim + (thickness - rim) * math.sqrt(max(0.0, 1 - r * r)) + dome * (1 - r * r)
+                top.append(q + f * lift)
+                bottom.append(q - f * max(0.003, thickness))   # sunk in, so no gap shows at the rim
+        if missed > (rings * n) // 2:
+            raise ModelError(f"patch: most of the oval misses the piece — put `at` on its surface, facing {tuple(facing)}")
+        # the samples follow the piece's facets; relax the patch's top (not its rim) so it reads as one smooth shape
+        rim0 = 1 + (rings - 1) * n
+        nb = [[] for _ in top]
+        for k in range(n):
+            nb[0].append(1 + k)
+            for i in range(1, rings + 1):
+                a_ = 1 + (i - 1) * n + k
+                for j in ((1 + (i - 1) * n + (k + 1) % n), (1 + (i - 1) * n + (k - 1) % n),
+                          (0 if i == 1 else 1 + (i - 2) * n + k), (1 + i * n + k if i < rings else None)):
+                    if j is not None:
+                        nb[a_].append(j)
+        for _ in range(6):
+            top = [p if i >= rim0 or not nb[i] else p.lerp(sum((top[j] for j in nb[i]), Vector()) / len(nb[i]), 0.5)
+                   for i, p in enumerate(top)]
+        verts = [tuple(p) for p in top] + [tuple(p) for p in bottom]
+        m = len(top)
+        faces, flat = [], []
+
+        def ring(i, k):
+            return 0 if i == 0 else 1 + (i - 1) * n + k % n
+        for k in range(n):
+            faces.append((ring(0, 0), ring(1, k), ring(1, k + 1)))
+            for i in range(1, rings):
+                faces.append((ring(i, k), ring(i + 1, k), ring(i + 1, k + 1), ring(i, k + 1)))
+        faces += [tuple(x + m for x in reversed(fc)) for fc in list(faces)]   # the underside
+        for k in range(n):   # the rim wall
+            a, b = ring(rings, k), ring(rings, k + 1)
+            faces.append((a, a + m, b + m, b))
+            flat.append(len(faces) - 1)
+        obj = self._mesh("patch", verts, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, smooth, flat)
+        obj["meshgate_patch_on"] = on.name   # join melts it into `on` where the mesh is too coarse to carry it apart
         return obj
 
     def paint(self, obj, color, *, at=None, radius: float = 0.1, facing=None, below: float | None = None,
@@ -1780,14 +2178,16 @@ class Kit:
         self._finish_piece(out, color, smooth)
         return out
 
-    def _clean_clay(self, obj, cell: float) -> None:
+    def _clean_clay(self, obj, cell: float, relax: bool = True) -> None:
         """Clay → a clean sculpt, the way artists finish one: relax the marching-cubes steps and the blend bulges while
         keeping the volume, then rebuild the surface as even quads at the tier's density (QuadriFlow retopology), and
-        relax once more. Falls back to a decimate when QuadriFlow declines."""
-        lap = obj.modifiers.new("relax", "LAPLACIANSMOOTH")
-        lap.lambda_factor, lap.iterations = 0.6, 12
-        lap.use_volume_preserve, lap.use_normalized = True, True
-        self._apply_modifiers(obj)
+        relax once more. Falls back to a decimate when QuadriFlow declines. relax=False keeps the shape's own edges (a
+        union of soft blocks is already smooth where it should be)."""
+        if relax:
+            lap = obj.modifiers.new("relax", "LAPLACIANSMOOTH")
+            lap.lambda_factor, lap.iterations = 0.6, 12
+            lap.use_volume_preserve, lap.use_normalized = True, True
+            self._apply_modifiers(obj)
         import bmesh
         bm = bmesh.new()
         bm.from_mesh(obj.data)
@@ -1851,9 +2251,9 @@ class Kit:
         for i, v in enumerate(me.skin_vertices[0].data):
             v.radius = (rs[i], rs[i])
             v.use_root = i == 0
-        if not self._faceted:
-            sub = obj.modifiers.new("smooth", "SUBSURF")
-            sub.levels = sub.render_levels = {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
+        # the bare skin is square in section (a board); one level makes it eight-sided, which the low-poly look keeps
+        sub = obj.modifiers.new("smooth", "SUBSURF")
+        sub.levels = sub.render_levels = 1 if self._faceted else {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
         self._apply_modifiers(obj)
         self._fix_normals(obj)
         self._finish_piece(obj, color, smooth)
@@ -1873,6 +2273,153 @@ class Kit:
         self._forget(cutter)
         self._label(target)   # a boolean builds new geometry: mark it with the line of the cut
         return target
+
+    def union(self, parts, *, fillet: float = 0.0, detail: float = 1.0):
+        """Melt pieces into ONE closed mesh, the way a sculptor or a toy maker joins them — a head, a body, arms and legs
+        of soft blocks; a trunk and its branches; a handle and a mug. The insides disappear, every piece keeps its
+        colour, and fillet = the radius in meters of a smooth rounded blend along each seam (0.01–0.04 for a character):
+        arms and a head grow out of the body instead of being stuck on it, and a rigged character bends there as one
+        skin instead of its blocks pulling apart. The result is rebuilt as clean, even quads at the tier's density
+        (detail scales it) on mobile-high and PC; lighter tiers and the low-poly look keep the boolean surface and crisp
+        seams. Returns the one piece (the first
+        of `parts`, grown); the others are used up — do not also put them in your parts list."""
+        import bmesh
+        from mathutils.kdtree import KDTree
+        parts = [p for p in parts if p is not None]
+        if not parts:
+            raise ModelError("union needs pieces")
+        base, others = parts[0], parts[1:]
+        if not others:
+            return base
+        # every piece carries the same attributes (a paint layer on one of them, colours): a boolean fills a missing one
+        # with whatever memory it finds, which soft paint then shows as blotches
+        wanted = {}
+        for o in parts:
+            for at in o.data.attributes:
+                if not at.name.startswith(".") and at.domain in ("POINT", "CORNER", "FACE") and at.name != "mg_piece" \
+                        and at.data_type in ("FLOAT_COLOR", "BYTE_COLOR", "FLOAT", "INT", "FLOAT_VECTOR"):
+                    wanted.setdefault(at.name, (at.domain, at.data_type))
+        for o in parts:
+            for name, (domain, kind) in wanted.items():
+                if o.data.attributes.get(name) is None:
+                    at = o.data.attributes.new(name, kind, domain)
+                    width = {"FLOAT_COLOR": 4, "BYTE_COLOR": 4, "FLOAT_VECTOR": 3}.get(kind, 1)
+                    key = "color" if "COLOR" in kind else ("vector" if kind == "FLOAT_VECTOR" else "value")
+                    at.data.foreach_set(key, [0] * (width * len(at.data)) if kind == "INT" else [0.0] * (width * len(at.data)))
+        for k, o in enumerate(parts):   # which piece every face came from: the seams are where two of them meet
+            self._bake(o)
+            attr = o.data.attributes.get("mg_piece") or o.data.attributes.new("mg_piece", "INT", "FACE")
+            attr.data.foreach_set("value", [k] * len(o.data.polygons))
+        coll = bpy.data.collections.new("mg_union")
+        for o in others:
+            coll.objects.link(o)
+        mod = base.modifiers.new("union", "BOOLEAN")
+        mod.operation, mod.operand_type, mod.collection = "UNION", "COLLECTION", coll
+        if hasattr(mod, "solver"):
+            mod.solver = "EXACT"
+        self._apply_modifiers(base)
+        for o in others:
+            self._forget(o)
+        bpy.data.collections.remove(coll)
+
+        def seam_points():
+            bm = bmesh.new()
+            bm.from_mesh(base.data)
+            lay = bm.faces.layers.int.get("mg_piece")
+            pts = [base.matrix_world @ v.co for e in bm.edges if lay is not None and len(e.link_faces) == 2
+                   and e.link_faces[0][lay] != e.link_faces[1][lay] for v in e.verts]
+            bm.free()
+            tree = KDTree(max(1, len(pts)))
+            for i, q in enumerate(pts):
+                tree.insert(q, i)
+            tree.balance()
+            return tree, len(pts)
+        r = float(fillet)
+        # rebuilt as fine quads with rounded seams where the tier has the polygons for it (mobile-high, PC); a lighter
+        # tier's quads would be centimetres wide and turn a soft block into an octagon, so it keeps the boolean
+        # surface of its own lighter pieces (and the low-poly look keeps it on every tier)
+        if not self._faceted and self.level >= 2:
+            self._remake_union(base, seam_points, r, float(detail))
+        if base.data.attributes.get("mg_piece"):
+            base.data.attributes.remove(base.data.attributes["mg_piece"])
+        self._label(base)
+        return base
+
+    def _remake_union(self, obj, seam_points, fillet: float, detail: float) -> None:
+        """The artist's route after a boolean: one watertight voxel surface, the seams relaxed into a rounded blend,
+        clean quads at the tier's density (QuadriFlow), and every face's colour and paint taken back from the piece it
+        lies on."""
+        import bmesh
+        from mathutils.bvhtree import BVHTree
+        me = obj.data
+        pts = [v.co.copy() for v in me.vertices]
+        extent = max((max(p[k] for p in pts) - min(p[k] for p in pts)) for k in range(3)) if pts else 1.0
+        cell = max(extent / ({0: 16, 1: 26, 2: 38, 3: 56}[self.level] * 1.8 * max(0.25, detail)),
+                   {0: 0.02, 1: 0.012, 2: 0.007, 3: 0.004}[self.level])
+        old = me.copy()   # the pieces' faces, with their colours, to read back from
+        tree, count = seam_points()
+        vox = obj.modifiers.new("watertight", "REMESH")
+        vox.mode, vox.voxel_size, vox.adaptivity = "VOXEL", max(min(cell * 0.4, fillet * 0.3 if fillet else cell), 0.0015), 0.0
+        if hasattr(vox, "use_smooth_shade"):
+            vox.use_smooth_shade = True
+        self._apply_modifiers(obj)
+        mw = obj.matrix_world
+        if fillet > 0 and count:   # relax the band round each seam: its crease fills in to a round blend
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            band = []
+            for v in bm.verts:
+                d = tree.find(mw @ v.co)[2]
+                if d < fillet:
+                    t = 1 - d / fillet
+                    band.append((v, t * t * (3 - 2 * t)))
+            for _ in range(int(max(6, min(30, fillet / max(cell * 0.4, 1e-4) * 3)))):
+                moved = []
+                for v, w in band:
+                    ring = [e.other_vert(v).co for e in v.link_edges]
+                    if ring:
+                        moved.append((v, v.co.lerp(sum(ring, Vector()) / len(ring), 0.5 * w)))
+                for v, co in moved:
+                    v.co = co
+            bm.to_mesh(obj.data)
+            bm.free()
+        self._clean_clay(obj, cell, relax=False)
+        # colours back from the pieces: each new face takes the palette cell (UV), vertex colour and paint of the face
+        # under it, each vertex the paint of the nearest old vertex
+        bvh = BVHTree.FromPolygons([tuple(v.co) for v in old.vertices], [tuple(p.vertices) for p in old.polygons])
+        me = obj.data
+        ouv = old.uv_layers.active.data if old.uv_layers else None
+        if ouv is not None:
+            uv = me.uv_layers.get(old.uv_layers.active.name) or me.uv_layers.new(name=old.uv_layers.active.name)
+        ocol = old.color_attributes.get("Col") if hasattr(old, "color_attributes") else None
+        col = (me.color_attributes.get("Col") or me.color_attributes.new("Col", "FLOAT_COLOR", "CORNER")) if ocol else None
+        for p in me.polygons:
+            hit = bvh.find_nearest(p.center)
+            if hit[2] is None:
+                continue
+            src = old.polygons[hit[2]]
+            p.material_index = src.material_index
+            for li in p.loop_indices:
+                if ouv is not None:
+                    uv.data[li].uv = ouv[src.loop_indices[0]].uv
+                if col is not None:
+                    col.data[li].color = ocol.data[src.loop_indices[0]].color
+            p.use_smooth = src.use_smooth
+        for name in [a.name for a in old.attributes if a.domain == "POINT" and a.data_type == "FLOAT_COLOR"]:
+            oa = old.attributes[name]
+            na = me.attributes.get(name) or me.attributes.new(name, "FLOAT_COLOR", "POINT")
+            for v in me.vertices:
+                hit = bvh.find_nearest(v.co)
+                if hit[2] is None:
+                    continue
+                vs = old.polygons[hit[2]].vertices
+                near = min(vs, key=lambda i: (old.vertices[i].co - v.co).length)
+                na.data[v.index].color = oa.data[near].color
+        if len(me.materials) < len(old.materials):
+            for m in old.materials[len(me.materials):]:
+                me.materials.append(m)
+        bpy.data.meshes.remove(old)
+        me.update()
 
     def bend(self, obj, angle: float, along: str = "Z", toward: str = "-Y"):
         """Bend a whole piece from its base — a curling tail, a drooping ear, a leaning trunk, a curved horn, a banana.
@@ -2132,6 +2679,8 @@ class Kit:
             return self._finalize_rest(notes)
 
     def _finalize_rest(self, notes: list) -> list[str]:
+        if self._fit:
+            notes += self._apply_fit()
         self._make_palette()
         laid = self._apply_tiles()
         if laid:
@@ -2144,10 +2693,14 @@ class Kit:
         hidden = sum(self._cull_hidden(o) for o in once if not o.get("meshgate_cards"))
         if hidden:
             notes.append(f"removed {hidden} hidden faces (inside other pieces)")
-        if self._focus and self.level >= 1:
+        if self._focus and self.level >= 1 and not self._faceted:   # flat facets: extra triangles only crumple them
             added = self._apply_focus([o for o in meshes if not o.get("meshgate_cards") and o.data.users == 1])
             if added:
                 notes.append(f"focus: {added:,} more triangles where the model needs detail")
+        if self._faceted:
+            merged = sum(self._planar(o) for o in once if not o.get("meshgate_cards") and not o.get("meshgate_tiles"))
+            if merged:
+                notes.append(f"low-poly: {merged:,} triangles saved by merging flat facets and re-triangulating them")
         fought = sum(self._unfight(o) for o in once if not o.get("meshgate_cards"))
         if fought:
             notes.append(f"moved {fought} faces {UNFIGHT * 1000:g} mm off surfaces they lay flat on (they would flicker)")
@@ -2158,6 +2711,8 @@ class Kit:
             n = sum(self._weighted_normals(o) for o in once if not o.get("meshgate_cards"))
             if n:
                 notes.append(f"weighted normals on {n} mesh{'es' if n > 1 else ''} (clean shading on flat faces)")
+        if self._outline:
+            notes += self._ink(once, meshes)
         sockets = [o for o in objs if o.get("meshgate_socket") and o.parent is None]
         roots = [o for o in objs if o.parent is None and not o.get("meshgate_socket")]
         if len(roots) == 1:
@@ -2359,6 +2914,157 @@ class Kit:
                 obj.modifiers.remove(mod)
                 return 0
         return 1
+
+    def _apply_fit(self) -> list[str]:
+        """Proportions fitted to the reference picture: each height band of the model is made as wide as the picture's
+        (the ratios come from comparing their outlines), with a smooth profile between bands — vertices and the
+        skeleton's joints alike, so a rigged character still bends where it should. At most ±20 % per band."""
+        meshes = [o for o in bpy.context.scene.objects if o.type == "MESH" and o.data.users == 1]
+        if not meshes:
+            return []
+        lo, hi = self._bounds(meshes)
+        h = max(hi.z - lo.z, 1e-6)
+        cx = (lo.x + hi.x) / 2
+        pts = sorted(((a + b) / 2, max(0.8, min(1.2, r))) for a, b, r in self._fit)
+        if all(abs(r - 1) < 0.04 for _, r in pts):
+            return []
+        sm = [(t, (pts[max(i - 1, 0)][1] + 2 * r + pts[min(i + 1, len(pts) - 1)][1]) / 4) for i, (t, r) in enumerate(pts)]
+
+        def ratio(z):
+            t = (z - lo.z) / h
+            if t <= sm[0][0]:
+                return sm[0][1]
+            for (t0, r0), (t1, r1) in zip(sm, sm[1:]):
+                if t <= t1:
+                    u = (t - t0) / max(t1 - t0, 1e-6)
+                    u = u * u * (3 - 2 * u)
+                    return r0 + (r1 - r0) * u
+            return sm[-1][1]
+
+        def warp(w):
+            return Vector((cx + (w.x - cx) * ratio(w.z), w.y, w.z))
+        for o in meshes:
+            mw, inv = o.matrix_world, o.matrix_world.inverted()
+            for v in o.data.vertices:
+                v.co = inv @ warp(mw @ v.co)
+            o.data.update()
+        for arm in [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]:
+            for x in bpy.context.view_layer.objects:
+                x.select_set(x is arm)
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode="EDIT")
+            aw, ainv = arm.matrix_world, arm.matrix_world.inverted()
+            for eb in arm.data.edit_bones:
+                eb.head, eb.tail = ainv @ warp(aw @ eb.head), ainv @ warp(aw @ eb.tail)
+            bpy.ops.object.mode_set(mode="OBJECT")
+        widest = max(sm, key=lambda p: abs(p[1] - 1))
+        return [f"proportions fitted to the reference: widths scaled by {min(r for _, r in sm):.2f}–"
+                f"{max(r for _, r in sm):.2f} (most at {widest[0] * 100:.0f} % of the height)"]
+
+    def _ink(self, once, meshes) -> list[str]:
+        """The toon ink line, as games draw it: an inverted hull — each mesh gets a slightly fatter copy of itself turned
+        inside out in a flat dark material; only its back faces are drawn, so a line shows round the silhouette and at
+        folds, and it bends with the skeleton. The phone tiers below mobile-high keep their triangles and draw calls."""
+        if self.level < 2:
+            return []
+        total = sum(len(p.vertices) - 2 for o in meshes for p in o.data.polygons)
+        if self._max_tris and total * 2 > self._max_tris:
+            return [f"ink line skipped: it would double {total:,} triangles past the tier's {self._max_tris:,}"]
+        mats = {m for o in once for m in o.data.materials if m}
+        if self._max_materials and len(mats) + 1 > self._max_materials:
+            return ["ink line skipped: the tier allows no extra material"]
+        lo, hi = self._bounds(meshes)
+        width = max(0.003, min(0.02, max(hi - lo) * 0.01))   # about 1 cm on a 1 m character
+        ink = bpy.data.materials.get(f"{self._name}_ink") or bpy.data.materials.new(f"{self._name}_ink")
+        ink.use_nodes = True
+        ink.use_backface_culling = True
+        b = compat.principled(ink)
+        b.inputs["Base Color"].default_value = (0.02, 0.02, 0.025, 1.0)
+        b.inputs["Roughness"].default_value = 1.0
+        done = 0
+        for o in once:
+            if o.get("meshgate_cards") or o.get("meshgate_tiles") or not o.data.polygons:
+                continue
+            me = o.data
+            me.materials.append(ink)
+            slot = len(me.materials) - 1
+            n = len(me.polygons)
+            mod = o.modifiers.new("ink", "SOLIDIFY")
+            mod.thickness, mod.offset = width, 1.0
+            mod.use_flip_normals, mod.use_rim = True, False
+            mod.use_even_offset = False   # even thickness spikes out at sharp tips (a cone's point, a drip)
+            with bpy.context.temp_override(object=o, active_object=o, selected_objects=[o]):
+                if o.modifiers[0] is not mod:   # before an armature: the hull is part of the mesh and gets its weights
+                    bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=0)
+                bpy.ops.object.modifier_apply(modifier=mod.name)
+            if len(me.polygons) != 2 * n:
+                continue
+            idx = [0] * len(me.polygons)   # the original faces come first, the inside-out shell after them (3.5–5.2)
+            me.polygons.foreach_get("material_index", idx)
+            idx[n:] = [slot] * n
+            me.polygons.foreach_set("material_index", idx)
+            thin = self._thin_faces(me, n, width * 3)   # a whisker or a thin rim would drown in a line thicker than it
+            if thin:
+                import bmesh
+                bm = bmesh.new()
+                bm.from_mesh(me)
+                bm.faces.ensure_lookup_table()
+                bmesh.ops.delete(bm, geom=[bm.faces[n + i] for i in thin], context="FACES")
+                bm.to_mesh(me)
+                bm.free()
+            me.update()
+            done += 1
+        return [f"ink line: an inverted hull {width * 1000:.0f} mm wide on {done} mesh{'es' if done != 1 else ''} (toon)"] if done else []
+
+    @staticmethod
+    def _thin_faces(me, n: int, limit: float) -> list[int]:
+        """Indices (below n) of faces on pieces thinner than `limit` in their smallest dimension."""
+        parent = list(range(len(me.vertices)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        for p in me.polygons[:n]:
+            vs = p.vertices
+            for v in vs[1:]:
+                a, b = find(vs[0]), find(v)
+                if a != b:
+                    parent[a] = b
+        lo: dict = {}
+        hi: dict = {}
+        for p in me.polygons[:n]:
+            for v in p.vertices:
+                r, co = find(v), me.vertices[v].co
+                lo[r] = Vector((min(lo[r][k], co[k]) for k in range(3))) if r in lo else co.copy()
+                hi[r] = Vector((max(hi[r][k], co[k]) for k in range(3))) if r in hi else co.copy()
+        thin = {r for r in lo if min(hi[r] - lo[r]) < limit}
+        return [p.index for p in me.polygons[:n] if find(p.vertices[0]) in thin]
+
+    @staticmethod
+    def _planar(obj) -> int:
+        """Low-poly finish for things that do not bend (crates, fences, stones): faces lying in one plane merge into one
+        facet and are re-triangulated evenly ("beauty"), so a flat side reads as one clean plane instead of a fan of
+        slivers. Colour edges, seams and sharp edges stay. A rigged mesh keeps its loops (it bends there)."""
+        import bmesh
+        if any(m.type == "ARMATURE" for m in obj.modifiers) or obj.data.shape_keys or not obj.data.polygons:
+            return 0
+        me = obj.data
+        before = sum(len(p.vertices) - 2 for p in me.polygons)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1.0), verts=bm.verts[:], edges=bm.edges[:],
+                                 delimit={"MATERIAL", "SEAM", "SHARP", "UV"})
+        bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method="BEAUTY", ngon_method="BEAUTY")
+        after = len(bm.faces)
+        if after >= before:
+            bm.free()
+            return 0
+        bm.to_mesh(me)
+        bm.free()
+        me.update()
+        return before - after
 
     @staticmethod
     def _unfight(obj) -> int:
@@ -2630,7 +3336,8 @@ class Kit:
     def _cull_hidden(obj, eps: float = 2e-4) -> int:
         """Delete faces that sit wholly inside another closed piece of the same mesh — an arm sunk into a body, a spine
         base inside a stem, a pot's top under the soil. Nobody sees them; they only cost triangles. Faces that cross the
-        other piece's surface stay, so no hole shows. Pieces of one object move together, so animation is safe.
+        other piece's surface stay, so no hole shows. On a rigged character a face is only removed when both pieces follow
+        the same bone: an arm sunk into a body swings away from it, and the body under it must still be there.
         Two tests must agree (nearest surface normal and ray parity), so an unsure face is kept. Returns faces removed."""
         import bmesh
         from mathutils.bvhtree import BVHTree
@@ -2657,6 +3364,15 @@ class Kit:
         if len(islands) < 2:
             bm.free()
             return 0
+        bone = {}   # island → the bone that moves it most (rigged meshes only)
+        dl = bm.verts.layers.deform.active
+        if dl is not None and any(m.type == "ARMATURE" for m in obj.modifiers):
+            for idx, faces in enumerate(islands):
+                tot: dict = {}
+                for v in {v for f in faces for v in f.verts}:
+                    for g, w in v[dl].items():
+                        tot[g] = tot.get(g, 0.0) + w
+                bone[idx] = max(tot, key=tot.get) if tot else None
         solids = []   # (island, tree, lo, hi, sign) for closed pieces only
         for idx, faces in enumerate(islands):
             if len(faces) < 4 or any(len(e.link_faces) != 2 for f in faces for e in f.edges):
@@ -2698,6 +3414,8 @@ class Kit:
             fhi = Vector([max(c[k] for c in pts) for k in range(3)])
             for idx, tree, lo, hi, sign in solids:
                 if idx == own or any(flo[k] < lo[k] or fhi[k] > hi[k] for k in range(3)):
+                    continue
+                if bone and bone.get(idx) != bone.get(own):   # they move apart when animated
                     continue
                 ok = True
                 for v in f.verts:

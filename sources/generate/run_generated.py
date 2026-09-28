@@ -59,6 +59,10 @@ def _args():
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"], help="FBX and .blend topology (GLB is always triangles)")
     ap.add_argument("--finish", default="none", choices=["none", "faceted", "weathered", "clean"],
                     help="faceted: low-poly look enforced (flat, few segments); weathered: dirt, variation and relief baked into textures")
+    ap.add_argument("--outline", action="store_true", help="toon ink line: an inverted hull on mobile-high and PC")
+    ap.add_argument("--fit", default="[]", help="JSON [[from, to, width ratio], …]: proportions fitted to a reference")
+    ap.add_argument("--pose", default="none", choices=list(modeling.POSES),
+                    help="rest pose of rigged characters: none (as modelled), a (A-pose) or t (T-pose)")
     return ap.parse_args(argv)
 
 
@@ -75,7 +79,8 @@ def _trace(exc: BaseException) -> str:
 
 def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: str, colors: str = "texture",
                finish_: str = "none", texture: int = 0, topology: str = "tri", budget_override: dict | None = None,
-               save_high: str | None = None, high: str | None = None, params: dict | None = None) -> dict:
+               save_high: str | None = None, high: str | None = None, params: dict | None = None,
+               pose: str = "none", outline: bool = False, fit: list | None = None) -> dict:
     """Fresh scene → build(mg) at the tier's detail → finalize → contract fixes. Returns notes and in-Blender issues.
     save_high = write this (PC) build's geometry to a .blend; high = such a .blend: a lighter tier bakes its normal map
     from that detailed model (high → low, as an artist bakes a sculpt onto a game mesh)."""
@@ -83,7 +88,8 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     budget = {**export.load_profiles()["profiles"][tier]["asset"], **(budget_override or {})}
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
                        max_influences=budget.get("max_influences", 4), params=params, max_tris=budget.get("max_tris"),
-                       finish=finish_, max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"))
+                       finish=finish_, max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"),
+                       pose=pose, outline=outline, fit=fit)
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
     exec(code_obj, g)  # noqa: S102 — code passed safety.check before reaching here
     g["build"](kit)
@@ -233,7 +239,8 @@ def main() -> int:
             try:
                 info = build_tier(code_obj, name, tier, args.seed, tmp, args.collision, args.colors, args.finish,
                                   args.texture, args.topology, save_high=high if tier == "pc" else None,
-                                  high=high if tier != "pc" else None, params=params)
+                                  high=high if tier != "pc" else None, params=params, pose=args.pose, outline=args.outline,
+                                  fit=json.loads(args.fit or "[]"))
             except Exception as exc:  # noqa: BLE001 — every failure goes back to the AI as feedback
                 report["problems"].append(f"build(mg) failed at tier {tier}:\n{_trace(exc)}")
                 return done(1)
@@ -322,7 +329,8 @@ def main() -> int:
         if args.texture > pc_max and baked and "pc" in tiers:
             # above the PC tier's limit: one more PC build baked at the full size, for renders and film
             build_tier(code_obj, name, "pc", args.seed, tmp, "none", args.colors, args.finish, args.texture, args.topology,
-                       budget_override={"max_texture": args.texture, "max_texture_mb": 4096}, params=params)
+                       budget_override={"max_texture": args.texture, "max_texture_mb": 4096}, params=params, pose=args.pose, outline=args.outline,
+                                  fit=json.loads(args.fit or "[]"))
             master = os.path.join(out, f"{name}.master.glb")
             export.export_asset(bpy.context, master, targets=(), fbx=False, validate=False, image_format=image_format)
             report["files"].append(os.path.basename(master))

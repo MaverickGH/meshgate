@@ -559,7 +559,9 @@ export function createViewer(container, options = {}) {
   function glowMaterial(m) {
     let g = glowMaterials.get(m);
     if (!g) {
-      g = isLit(m) ? new THREE.MeshBasicMaterial({ color: m.emissive.clone().multiplyScalar(m.emissiveIntensity ?? 1),
+      // the halo comes from the light's colour at most at full strength: a very bright glow (goo at 2×) would
+      // otherwise bloom over the whole object and wash out the colours next to it
+      g = isLit(m) ? new THREE.MeshBasicMaterial({ color: m.emissive.clone().multiplyScalar(Math.min(m.emissiveIntensity ?? 1, 1)),
         map: m.emissiveMap || null, side: m.side, toneMapped: false }) : GLOW_BLACK;
       glowMaterials.set(m, g);
     }
@@ -601,7 +603,7 @@ export function createViewer(container, options = {}) {
       glowComposer.setPixelRatio(renderer.getPixelRatio());
       glowComposer.setSize(w, h);
       glowComposer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.6, 0.4, 0.0);   // input is emissive light only
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.35, 0.25, 0.0);   // input is emissive light only: a soft halo
       glowComposer.addPass(bloomPass);
       glowMix = new ShaderPass(new THREE.ShaderMaterial({
         uniforms: { tDiffuse: { value: null }, glow: { value: glowComposer.renderTarget2.texture } },

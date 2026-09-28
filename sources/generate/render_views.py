@@ -75,6 +75,29 @@ fov = 2 * math.atan(36 / 2 / cam_data.lens)
 dist = radius / math.sin(fov / 2) * 1.08
 cam_data.clip_start, cam_data.clip_end = radius * 0.01, radius * 100
 
+# a toon ink line is an inside-out hull the engines draw back-face culled; Cycles ignores culling, so its back faces
+# are made see-through here — the render then shows the line as a game does
+for m in bpy.data.materials:
+    if m.name.endswith("_ink") and m.use_nodes:
+        nt = m.node_tree
+        mout = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
+        if mout and mout.inputs["Surface"].links:
+            src = mout.inputs["Surface"].links[0].from_socket
+            # seen only by the camera, from the front: back faces, shadows and reflections pass through it
+            mix, see = nt.nodes.new("ShaderNodeMixShader"), nt.nodes.new("ShaderNodeBsdfTransparent")
+            geo, path, front = nt.nodes.new("ShaderNodeNewGeometry"), nt.nodes.new("ShaderNodeLightPath"), nt.nodes.new("ShaderNodeMath")
+            front.operation = "SUBTRACT"
+            front.inputs[0].default_value = 1.0
+            nt.links.new(geo.outputs["Backfacing"], front.inputs[1])
+            shown = nt.nodes.new("ShaderNodeMath")
+            shown.operation = "MULTIPLY"
+            nt.links.new(front.outputs[0], shown.inputs[0])
+            nt.links.new(path.outputs["Is Camera Ray"], shown.inputs[1])
+            nt.links.new(shown.outputs[0], mix.inputs[0])
+            nt.links.new(see.outputs[0], mix.inputs[1])
+            nt.links.new(src, mix.inputs[2])
+            nt.links.new(mix.outputs[0], mout.inputs["Surface"])
+
 sc.render.engine = "CYCLES"
 sc.cycles.device = "CPU"
 sc.cycles.samples = samples
@@ -194,6 +217,16 @@ if reference:
         floor.hide_render = False
         if best:
             match = {"iou": round(best[0], 3), "yaw_deg": best[1], "elevation": best[2]}
+            # width of the reference against the model's in ten bands from the bottom (median row width: a whisker or
+            # a stray speck in one row does not count) — what a proportion fit scales by
+            bands = []
+            for k in range(10):
+                r0, r1 = int(k * 6.4), int((k + 1) * 6.4)
+                rw = [int(x) for x in ref_sil[r0:r1].sum(1) if x > 0]
+                mw_ = [int(x) for x in best[4][r0:r1].sum(1) if x > 0]
+                if len(rw) >= 2 and len(mw_) >= 2:
+                    bands.append([round(k / 10, 2), round((k + 1) / 10, 2), round(float(np.median(rw)) / float(np.median(mw_)), 3)])
+            match["bands"] = bands
             shots.append(("matched", centre, best[3], dist))
             both = np.zeros((64, 64, 3))
             both[best[4] & ref_sil] = (1, 1, 1)

@@ -41,7 +41,7 @@ import keys  # noqa: E402
 import mesh  # noqa: E402
 import components  # noqa: E402  optional local models (TripoSR, Hunyuan3D, Kimodo)
 
-VERSION = "0.6.6"
+VERSION = "0.6.7"
 THREE_VERSION = "0.169.0"   # same as targets/web/index.html
 NAME_RE = re.compile(r"^[a-z0-9_\-.]{1,80}$")
 UPLOAD_RE = re.compile(r"^[0-9a-f]{16}\.(png|jpg|jpeg|webp)$")
@@ -182,6 +182,10 @@ class Studio:
             cmd += ["--review", str(review)]
         if req.get("topology") in {"tri", "quad"}:
             cmd += ["--topology", req["topology"]]
+        if req.get("pose") in {"a", "t"}:
+            cmd += ["--pose", req["pose"]]
+        if req.get("outline") in {"on", "off"}:
+            cmd += ["--outline", req["outline"]]
         if req.get("pbr") is True:
             cmd.append("--pbr")
         if str(req.get("anim") or "").strip():
@@ -208,7 +212,7 @@ class Studio:
     def refine(self, req: dict) -> Job:
         """Work on a model that is already in the library, the way an artist iterates: new slider values (mg.param),
         a change in words for the AI, or back to an earlier version. The current state is kept as a version first;
-        the build reuses the model's own settings (style, tiers, textures, topology, reference picture)."""
+        the build reuses the model's own settings (style, tiers, textures, topology, pose, reference picture)."""
         name = str(req.get("name") or "")
         if not re.fullmatch(r"[a-z0-9_]{1,80}", name) or not (self.library / name / "gen.json").is_file():
             raise ValueError("pick a model from the library first")
@@ -249,6 +253,10 @@ class Studio:
             cmd += ["--texture", g["texture"]]
         if g.get("topology") in {"tri", "quad"}:
             cmd += ["--topology", g["topology"]]
+        if g.get("pose") in {"a", "t"}:
+            cmd += ["--pose", g["pose"]]
+        if g.get("outline") in {"on", "off"}:
+            cmd += ["--outline", g["outline"]]
         if g.get("pbr"):
             cmd.append("--pbr")
         if g.get("colors") in {"texture", "vertex"}:

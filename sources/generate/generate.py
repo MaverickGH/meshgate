@@ -104,6 +104,11 @@ def parse_anims(text: str | None) -> list[tuple[str, str]]:
 TEXTURES = {"auto": 0, "1k": 1024, "2k": 2048, "4k": 4096, "8k": 8192}
 
 
+def wants_outline(args) -> bool:
+    """The toon ink line: asked for, or the toon style's own look (auto)."""
+    return args.outline == "on" or (args.outline == "auto" and str(args.style).strip().lower() == "toon")
+
+
 def resolve_finish(finish: str, style: str, colors: str, pbr: bool = False) -> str:
     """auto → the style's finish (low-poly: faceted, realistic: weathered). pbr asks for a baked full PBR set on the
     other styles too (clean: exact colours + occlusion). Baking needs texture colours; with vertex colours it is off."""
@@ -508,14 +513,19 @@ def run_blender(cmd: list[str], *, timeout: int, on_line=None) -> tuple[dict, st
 def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, tiers: list[str], targets: str,
                    collision: str, size: float, preview: bool, seed: int, timeout: int = 600,
                    on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
-                   texture: int = 0, topology: str = "tri", params: dict | None = None) -> tuple[dict, str]:
+                   texture: int = 0, topology: str = "tri", params: dict | None = None,
+                   pose: str = "none", outline: bool = False, fit: list | None = None) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
-           "--texture", str(texture), "--topology", topology,
+           "--texture", str(texture), "--topology", topology, "--pose", pose,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
            "--targets", targets, "--collision", collision, "--size", str(size or 0), "--seed", str(seed),
            "--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items())]
     if params:
         cmd += ["--params", json.dumps(params)]
+    if outline:
+        cmd.append("--outline")
+    if fit:
+        cmd += ["--fit", json.dumps(fit)]
     if preview:
         cmd.append("--preview")
     return run_blender(cmd, timeout=timeout, on_line=on_line)
@@ -563,6 +573,14 @@ def build_parser() -> argparse.ArgumentParser:
                     "normal) for every style, not only realistic")
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"],
                     help="quad: FBX and .blend keep quads; the mesh engine remeshes to clean quads (GLB is always triangles)")
+    ap.add_argument("--fit", default="auto", choices=["auto", "on", "off"],
+                    help="kit: after the build, fit the model's proportions to the reference picture (widths per height "
+                         "band, from their outlines) and keep it when the outlines match better; auto = with a picture")
+    ap.add_argument("--outline", default="auto", choices=["auto", "on", "off"],
+                    help="kit: toon ink line round the silhouette (an inverted hull, mobile-high and PC); auto = on for toon")
+    ap.add_argument("--pose", default="none", choices=["none", "a", "t"],
+                    help="kit: rest pose of a rigged character — none (as modelled), a (A-pose, arms 45° down) or t "
+                         "(T-pose, arms straight out): the bind pose retargeting tools expect")
     ap.add_argument("--anim", help="kit: animation clips to make — 'open: the lid opens; idle: the lamp sways'")
     ap.add_argument("--finish", default="auto", choices=["auto", "none", "faceted", "weathered"],
                     help="kit: auto = from the style (lowpoly → faceted, realistic → weathered textures)")
@@ -773,7 +791,8 @@ def main(argv: list[str] | None = None) -> int:
               "name": name, "description": args.description, "style": args.style, "size": args.size, "tiers": tiers,
               "colors": args.colors, "caps": args.caps_parsed, "finish": args.finish_resolved if engine == "kit" else None,
               "anims": [{"clip": n, "what": w} for n, w in args.anims] or None,
-              "texture": args.texture, "pbr": args.pbr, "topology": args.topology, "params": args.params_parsed or None,
+              "texture": args.texture, "pbr": args.pbr, "topology": args.topology, "pose": args.pose,
+              "outline": args.outline, "params": args.params_parsed or None,
               "edit": args.edit,
               "engine": engine, "input_image": reference.name if reference else None, "out_dir": str(out_dir)}
     if engine == "mesh":
@@ -1013,7 +1032,8 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                                          preview=not args.no_preview, seed=args.seed,
                                          on_line=line_seen,
                                          colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
-                                         texture=TEXTURES[args.texture], topology=args.topology, params=args.params_parsed)
+                                         texture=TEXTURES[args.texture], topology=args.topology, params=args.params_parsed,
+                                         pose=args.pose, outline=wants_outline(args))
             (out_dir / f"attempt_{attempt}.blender.log").write_text(log, encoding="utf-8")
             if meter:
                 meter.end()
@@ -1035,6 +1055,8 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
         report, code, reviews = review_kit(args, name, out_dir, tiers, blender, image, say, code, report, reference_kind)
         report["reviews"] = reviews
         (out_dir / f"{name}.py").write_text(code, encoding="utf-8")
+    if report.get("ok") and image and getattr(args, "fit", "auto") != "off":
+        report = fit_kit(args, name, out_dir, tiers, blender, image, say, report)
     return report, history, code
 
 
@@ -1257,6 +1279,54 @@ def parse_review(answer: str) -> tuple[float | None, list[str]]:
     return (float(m.group(1)) if m else None), notes[:8]
 
 
+def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str, say, report: dict) -> dict:
+    """Proportions fitted to the reference, the way an artist checks a model against the concept: compare the
+    outlines, widen or narrow each height band by what they measure (the kit moves vertices and joints alike), rebuild,
+    and keep the result only when the outlines match better."""
+    canon = report["tiers"][report["canonical"]]["file"]
+    before = out_dir / "fit_before.png"
+    say("[fit] comparing the proportions with the reference…", stage="fit")
+    if not render_views(blender, out_dir / canon, before, reference=image, px=512, samples=8):
+        return report
+    m = read_match(before) or {}
+    bands = m.get("bands") or []
+    if not bands or all(abs(b[2] - 1) < 0.04 for b in bands):
+        say(f"    proportions already match (outline {m.get('iou', 0):.2f})", stage="fit")
+        return report
+    side = out_dir / "fit"
+    side.mkdir(exist_ok=True)
+    code_path = side / f"{name}.py"
+    shutil.copyfile(out_dir / f"{name}.py", code_path)
+    baking = args.finish_resolved in ("weathered", "clean")
+    tex = TEXTURES[args.texture]
+    limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0)
+    say("[fit] rebuilding with the widths fitted per height…", stage="fit")
+    new_report, _ = run_in_blender(blender, code_path, name=name, out_dir=side, tiers=tiers, timeout=limit,
+                                   targets=args.targets, collision=args.collision, size=args.size, preview=False,
+                                   seed=args.seed, colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
+                                   texture=tex, topology=args.topology, params=args.params_parsed, pose=args.pose,
+                                   outline=wants_outline(args), fit=bands)
+    if not new_report.get("ok"):
+        say("    the fitted build failed — keeping the model as it was", stage="fit")
+        return report
+    after = side / "fit_after.png"
+    if not render_views(blender, side / new_report["tiers"][new_report["canonical"]]["file"], after, reference=image,
+                        px=512, samples=8):
+        return report
+    m2 = read_match(after) or {}
+    if m2.get("iou", 0) <= m.get("iou", 0) + 0.005:
+        say(f"    the fit did not match better ({m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}) — kept as it was", stage="fit")
+        return report
+    for f in side.iterdir():
+        if f.is_file() and f.name.startswith(f"{name}.") and f.suffix != ".py":
+            shutil.copyfile(f, out_dir / f.name)
+    say(f"    proportions fitted: outline match {m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}", stage="fit")
+    for k, v in report.items():   # what the earlier stages found (reviews, advice) stays with the model
+        new_report.setdefault(k, v)
+    new_report["fit"] = {"bands": bands, "before": m.get("iou"), "after": m2.get("iou")}
+    return new_report
+
+
 def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str | None, say, code: str,
                report: dict, reference_kind: str = "picture"):
     """Stage 3, the visual loop: render the model from four sides next to the reference, let the AI compare and improve
@@ -1336,7 +1406,8 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
                                          on_line=(lambda line: meter.on_line(line, tiers, args.finish_resolved, tex)) if meter else None,
                                          preview=not args.no_preview, seed=args.seed, colors=args.colors,
                                          caps=args.caps_parsed, finish=args.finish_resolved, texture=tex,
-                                         topology=args.topology, params=args.params_parsed)
+                                         topology=args.topology, params=args.params_parsed, pose=args.pose,
+                                         outline=wants_outline(args))
         (side / "blender.log").write_text(log, encoding="utf-8")
         if meter:
             meter.end()

@@ -526,6 +526,9 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_tiles(exe, work)
     ok &= _check_modules(exe, work)
     ok &= _check_flush(exe, work)
+    ok &= _check_pose(exe, work)
+    ok &= _check_shapes(exe, work)
+    ok &= _check_outline(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -961,6 +964,78 @@ def _check_flush(exe: str, work: Path) -> bool:
         good, notes = False, [str(exc), (r.stdout + r.stderr)[-500:]]
     if not good:
         print(f"  ✗ flush parts: {notes}")
+    return good
+
+
+def _check_pose(exe: str, work: Path) -> bool:
+    """Pose None / A-Pose / T-Pose: a figure modelled with its arms hanging is exported as modelled, with the arms 45°
+    down, or straight out — its rest pose, so the file gets wider — and still has its clip."""
+    width = {}
+    for pose in ("none", "a", "t"):
+        out = work / f"pose_{pose}"
+        r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "posed_figure.py"),
+                            "--name", "posed_figure", "--tiers", "pc", "--pose", pose, "--blender", exe, "--no-preview",
+                            "--out-dir", str(out)], capture_output=True, text=True)
+        try:
+            g = json.load(open(out / "gen.json"))
+            t = g["report"]["tiers"]["pc"]
+            width[pose] = t["dims_m"][0] if g["ok"] and t.get("clips") and g.get("pose") == pose else 0.0
+        except Exception:  # noqa: BLE001
+            width[pose] = 0.0
+            print((r.stdout + r.stderr)[-500:])
+    good = 0 < width["none"] < 0.7 and width["none"] * 1.4 < width["a"] < width["t"]
+    if not good:
+        print(f"  ✗ pose: widths {width} (none < a < t expected)")
+    # blocks on different bones: the body under a sunk-in arm is not "hidden" — it shows when the arm swings away
+    out = work / "rigged_blocks"
+    subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "rigged_blocks.py"),
+                    "--name", "rigged_blocks", "--tiers", "pc", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                   capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        notes = g["report"]["tiers"]["pc"]["notes"]
+        kept = g["ok"] and not any("hidden faces" in n for n in notes)
+    except Exception as exc:  # noqa: BLE001
+        kept, notes = False, [str(exc)]
+    if not kept:
+        print(f"  ✗ rigged blocks: faces under a moving arm were removed ({notes})")
+    return good and kept
+
+
+def _check_shapes(exe: str, work: Path) -> bool:
+    """mg.cast, mg.symmetrize and mg.patch build in this Blender: a clay ball squared up, a lopsided head mirrored, and
+    a patch projected onto a block (the patch must not float off it)."""
+    out = work / "shapes"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "cast_sym.py"),
+                        "--name", "cast_sym", "--tiers", "pc", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        notes = g["report"]["tiers"]["pc"]["notes"]
+        good = g["ok"] and not any("line 11" in n and "floats" in n for n in notes)
+    except Exception as exc:  # noqa: BLE001
+        good, notes = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ cast / symmetrize / patch: {notes}")
+    return good
+
+
+def _check_outline(exe: str, work: Path) -> bool:
+    """The toon ink line: the toon style gives the PC file an inverted hull in a second material, as thick as it should
+    be — no spikes out of sharp tips (the model keeps its size)."""
+    out = work / "outline"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
+                        str(ROOT / "sources" / "generate" / "examples" / "toxic_can.py"), "--name", "toon_can", "--style", "toon",
+                        "--tiers", "pc", "--blender", exe, "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        t = g["report"]["tiers"]["pc"]
+        inked = any("ink line:" in n for n in t["notes"])
+        good = g["ok"] and inked and t["materials"] == 2 and max(t["dims_m"]) < 1.3
+    except Exception as exc:  # noqa: BLE001
+        good, t = False, {"error": str(exc), "log": (r.stdout + r.stderr)[-400:]}
+    if not good:
+        print(f"  ✗ toon outline: {t}")
     return good
 
 

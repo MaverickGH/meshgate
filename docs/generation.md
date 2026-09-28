@@ -153,6 +153,9 @@ their mean to the object in the photo.
 | `--texture` | `auto` | Baked texture size for the PC file: `1k`, `2k`, `4k`, `8k`. Phone tiers keep their own limits; `8k` also writes `<name>.master.glb` |
 | `--pbr` | off | Kit: bake a full PBR set (colour, occlusion-roughness-metallic, normal, emission) for every style, not only realistic |
 | `--topology` | `tri` | `quad`: FBX and .blend keep quads; the mesh engine rebuilds all-quad topology per tier. GLB is always triangles |
+| `--fit` | `auto` | Kit with a reference picture: compare the outlines, fit the model's width per height band (vertices and the skeleton alike, at most ±20 % a band), keep it when the outlines match better; `auto` = whenever there is a picture |
+| `--outline` | `auto` | Kit: a toon ink line round the silhouette (an inverted hull, mobile-high and PC); `auto` = on for the toon style |
+| `--pose` | `none` | Kit: rest pose of a rigged character — `none` (as modelled), `a` (A-Pose, arms 45° down), `t` (T-Pose, arms straight out) |
 | `--finish` | `auto` | Kit: `faceted` (flat shading, few segments), `weathered` (baked dirt, colour variation, relief), `none`; `auto` takes it from the style |
 | `--targets` | all engines | Engine variants of the canonical file |
 | `--collision` | `none` | `box` or `convex` proxies (Unreal `UCX_`, Godot `-convcolonly`) |
@@ -197,6 +200,11 @@ A style is more than words in the prompt: the kit engine enforces the look after
   accepts the mesh, otherwise a voxel remesh sized to the tier's triangle budget, with the source's detail baked back in
   the normal map. FBX and `.blend` keep the quads; `tri` triangulates the FBX for engines. **GLB is always triangles**:
   glTF stores nothing else, and every engine triangulates on import anyway.
+- **Pose** (`--pose none|a|t`, Studio: *Character pose*). The rest pose a rigged character (`mg.rig`) is exported in.
+  `none` keeps it as modelled — arms relaxed at the sides; `a` raises the arms straight to 45° below horizontal
+  (A-Pose), `t` straight out to the sides (T-Pose): the bind poses retargeting and Unity Humanoid / Mixamo setups
+  expect. The kit poses the skeleton, deforms the mesh into the pose and makes that the rest pose, so the AI models
+  the arms relaxed in every case; the clips (`idle`, `zombie_walk`, …) still play as designed, from the relaxed arms.
 
 ## Sculpting: organic shapes like an artist
 
@@ -217,7 +225,7 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.focus(at, radius)` | More polygons where they show — a face, hands — within the tier's budget | characters, hero details |
 | `mg.param(name, default, lo, hi)` | A number the artist tunes with a slider in Studio (Refine → Parameters) without asking the AI again | ear size, fur length, arm reach, plank count |
 | `mg.fur(surface, length=, count=)` | Hair cards with cutout alpha, coloured by the painted surface under them; fewer on phones, none on mobile-low | coats, manes, tufts, grass |
-| `mg.rig(body, joints)` + `mg.clip(name, motion)` | A Humanoid skeleton bound with automatic weights (≤ the tier's bones per vertex); clips `idle`, `zombie_walk`, `walk`, `attack`, `hit` or keys | characters that move in the engines |
+| `mg.rig(body, joints)` + `mg.clip(name, motion)` | A Humanoid skeleton bound with automatic weights, smoothed across the skin (≤ the tier's bones per vertex); a piece a bone runs through follows only those bones, pieces stuck on it (a belly patch, eyes, whiskers, a collar) take the weights of the surface they sit on; clips `idle`, `zombie_walk`, `walk`, `attack`, `hit` or keys | characters that move in the engines |
 | `mg.curve(points, radius, colour)` | A smooth spline tube through points, tapering with `radii=`, `closed=` loops | cables, vines, ribs, spines, springs, horns |
 | `mg.scatter(surface, piece, count)` | Copies of a piece over a surface, stood on it, spun and scaled at random | pebbles, grass tufts, moss, spikes, rivets |
 | `mg.tile(name, pattern, rgb, size=)` | A seamless tiling material for big surfaces, laid by world position: bricks, planks, tiles, cobble, shingles, plates, plaster, ground | walls, floors, roads, roofs, yards |
@@ -226,6 +234,9 @@ the way an artist works in Blender, and the prompt tells the AI when to:
 | `mg.modify(obj, kind)` | Blender modifiers: solidify, array, displace, smooth, remesh, bevel, wireframe, subdivide, decimate, shrinkwrap | fins, vertebrae rows, terrain, cages, straps |
 | `mg.eye(center, radius, iris)` | A glossy eyeball with iris rings and a slit, bar or round pupil set in, looking where you say | characters and creatures |
 | `mg.paint(obj, colour, at=, radius=)` | Paint a region like a texture brush, also by `facing=` and height; soft edges in baked finishes | pale bellies, stripes, wounds, moss, rust |
+| `mg.union(parts, fillet=)` | Melt pieces into one closed skin with a rounded blend of `fillet` meters along every seam, rebuilt as clean quads on mobile-high and PC, every piece keeping its colour; lighter tiers and low-poly keep the boolean surface with crisp seams | characters of soft blocks that bend as one body, trunks and branches, handles on mugs |
+| `mg.cast(obj, "cube", 0.5)` / `mg.symmetrize(obj)` | Push a piece toward a pure block, ball or column (squares up a clay blob); make it exactly mirror-symmetric about x = 0 | heads and bodies that should read as blocks; faces after sculpt noise |
+| `mg.patch(on, colour, at, size)` | A marking with crisp edges projected onto a piece's surface along `facing=`, with a thin rim and an optional `dome=` — it follows the body and never sticks out at its edges; on mobile-low and low-poly `mg.join` melts it into the piece it lies on, so it bends with those big faces exactly | a white belly or bib, a face mask, labels, bandages |
 | `mg.model(uid, colour, size=)` | A free library model as one piece to rework; `keep=` / `drop=` boxes take just a part | a head, a paw, a whole base to repaint and sculpt |
 
 Colours named fur, pelt or wool get a fur look in the realistic finish (fine streaks and tufts in colour and normal

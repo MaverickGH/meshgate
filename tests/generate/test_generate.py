@@ -99,7 +99,8 @@ step("recipes picked by the description (en and ru)",
      and [r["name"] for r in generate.recipes_for("старый дуб с корнями")] == ["plant"]
      and generate.recipes_for("plain thing") == [])
 _cat = generate.build_prompt("a zombie cat", name="zc", style="realistic", size=1.0, tiers=["pc"])
-step("creature prompt carries the recipe and the sculpted example", "How an artist builds this" in _cat and "mg.blob(" in _cat.split("# Example")[1])
+step("creature prompt carries the recipe and the character example",   # soft blocks with a skeleton, not clay
+     "How an artist builds this" in _cat and "bevel=" in _cat.split("# Example")[1] and "mg.rig(" in _cat.split("# Example")[1])
 step("prompt has no unfilled placeholders",   # dict literals in the kit docs are fine; {name} fields are not
      not re.search(r"\{[a-z_]+\}", prompt.split("# Example")[0].replace("{prompt_file}", "")))
 fb = generate.feedback_block("def build(mg):\n    pass\n", ["tier pc: boom"], ["detail: more"])

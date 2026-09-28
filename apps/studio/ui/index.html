@@ -93,6 +93,14 @@
             <select id="topology"><option value="tri" data-i18n="topo_tri">Triangles</option>
               <option value="quad" data-i18n="topo_quad">Quads</option></select></label>
         </div>
+        <label class="field"><span data-i18n="pose">Character pose</span>
+          <select id="pose"><option value="none" data-i18n="pose_none">None (as modelled)</option>
+            <option value="a">A-Pose</option><option value="t">T-Pose</option></select>
+          <small data-i18n="pose_hint">The rest pose of a rigged character in the file. A or T is the bind pose that retargeting and Humanoid setups expect; the clips still play as designed.</small></label>
+        <label class="field"><span data-i18n="outline">Ink outline</span>
+          <select id="outline"><option value="auto" data-i18n="outline_auto">Auto (toon style)</option>
+            <option value="on" data-i18n="on">On</option><option value="off" data-i18n="off">Off</option></select>
+          <small data-i18n="outline_hint">A dark line round the silhouette, drawn the way games draw it (an inverted hull) on mobile-high and PC.</small></label>
         <label class="check"><input type="checkbox" id="pbr"> <span data-i18n="pbr">Full PBR maps for every style (colour, occlusion, roughness, metallic, normal)</span></label>
         <small data-i18n="quality_hint">Textures are baked for the realistic style and with full PBR; the phone tiers keep their own limits, 8K also writes a master file. Quads go into FBX and .blend — GLB is always triangles.</small>
 

@@ -98,7 +98,7 @@
 - [x] Optional components: Hunyuan3D-2 and Kimodo installable from Studio; doctor lists them.
 - [x] Animations on request for kit models; a clean public history; new splash with the app icon; live tools light up green.
 
-## After v0.6.6 — Artist-level kit, live Blender for AI, big scenes (on main)
+## v0.6.7 — Artist-level kit, live Blender for AI, big scenes, characters (done)
 - [x] Artist kit: 2K–8K textures and full PBR, quad topology, sculpting (blob, skin, cut, bend, twist, sculpt brushes, paint), high → low bakes, splines, scatter, modifiers, a Humanoid rig with clips, fur cards, a free model library (CC0 / CC-BY), artist recipes in the prompt, a Kit panel in the add-on.
 - [x] Realistic finish like a texturing artist: a hero high model with relief per material, curvature wear, mg.eye; clay pipeline (metaballs → smoothed grid → QuadriFlow).
 - [x] Measured facts for the AI by code line (floating parts, triangles per line, asymmetry, UV use), mg.focus, joint loops, weighted normals, mg.sweep, mg.inset, UV tidy; visual review with AI-chosen close-ups, keep-best versions, a critic checklist and a library of good builds.
@@ -107,6 +107,10 @@
 - [x] Live Blender for AI clients: `meshgate.py mcp` (build, view, facts, measure, export) and Kit → Connect AI.
 - [x] Big scenes: instances (one mesh, many placements, kept through tiers and bakes), seamless tiling materials (mg.tile), modular kits on a grid (mg.module, one GLB per module).
 - [x] Fixed on the way: the realistic colour bake was black on models without paint; bmesh subdivide crashes in 3.5/4.2; duplicate faces broke glTF export in 3.5; per-vertex normal recomputation made realistic bakes take 20 minutes.
+- [x] Zombie Cats rebuilt after the concept art in three styles; the review compares the outline with the reference, and `--fit` fits the proportions to it (vertices and skeleton together).
+- [x] Characters of soft blocks: mg.union with rounded seams (one skin that bends as one), mg.patch markings that lie on the body, mg.cast, mg.symmetrize; clean low-poly facets.
+- [x] Rigs that hold together: pieces on a moving body take the weights of the surface under them, weights are smoothed across the skin, faces under a moving arm are kept, spine rings on low-poly bodies; A-Pose / T-Pose rest pose (`--pose`, Studio).
+- [x] Toon ink line (inverted hull, `--outline`), a softer glow halo in the viewer.
 
 ## Later — characters and PBR
 - [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
