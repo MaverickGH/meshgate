@@ -3,10 +3,10 @@ import math
 
 
 def build(mg):
-    mg.color("wood_post", "#8a5222", rough=0.85, material="wood")
-    mg.color("wood_rail", "#7a481d", rough=0.85, material="wood")
-    mg.color("wood_cap", "#a9702f", rough=0.8, material="wood")
-    mg.color("wood_picket", "#dca css".replace("dca css", "d7a24a"), rough=0.75, material="wood")
+    mg.color("wood_post", "#4a2c1e", rough=0.85, material="wood")
+    mg.color("wood_rail", "#4a2c1e", rough=0.85, material="wood")
+    mg.color("wood_cap", "#5a3624", rough=0.8, material="wood")
+    mg.color("wood_picket", "#c08a55", rough=0.75, material="wood")
     mg.color("nail", "#2e2117", rough=0.7, metal=0.4, material="rust")
 
     parts = []

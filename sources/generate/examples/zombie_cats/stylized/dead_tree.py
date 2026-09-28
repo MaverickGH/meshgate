@@ -1,57 +1,55 @@
-"""zc_dead_tree — a gnarled dead leafless tree with broken roots and a red yarn ball hanging on a string."""
+"""zc_dead_tree — a dead leafless tree: a straight trunk tapering to one sharp point, thorny branches, buttress roots
+and a red yarn ball hanging on a string from the long branch. Faceted, like the concept art."""
 import math
 
 
 def build(mg):
-    wood = mg.color("wood", "#8a5a2b", rough=0.85)
-    wood_d = mg.color("wood_dark", "#5f3c1d", rough=0.9)
-    yarn = mg.color("fabric_red", "#e21c1c", rough=0.85)
-    rope = mg.color("rope_red", "#d81818", rough=0.9)
+    wood = mg.color("wood", "#5a3423", rough=0.85, material="wood")
+    wood_d = mg.color("wood_dark", "#3e2418", rough=0.9, material="wood")
+    yarn = mg.color("fabric_red", "#e21c1c", rough=0.6)
+    rope = mg.color("rope_red", "#c41616", rough=0.9)
+    sides = 7 if mg.at_least("mobile-mid") else 5
+    twig_sides, smooth, nroots = 5, False, 5
 
     parts = []
-    sides = 6 if mg.at_least("mobile-mid") else 5
 
-    # --- trunk: gnarled tapered column rising to a jagged point ---
-    trunk_pts = [(0.0, 0.0, 0.0), (0.03, 0.02, 0.45), (-0.04, 0.0, 0.95),
-                 (0.03, 0.03, 1.45), (-0.02, 0.0, 1.85), (0.03, 0.02, 2.2),
-                 (0.0, 0.0, 2.46)]
-    trunk_r = [0.29, 0.25, 0.21, 0.16, 0.11, 0.06, 0.0]
-    parts.append(mg.tube(trunk_pts, 0.0, wood, radii=trunk_r, sides=sides,
-                         smooth=False, cap=True))
+    # --- trunk: a straight tapering column rising to one sharp point ---
+    trunk_pts = [(0.0, 0.0, 0.0), (0.01, 0.0, 0.5), (-0.01, 0.0, 1.0), (0.01, 0.0, 1.5),
+                 (0.0, 0.0, 1.95), (0.0, 0.0, 2.3), (0.0, 0.0, 2.6)]
+    trunk_r = [0.3, 0.24, 0.2, 0.16, 0.11, 0.05, 0.0]
+    parts.append(mg.tube(trunk_pts, 0.0, wood, radii=trunk_r, sides=sides, smooth=smooth, cap=True))
 
-    # --- main branch to viewer's right (+X), nearly horizontal, up-tilted ---
-    parts.append(mg.tube([(0.1, 0.0, 1.5), (0.4, 0.0, 1.66), (0.72, 0.02, 1.74),
-                          (0.98, 0.0, 1.82)], 0.0,
-                         wood, radii=[0.1, 0.07, 0.045, 0.0], sides=sides, smooth=False))
-    # two little crooked spikes off the main branch
-    parts.append(mg.tube([(0.42, 0.0, 1.66), (0.47, 0.0, 1.85), (0.5, 0.0, 2.02)], 0.0,
-                         wood, radii=[0.05, 0.03, 0.0], sides=sides, smooth=False))
-    parts.append(mg.tube([(0.55, 0.0, 1.69), (0.6, 0.0, 1.85), (0.64, 0.0, 1.98)], 0.0,
-                         wood, radii=[0.045, 0.028, 0.0], sides=sides, smooth=False))
+    def branch(points, radii, color=None):
+        parts.append(mg.tube(points, 0.0, color or wood, radii=radii, sides=twig_sides, smooth=smooth))
 
-    # --- lower-left branch (-X) with an upward spike ---
-    parts.append(mg.tube([(-0.1, 0.0, 1.2), (-0.34, -0.01, 1.25), (-0.55, -0.03, 1.27)], 0.0,
-                         wood, radii=[0.09, 0.05, 0.0], sides=sides, smooth=False))
-    parts.append(mg.tube([(-0.28, 0.0, 1.24), (-0.31, 0.0, 1.4), (-0.33, 0.0, 1.56)], 0.0,
-                         wood, radii=[0.045, 0.028, 0.0], sides=sides, smooth=False))
+    # --- the long branch to the viewer's right (+X), rising a little: the yarn ball hangs from it ---
+    branch([(0.08, 0.0, 1.55), (0.38, 0.0, 1.7), (0.68, 0.0, 1.8), (1.0, 0.0, 1.9)], [0.09, 0.06, 0.035, 0.0])
+    branch([(0.4, 0.0, 1.7), (0.46, 0.0, 1.9), (0.5, 0.0, 2.06)], [0.045, 0.028, 0.0])   # two thorns up
+    branch([(0.62, 0.0, 1.78), (0.68, 0.0, 1.93), (0.71, 0.0, 2.02)], [0.035, 0.02, 0.0])
+    # --- the shorter branch to the left, with a thorn up, and a thorn off the trunk higher up ---
+    branch([(-0.08, 0.0, 1.25), (-0.32, 0.0, 1.32), (-0.58, 0.0, 1.4)], [0.08, 0.045, 0.0])
+    branch([(-0.3, 0.0, 1.31), (-0.34, 0.0, 1.47), (-0.36, 0.0, 1.6)], [0.035, 0.02, 0.0])
+    branch([(-0.04, 0.0, 1.95), (-0.2, 0.0, 2.06), (-0.34, 0.0, 2.14)], [0.04, 0.022, 0.0])
+    if mg.at_least("mobile-mid"):
+        branch([(0.05, 0.0, 0.95), (0.18, 0.02, 1.02), (0.28, 0.03, 1.06)], [0.035, 0.02, 0.0])   # a stub
+        branch([(0.0, 0.05, 1.7), (0.02, 0.2, 1.8), (0.03, 0.32, 1.86)], [0.035, 0.02, 0.0])       # one to the back
 
-    # --- broken roots flaring out at the base ---
-    nroots = 7 if mg.at_least("mobile-mid") else 5
+    # --- roots: short thick buttresses flaring into the ground ---
     for i in range(nroots):
-        a = (i / nroots) * math.tau + 0.3
+        a = (i / nroots) * math.tau + 0.35
         dx, dy = math.cos(a), math.sin(a)
-        reach = 0.42 + 0.12 * mg.rng.random()
-        parts.append(mg.tube([(dx * 0.12, dy * 0.12, 0.32),
-                              (dx * 0.28, dy * 0.24, 0.14),
-                              (dx * reach, dy * reach * 0.85, 0.02)], 0.0,
-                             wood_d, radii=[0.11, 0.07, 0.0], sides=sides, smooth=False))
-
+        reach = 0.44 + 0.08 * mg.rng.random()
+        parts.append(mg.tube([(dx * 0.1, dy * 0.1, 0.42), (dx * 0.26, dy * 0.26, 0.14), (dx * reach, dy * reach, 0.0)],
+                             0.0, wood_d, radii=[0.13, 0.085, 0.0], sides=twig_sides, smooth=smooth))
     tree = mg.join("zc_dead_tree", parts)
 
-    # --- red yarn ball hanging on a string from the main branch ---
-    hang_x = 0.78
-    string = mg.tube([(hang_x, 0.0, 1.77), (hang_x, 0.0, 1.12)], 0.012, rope,
-                     sides=6, smooth=True)
-    ball = mg.part("ico", yarn, loc=(hang_x, 0.0, 0.98), scale=(0.24, 0.24, 0.24),
-                   subdiv=1 if mg.at_least("mobile-high") else 0)
-    mg.join("yarn", [string, ball])
+    # --- red yarn ball hanging on a string from the long branch ---
+    hang_x = 0.8
+    string = mg.tube([(hang_x, 0.0, 1.83), (hang_x, 0.0, 1.2)], 0.01, rope, sides=6, smooth=True)
+    ball = mg.part("ico", yarn, loc=(hang_x, 0.0, 1.07), scale=(0.26, 0.26, 0.26),
+                   subdiv=1 if mg.at_least("mobile-high") else 0, smooth=False)
+    yarn_ball = mg.join("yarn", [string, ball])
+    mg.pivot(yarn_ball, (hang_x, 0.0, 1.83))
+    mg.attach(yarn_ball, tree)
+    mg.animate(yarn_ball, "yarn_swing", [(0, (0, 0, 0)), (45, (0.1, 0, 0.06)), (90, (0, 0, 0)), (135, (-0.1, 0, -0.06)),
+                                         (180, (0, 0, 0))])

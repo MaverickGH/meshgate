@@ -3,9 +3,9 @@ import math
 
 
 def build(mg):
-    stone = mg.color("stone_light", "#cbc3ab", rough=0.85, material="stone")
+    stone = mg.color("stone_light", "#a39c93", rough=0.85, material="stone")
     stone_dark = mg.color("stone_dark", "#38383a", rough=0.7, material="stone")
-    stone_base = mg.color("stone_base", "#c2baa0", rough=0.88, material="stone")
+    stone_base = mg.color("stone_base", "#978f86", rough=0.88, material="stone")
     goo = mg.color("goo_ooze", "#7ede2c", rough=0.35, glow=2.2, material="plain")
 
     parts = []
@@ -15,20 +15,15 @@ def build(mg):
     parts.append(mg.part("cube", stone_base, loc=(0, 0, 0.12), scale=(0.55, 0.36, 0.07), bevel=0.01))
 
     # ---- main slab with cat-ear silhouette (front view outline, front faces -Y) ----
-    outline = [
-        (-0.35, 0.12),
-        (-0.35, 0.70),
-        (-0.31, 1.02),   # left ear tip
-        (-0.09, 0.80),   # valley
-        (0.09, 0.80),
-        (0.31, 1.05),    # right ear tip
-        (0.35, 0.70),
-        (0.35, 0.12),
-    ]
-    slab = mg.extrude(outline, 0.22, stone, loc=(0, 0, 0), bevel=0.018, smooth=False)
+    outline = [(-0.35, 0.12), (-0.35, 0.82), (-0.31, 1.08), (-0.16, 0.8)]
+    for i in range(1, 9):   # the scooped top between the ears
+        t = i / 9
+        outline.append((-0.16 + 0.32 * t, 0.8 - 0.12 * math.sin(math.pi * t)))
+    outline += [(0.16, 0.8), (0.31, 1.08), (0.35, 0.82), (0.35, 0.12)]
+    slab = mg.extrude(outline, 0.16, stone, loc=(0, 0, 0), bevel=0.018, smooth=False)
     parts.append(slab)
 
-    fy = -0.10  # front face plane (protruding pads)
+    fy = -0.075  # front face plane (protruding pads)
 
     # ---- paw print: large central pad ----
     parts.append(mg.part("sphere", stone_dark, loc=(0, fy, 0.47),
@@ -45,8 +40,6 @@ def build(mg):
     parts.append(mg.mirror_x(toe2))
 
     # ---- glowing green goo ----
-    # blob nestled in the ear valley
-    parts.append(mg.part("sphere", goo, loc=(0, 0.79, -0.02), scale=(0.14, 0.16, 0.06), smooth=True))
     # puddle spreading on the base
     parts.append(mg.part("sphere", goo, loc=(0.02, 0.06, 0.10), scale=(0.34, 0.24, 0.05), smooth=True))
     # bright blob spilling off the right side of the base

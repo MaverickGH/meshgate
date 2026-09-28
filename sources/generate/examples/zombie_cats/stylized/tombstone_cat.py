@@ -3,9 +3,9 @@ import math
 
 
 def build(mg):
-    stone = mg.color("stone", "#cfc8ba", rough=0.85, material="stone")
-    stone_base = mg.color("stone_base", "#c3bcae", rough=0.9, material="stone")
-    pad = mg.color("stone_pad", "#5c5c58", rough=0.8, material="stone")
+    stone = mg.color("stone", "#a9a4a0", rough=0.85, material="stone")
+    stone_base = mg.color("stone_base", "#9d9894", rough=0.9, material="stone")
+    pad = mg.color("stone_pad", "#3e3c3a", rough=0.8, material="stone")
     goo = mg.color("goo_green", "#8ef23a", rough=0.25, glow=2.6, material="plain")
 
     depth = 0.12  # slab thickness

@@ -287,15 +287,15 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
             outs["emissive"] = soft_emission
         return m, emit, bsdf, out, outs
 
-    # colour variation: broad blotches and finer mottling, about ±20 %, less on bare metal
-    var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.78, 1.14),
-                maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.88, 1.08))
+    # colour variation: soft broad blotches and finer mottling, a few per cent — a clean model, not a stained one
+    var = math_("MULTIPLY", maprange(noise(1.2 / max(size, 0.1) * 2.0).outputs["Fac"], 0.3, 0.7, 0.92, 1.06),
+                maprange(noise(9.0 / max(size, 0.1) * 0.6, 8.0).outputs["Fac"], 0.35, 0.65, 0.95, 1.04))
     var = mix(math_("MULTIPLY", metal, 0.7), var, 1.0)
     col = mix(1.0, base_colour, var, "MULTIPLY")
     ao = nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 16
     ao.inputs["Distance"].default_value = max(size * 0.08, 0.02)
-    crevice = maprange(ao.outputs["AO"], 0.45, 1.0, 1.0, 0.0)
+    crevice = maprange(ao.outputs["AO"], 0.35, 0.8, 1.0, 0.0)   # real hollows only, not every soft shadow
     nz = nodes.new("ShaderNodeSeparateXYZ")
     links.new(geo.outputs["Normal"], nz.inputs[0])
     obj = coord.outputs["Object"]
@@ -307,8 +307,8 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     crack = math_("MULTIPLY", maprange(voronoi(3.0, "DISTANCE_TO_EDGE"), 0.0, 0.018, 1.0, 0.0),   # thin, and only here and there
                   maprange(noise_at(obj, 1.6, 3), .52, .64, 0.0, 1.0))
     mottle = noise_at(obj, 3.5, 6)
-    moss = math_("MULTIPLY", math_("MAXIMUM", maprange(nz.outputs["Z"], .25, .85, 0, 1), math_("MULTIPLY", crevice, .6)),
-                 maprange(noise_at(obj, 2.5, 6), .45, .62, 0, 1))
+    moss = math_("MULTIPLY", math_("MAXIMUM", maprange(nz.outputs["Z"], .6, .95, 0, .45), math_("MULTIPLY", crevice, .8)),
+                 maprange(noise_at(obj, 2.5, 6), .5, .64, 0, 1))   # in hollows and a little on top, in patches
     brushed = noise_at(mapped((.06, 1, 1)), 40, 2)
     rust_spots = maprange(noise_at(obj, 2.2, 8, .6), .56, .7, 0, 1)
     rust_all = maprange(noise_at(obj, 2.2, 8, .6), .38, .6, 0, 1)
@@ -317,9 +317,9 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     pores = maprange(voronoi(70.0, "F1"), 0.0, 0.12, 1.0, 0.0)
     strands, tufts = noise_at(mapped((1, 1, .07)), 260, 3), noise_at(obj, 18.0, 5)   # hair: fine streaks down the body
     looks = {   # material index: (colour, relief, extra roughness)
-        1: (shade(col, maprange(grain, 0, 1, .7, 1.12)), math_("MULTIPLY", grain, .7), 0.0),                      # wood
+        1: (shade(col, maprange(grain, 0, 1, .86, 1.06)), math_("MULTIPLY", grain, .45), 0.0),                     # wood
         2: (shade(col, maprange(fibre, .3, .7, .9, 1.05)),
-            math_("ADD", math_("MULTIPLY", corr, .25), math_("MULTIPLY", fibre, .12)), 0.0),                       # cardboard
+            math_("ADD", math_("MULTIPLY", corr, .04), math_("MULTIPLY", fibre, .1)), 0.0),                        # cardboard
         3: (mix(moss, mix(math_("MULTIPLY", crack, .6), shade(col, maprange(mottle, .35, .65, .82, 1.1)),
                           (.08, .075, .07, 1.0)), (.16, .24, .07, 1.0)),
             math_("SUBTRACT", math_("MULTIPLY", mottle, .4), math_("MULTIPLY", crack, .9)), .1),                   # stone
@@ -362,8 +362,8 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
     # does not flicker with the mesh's facets)
     ridge = maprange(ao.outputs["AO"], 0.82, 0.97, 0.0, 1.0)
     hollow = maprange(ao.outputs["AO"], 0.75, 0.45, 0.0, 1.0)
-    wear_amt = {1: .5, 2: .35, 3: .6, 4: .75, 5: .25, 6: .1, 7: .15, 8: .7, 9: .04}   # material index → edge wear (fur: none)
-    dirt_amt = {1: .35, 2: .3, 3: .45, 4: .25, 5: .35, 6: .3, 7: .2, 8: .3, 9: .1}  # → grime in concave edges
+    wear_amt = {1: .4, 2: .25, 3: .45, 4: .6, 5: .2, 6: .08, 7: .1, 8: .5, 9: .03}   # material index → edge wear (fur: none)
+    dirt_amt = {1: .18, 2: .12, 3: .22, 4: .12, 5: .18, 6: .12, 7: .1, 8: .15, 9: .05}  # → grime in concave edges
     wear_k, dirt_k = 0.3, 0.25
     for k in wear_amt:
         mk = nodes.new("ShaderNodeMath")
@@ -379,19 +379,19 @@ def _bake_material(pal: dict, size: float, clean: bool = False):
         wear_k, dirt_k = math_("MULTIPLY", wear_k, clean_glow), math_("MULTIPLY", dirt_k, clean_glow)
     wear = math_("MULTIPLY", math_("MULTIPLY", edge, ridge), wear_k)
     grime_c = math_("MULTIPLY", math_("MULTIPLY", edge, hollow), dirt_k)   # the broad crevice dirt comes further down
-    col = mix(wear, col, mix(1.0, col, (1.3, 1.28, 1.22, 1.0), "MULTIPLY"))                  # worn edges lighter
-    col = mix(grime_c, col, mix(1.0, col, (0.42, 0.36, 0.28, 1.0), "MULTIPLY"))              # warm dark grime
+    col = mix(wear, col, mix(1.0, col, (1.2, 1.18, 1.14, 1.0), "MULTIPLY"))                  # worn edges lighter
+    col = mix(grime_c, col, mix(1.0, col, (0.66, 0.6, 0.52, 1.0), "MULTIPLY"))               # warm grime
     rough = math_("MAXIMUM", math_("SUBTRACT", rough, math_("MULTIPLY", wear, 0.25)), 0.05)   # rubbed smooth
 
     # dirt: occluded corners and the lowest band near the ground, broken up by noise
     world_z = nodes.new("ShaderNodeSeparateXYZ")
     links.new(geo.outputs["Position"], world_z.inputs[0])
-    ground = maprange(world_z.outputs["Z"], 0.0, max(size * 0.25, 0.06), 0.75, 0.0)
+    ground = maprange(world_z.outputs["Z"], 0.0, max(size * 0.1, 0.03), 0.35, 0.0)   # a thin band where it stands
     breakup = maprange(noise(4.0 / max(size, 0.1) * 1.5, 4.0).outputs["Fac"], 0.4, 0.62, 0.35, 1.0)
-    dirt = math_("MULTIPLY", math_("MAXIMUM", crevice, ground), breakup)
+    dirt = math_("MULTIPLY", math_("MULTIPLY", math_("MAXIMUM", crevice, ground), breakup), 0.6)
     if glow is not None:
         dirt = math_("MULTIPLY", dirt, maprange(glow.outputs[0], 0.0, 0.05, 1.0, 0.0))
-    grime = mix(1.0, col, (0.1, 0.085, 0.065, 1.0), "MULTIPLY")
+    grime = mix(1.0, col, (0.45, 0.4, 0.33, 1.0), "MULTIPLY")   # darker and warmer, never black
     col = mix(dirt, col, grime)
     # roughness: dirt is duller; relief: fine noise, stronger on rough surfaces, none on polished metal
     rough_out = math_("MINIMUM", math_("ADD", math_("ADD", rough, math_("MULTIPLY", dirt, 0.25)), rough_extra), 1.0)

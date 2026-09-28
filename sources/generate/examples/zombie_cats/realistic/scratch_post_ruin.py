@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    fabric = mg.color("fabric", "#d94a9e", rough=0.9, material="fabric")          # pink carpet
-    fabric_w = mg.color("fabric_worn", "#e6a7cf", rough=0.95, material="fabric")   # faded worn edges
+    fabric = mg.color("fabric", "#c06ac0", rough=0.9, material="fabric")          # pink carpet
+    fabric_w = mg.color("fabric_worn", "#d4a0d6", rough=0.95, material="fabric")   # faded worn edges
     rope = mg.color("rope", "#c9a56a", rough=0.85, material="fabric")              # sisal rope
     rope_d = mg.color("rope_dark", "#9c7b46", rough=0.9, material="fabric")        # shaded/dirty rope
     wood = mg.color("wood", "#b08a5a", rough=0.8, material="wood")                 # exposed board

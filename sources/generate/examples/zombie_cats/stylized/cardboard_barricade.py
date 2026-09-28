@@ -3,10 +3,10 @@ import math
 
 
 def build(mg):
-    card = mg.color("cardboard", (0.80, 0.62, 0.38), rough=0.9)
-    card_l = mg.color("cardboard_light", (0.88, 0.75, 0.53), rough=0.9)
-    card_d = mg.color("cardboard_dark", (0.70, 0.52, 0.32), rough=0.85)
-    tape = mg.color("cardboard_tape", (0.90, 0.83, 0.67), rough=0.7)
+    card = mg.color("cardboard", "#b0763f", rough=0.9)
+    card_l = mg.color("cardboard_light", "#bd854e", rough=0.9)
+    card_d = mg.color("cardboard_dark", "#9a6534", rough=0.85)
+    tape = mg.color("cardboard_tape", "#8a6340", rough=0.7)
     ear = mg.color("fabric_zombie", (0.44, 0.56, 0.42), rough=0.7)
     eye = mg.color("eye_glow", (0.35, 1.0, 0.25), rough=0.3, glow=3.0, material="plain")
 
@@ -54,7 +54,7 @@ def build(mg):
 
     # cardboard-roll "wheels" at the front base corners
     for wx in (-0.80, 0.80):
-        P.append(mg.part("cyl", card_d, loc=(wx, -0.22, 0.13), scale=(0.24, 0.24, 0.12),
+        P.append(mg.part("cyl", card_d, loc=(wx, -0.31, 0.13), scale=(0.24, 0.24, 0.12),   # clear of the box front
                          rot=(math.pi / 2, 0, 0), vertices=16))
 
     # dented corner accents (only when there is budget)

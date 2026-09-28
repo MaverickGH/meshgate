@@ -4,10 +4,10 @@ import math
 
 def build(mg):
     # cardboard shades and packing tape
-    card_a = mg.color("cardboard_a", "#d8b381", rough=0.85, material="cardboard")
-    card_b = mg.color("cardboard_b", "#c9a06c", rough=0.85, material="cardboard")
-    card_c = mg.color("cardboard_c", "#e0bd8f", rough=0.85, material="cardboard")
-    tape = mg.color("cardboard_tape", "#b0854f", rough=0.7, material="cardboard")
+    card_a = mg.color("cardboard_a", "#b57b43", rough=0.85, material="cardboard")
+    card_b = mg.color("cardboard_b", "#a56d39", rough=0.85, material="cardboard")
+    card_c = mg.color("cardboard_c", "#bd854e", rough=0.85, material="cardboard")
+    tape = mg.color("cardboard_tape", "#8a6340", rough=0.7, material="cardboard")
     fur = mg.color("fabric_catfur", "#5f7d4a", rough=0.8, material="fabric")
     fur_dk = mg.color("fabric_catfur_dark", "#47613a", rough=0.8, material="fabric")
     eye = mg.color("eye_glow", (0.45, 1.0, 0.25), rough=0.4, glow=3.5, material="plain")

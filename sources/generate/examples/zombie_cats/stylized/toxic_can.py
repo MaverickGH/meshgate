@@ -4,7 +4,7 @@ import math
 
 def build(mg):
     metal = mg.color("metal_steel", "#b8bcc2", rough=0.35, metal=1.0)
-    metal_d = mg.color("metal_dark", "#6e747c", rough=0.45, metal=1.0)
+    metal_d = mg.color("metal_dark", "#4a5058", rough=0.45, metal=1.0)
     label = mg.color("cardboard_purple", "#7d2fb0", rough=0.7)
     label_d = mg.color("cardboard_purple_dark", "#5f1f8a", rough=0.72)
     fish = mg.color("cardboard_teal", "#2fb6c9", rough=0.6)
@@ -99,16 +99,16 @@ def build(mg):
         (0.0, 0.0), (lr - 0.03, 0.0), (lr - 0.02, 0.012),
         (lr, 0.018), (lr, 0.03), (lr - 0.02, 0.036), (0.0, 0.03),
     ]
-    lid_parts.append(mg.lathe(lid_prof, metal, segments=48, cap=True))
+    lid_parts.append(mg.lathe(lid_prof, metal_d, segments=48, cap=True))   # dark, as in the concept
     # concentric ring detail on lid top
     if mg.at_least("mobile-high"):
-        lid_parts.append(mg.lathe([(0.10, 0.03), (0.11, 0.032), (0.10, 0.034)], metal_d, segments=48, cap=False))
-        lid_parts.append(mg.lathe([(0.24, 0.03), (0.25, 0.032), (0.24, 0.034)], metal_d, segments=48, cap=False))
+        lid_parts.append(mg.lathe([(0.10, 0.03), (0.11, 0.032), (0.10, 0.034)], metal, segments=48, cap=False))
+        lid_parts.append(mg.lathe([(0.24, 0.03), (0.25, 0.032), (0.24, 0.034)], metal, segments=48, cap=False))
     lid = mg.join("zc_toxic_lid", lid_parts)
     mg.attach(lid, can)
     # place it floating above, tilted like the reference
-    mg.animate(lid, "float", [(1, (0, 0, 0)), (30, (0, 0, 0)), (60, (0, 0, 0))])
-    mg.animate(lid, "float", [(1, (0.35, -0.15, 0.25)), (60, (0.35, -0.15, 0.25))],
+    mg.animate(lid, "bubbles", [(1, (0, 0, 0)), (30, (0, 0, 0)), (60, (0, 0, 0))])
+    mg.animate(lid, "bubbles", [(1, (0.35, -0.15, 0.25)), (60, (0.35, -0.15, 0.25))],
                path="rotation_euler")
-    mg.animate(lid, "float", [(1, (0, -0.02, H + 0.42)), (30, (0, -0.02, H + 0.47)),
+    mg.animate(lid, "bubbles", [(1, (0, -0.02, H + 0.42)), (30, (0, -0.02, H + 0.47)),
                               (60, (0, -0.02, H + 0.42))], path="location")

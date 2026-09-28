@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    wood_l = mg.color("wood_light", "#d8a45f", rough=0.7, material="wood")
-    wood_d = mg.color("wood_dark", "#7a4a28", rough=0.78, material="wood")
+    wood_l = mg.color("wood_light", "#c08a55", rough=0.7, material="wood")
+    wood_d = mg.color("wood_dark", "#4a2c1e", rough=0.78, material="wood")
     rust = mg.color("rust_nail", "#3f2c1c", rough=0.8, metal=0.2, material="rust")
 
     w, th, yf = 0.16, 0.03, -0.05          # picket width, thickness, front plane

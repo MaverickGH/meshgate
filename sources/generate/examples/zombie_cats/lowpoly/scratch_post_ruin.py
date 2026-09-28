@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    pink = mg.color("fabric_pink", (0.93, 0.55, 0.82), rough=0.9)
-    pink_dk = mg.color("fabric_pink_dark", (0.62, 0.27, 0.52), rough=0.9)
+    pink = mg.color("fabric_pink", "#c46fc4", rough=0.9)
+    pink_dk = mg.color("fabric_pink_dark", "#9c4f9e", rough=0.9)
     board = mg.color("fabric_pink_edge", (0.4, 0.14, 0.26), rough=0.85)
     rope = mg.color("rope", (0.83, 0.66, 0.44), rough=0.85, material="fabric")
     rope_dk = mg.color("rope_dark", (0.58, 0.44, 0.28), rough=0.9, material="fabric")

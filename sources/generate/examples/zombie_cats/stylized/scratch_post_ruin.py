@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    carpet = mg.color("carpet_fabric", (0.93, 0.62, 0.80), rough=0.85, material="fabric")
-    carpet_dk = mg.color("carpet_fabric_dark", (0.78, 0.44, 0.63), rough=0.9, material="fabric")
+    carpet = mg.color("carpet_fabric", "#c46fc4", rough=0.85, material="fabric")
+    carpet_dk = mg.color("carpet_fabric_dark", "#9c4f9e", rough=0.9, material="fabric")
     rope = mg.color("sisal", (0.83, 0.66, 0.42), rough=0.9, material="fabric")
     rope_dk = mg.color("sisal_dark", (0.68, 0.51, 0.30), rough=0.95, material="fabric")
     metal = mg.color("metal", (0.72, 0.73, 0.76), rough=0.35, metal=1.0)

@@ -38,28 +38,30 @@ def build(mg):
     # short dropper connecting arm to lantern
     lx, ly = arm_end[0], arm_end[1]
     lz = arm_end[2] - 0.28
-    parts.append(mg.part("cyl", steel_d, loc=(lx, ly, arm_end[2] - 0.12),
-                         scale=(0.02, 0.02, 0.24), vertices=mg.seg(8)))
+    lantern = [mg.part("cyl", steel_d, loc=(lx, ly, arm_end[2] - 0.12),
+                       scale=(0.02, 0.02, 0.24), vertices=mg.seg(8))]
 
     # fish lantern body (ellipsoid along Y), nose to -Y, tail to +Y
-    body = mg.part("sphere", fish, loc=(lx, ly, lz),
-                   scale=(0.24, 0.42, 0.24), segments=mg.seg(24))
-    parts.append(body)
+    lantern.append(mg.part("sphere", fish, loc=(lx, ly, lz), scale=(0.24, 0.42, 0.24), segments=mg.seg(24)))
     # glowing warm-yellow belly underside
-    parts.append(mg.part("sphere", glow, loc=(lx, ly, lz - 0.06),
+    lantern.append(mg.part("sphere", glow, loc=(lx, ly, lz - 0.06),
                          scale=(0.20, 0.34, 0.14), segments=mg.seg(20)))
     # tail fin (triangular) at +Y back
-    parts.append(mg.extrude([(0.0, 0.0), (0.22, 0.10), (0.22, -0.10)], 0.02, fish_d,
+    lantern.append(mg.extrude([(0.0, 0.0), (0.22, 0.10), (0.22, -0.10)], 0.02, fish_d,
                             loc=(lx, ly + 0.20, lz), rot=(0, math.pi / 2, 0)))
 
     if mg.at_least("mobile-high"):
         # small side fins
         fin = mg.extrude([(0.0, 0.0), (0.12, 0.05), (0.10, -0.05)], 0.015, fish_d,
                          loc=(lx + 0.16, ly, lz - 0.02), rot=(0, 0, 0))
-        parts.append(fin)
-        parts.append(mg.mirror_x(fin))
+        lantern += [fin, mg.mirror_x(fin)]
         # rim ring under belly
-        parts.append(mg.part("torus", steel_d, loc=(lx, ly, lz - 0.12),
+        lantern.append(mg.part("torus", steel_d, loc=(lx, ly, lz - 0.12),
                              scale=(0.30, 0.42, 0.30), major_radius=0.5, minor_radius=0.04))
 
-    mg.join("zc_street_lamp", parts)
+    lamp = mg.join("zc_street_lamp", parts)
+    # the lantern hangs from the end of the arm and swings a little in the wind
+    head = mg.join("lantern", lantern)
+    mg.pivot(head, arm_end)
+    mg.attach(head, lamp)
+    mg.animate(head, "swing", [(0, (0, 0, 0)), (30, (0.12, 0, 0)), (60, (0, 0, 0)), (90, (-0.12, 0, 0)), (120, (0, 0, 0))])

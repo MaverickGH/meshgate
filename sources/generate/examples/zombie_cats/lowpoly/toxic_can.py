@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    steel = mg.color("steel", "#4b4b55", rough=0.4, metal=1.0)
-    steel_lt = mg.color("steel_light", "#8f8f9c", rough=0.35, metal=1.0)
+    steel = mg.color("steel", "#c0c4cc", rough=0.35, metal=0.7)
+    steel_lt = mg.color("steel_light", "#d4d8de", rough=0.3, metal=0.7)
     purple = mg.color("label_purple", (0.62, 0.13, 0.78), rough=0.55, material="cardboard")
     goo = mg.color("goo_green", (0.55, 0.88, 0.12), rough=0.25, glow=2.6, material="plain")
     goo_dk = mg.color("goo_dark", (0.42, 0.72, 0.08), rough=0.3, glow=1.6, material="plain")
@@ -62,21 +62,20 @@ def build(mg):
                              segments=10, smooth=False))
 
     # --- rising bubbles between can and lid ---
-    parts.append(mg.part("sphere", goo, loc=(0.02, 0.05, 1.02), scale=(0.13, 0.13, 0.13), segments=12, smooth=False))
-    parts.append(mg.part("sphere", goo, loc=(-0.1, 0.0, 0.95), scale=(0.08, 0.08, 0.08), segments=10, smooth=False))
+    for bx, by, bz, br in [(0.02, 0.05, 1.02, 0.13), (-0.1, 0.0, 0.95, 0.08), (0.08, -0.04, 1.14, 0.09), (-0.03, 0.02, 1.22, 0.07)]:
+        parts.append(mg.part("sphere", goo, loc=(bx, by, bz), scale=(br, br, br), segments=10, smooth=False))
 
     can = mg.join("zc_toxic_can", parts)
 
-    # --- peeled lid (separate, hovering above) ---
+    # --- the lid, floating well above the goo and tilted, as in the concept ---
+    lid_dark = mg.color("steel_dark", "#6a707a", rough=0.4, metal=0.8)
+    L, tilt = (0.0, -0.02, 1.5), (0.3, -0.12, 0.0)
     lp = []
-    lp.append(mg.part("cyl", steel, loc=(0, 0, -0.01), scale=(0.76, 0.76, 0.05), vertices=V, smooth=False, bevel=0.01))
-    lp.append(mg.part("cyl", steel, loc=(0, 0, 0.02), scale=(0.72, 0.72, 0.02), vertices=V, smooth=False))
-    lp.append(mg.part("cyl", steel_lt, loc=(0, 0, 0.04), scale=(0.58, 0.58, 0.02), vertices=V, smooth=False))
-    lp.append(mg.part("cyl", steel_lt, loc=(0, 0, 0.055), scale=(0.36, 0.36, 0.02), vertices=V, smooth=False))
-    lp.append(mg.part("cyl", steel, loc=(0, 0, 0.065), scale=(0.14, 0.14, 0.02), vertices=12, smooth=False))
+    for dz, sc, col, verts in ((-0.01, 0.76, lid_dark, V), (0.02, 0.72, lid_dark, V), (0.04, 0.58, steel, V),
+                               (0.055, 0.36, lid_dark, V), (0.065, 0.14, steel, 12)):
+        lp.append(mg.part("cyl", col, loc=(L[0], L[1], L[2] + dz), scale=(sc * 0.85, sc * 0.85, 0.03 if dz < 0 else 0.02),
+                          rot=tilt, vertices=verts, smooth=False))
     lid = mg.join("zc_toxic_can_lid", lp)
-    lid = mg.copy(lid, loc=(0, 0.06, 0.93), rot=(0.32, 0.06, 0.0))
-
-    mg.pivot(lid, (0, 0.06, 0.93))
+    mg.pivot(lid, L)
     mg.attach(lid, can)
-    mg.animate(lid, "float", [(0, (0, 0, 0)), (45, (0, 0, 0.03)), (90, (0, 0, 0))], path="location")
+    mg.animate(lid, "bubbles", [(0, L), (45, (L[0], L[1], L[2] + 0.03)), (90, L)], path="location")

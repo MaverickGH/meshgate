@@ -3,7 +3,7 @@ import math
 
 
 def build(mg):
-    steel = mg.color("steel", (0.34, 0.34, 0.38), rough=0.4, metal=1.0, material="metal")
+    steel = mg.color("steel", (0.42, 0.44, 0.5), rough=0.4, metal=1.0, material="metal")
     steel_d = mg.color("steel_dark", (0.15, 0.15, 0.18), rough=0.5, metal=1.0, material="metal")
     purple = mg.color("paint_purple", (0.40, 0.14, 0.52), rough=0.55, metal=0.1, material="metal")
     cyan = mg.color("paint_cyan", (0.13, 0.62, 0.72), rough=0.5, metal=0.1, material="metal")
@@ -69,11 +69,14 @@ def build(mg):
         parts.append(mg.part("sphere", goo, loc=(px, py, 0.015),
                              scale=(rx * 2, ry * 2, 0.05), segments=mg.seg(18), ring_count=8))
 
-    # the round lid standing up above the rim (leaning back)
-    a = 1.42
-    Lx, Ly, Lz = 0.0, 0.20, 0.80
+    # rising bubbles, and the round lid floating above the rim, tilted — as in the concept
+    for bx, by, bz, br in [(-0.03, -0.02, 0.76, 0.045), (0.05, 0.03, 0.88, 0.035), (-0.06, 0.02, 0.98, 0.03),
+                           (0.03, -0.03, 1.06, 0.025)]:
+        parts.append(mg.part("sphere", goo, loc=(bx, by, bz), scale=(br * 2,) * 3, segments=mg.seg(14)))
+    a = 0.3
+    Lx, Ly, Lz = 0.0, 0.0, 1.2
     nx, ny, nz = 0.0, -math.sin(a), math.cos(a)
-    parts.append(mg.part("cyl", steel_d, loc=(Lx, Ly, Lz), scale=(0.56, 0.56, 0.03),
+    parts.append(mg.part("cyl", steel, loc=(Lx, Ly, Lz), scale=(0.56, 0.56, 0.03),
                          rot=(a, 0, 0), vertices=32, bevel=0.006))
     parts.append(mg.part("torus", steel, loc=(Lx, Ly, Lz), major_radius=0.27,
                          minor_radius=0.03, rot=(a, 0, 0)))

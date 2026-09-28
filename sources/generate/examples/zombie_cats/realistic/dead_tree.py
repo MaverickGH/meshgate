@@ -1,67 +1,63 @@
-"""Dead leafless tree ~2.5 m: gnarled trunk, bare crooked branches, broken roots, red yarn ball on a string."""
+"""zc_dead_tree, realistic — the same dead tree with real bark: a straight trunk tapering to one sharp point, thorny
+branches, buttress roots and a red yarn ball on a string that sways."""
 import math
 
 
 def build(mg):
-    bark = mg.color("bark", "#2f231a", rough=0.9)
-    bark2 = mg.color("bark2", "#3c2c20", rough=0.9)
-    yarn = mg.color("yarn", "#9e2b2b", rough=0.85)
-    string = mg.color("string", "#a83a3a", rough=0.9)
+    wood = mg.color("bark", "#3a2418", rough=0.9, material="wood")
+    wood_d = mg.color("bark_root", "#3c2418", rough=0.92, material="wood")
+    yarn = mg.color("yarn", "#d42020", rough=0.8, material="fabric")
+    rope = mg.color("string", "#b81a1a", rough=0.9, material="fabric")
+    sides = 14 if mg.at_least("mobile-high") else 10
+    twig_sides, smooth, nroots = 8, True, 5
 
     parts = []
 
-    # --- gnarled trunk (slightly crooked, tapering, broken top) ---
-    trunk_pts = [(0.00, 0.00, 0.00), (0.02, 0.01, 0.45), (-0.02, 0.00, 0.95),
-                 (0.02, -0.01, 1.45), (-0.01, 0.01, 1.95), (0.02, 0.00, 2.30)]
-    trunk_r = [0.17, 0.155, 0.135, 0.115, 0.095, 0.05]
-    parts.append(mg.tube(trunk_pts, 0, bark, radii=trunk_r, sides=12))
+    # --- trunk: a straight tapering column rising to one sharp point ---
+    trunk_pts = [(0.0, 0.0, 0.0), (0.01, 0.0, 0.5), (-0.01, 0.0, 1.0), (0.01, 0.0, 1.5),
+                 (0.0, 0.0, 1.95), (0.0, 0.0, 2.3), (0.0, 0.0, 2.6)]
+    trunk_r = [0.3, 0.24, 0.2, 0.16, 0.11, 0.05, 0.0]
+    parts.append(mg.tube(trunk_pts, 0.0, wood, radii=trunk_r, sides=sides, smooth=smooth, cap=True))
 
-    # broken top spike
-    parts.append(mg.tube([(-0.01, 0.01, 1.95), (0.00, -0.03, 2.25), (0.03, -0.06, 2.47)],
-                         0, bark2, radii=[0.06, 0.03, 0.005], sides=8))
+    def branch(points, radii, color=None):
+        parts.append(mg.tube(points, 0.0, color or wood, radii=radii, sides=twig_sides, smooth=smooth))
 
-    # --- crooked branches ---
-    # upper right branch (holds the yarn) - viewer's right = +X
-    br_yarn = [(0.05, 0.00, 1.80), (0.35, 0.03, 1.92), (0.62, 0.05, 1.96), (0.88, 0.06, 1.99)]
-    parts.append(mg.tube(br_yarn, 0, bark2, radii=[0.06, 0.04, 0.025, 0.012], sides=8))
-
-    # lower left branch
-    br_l = [(-0.05, 0.00, 1.25), (-0.30, 0.02, 1.30), (-0.55, 0.04, 1.33), (-0.70, 0.05, 1.35)]
-    parts.append(mg.tube(br_l, 0, bark2, radii=[0.055, 0.035, 0.02, 0.01], sides=8))
-    # small twig off the left branch
-    parts.append(mg.tube([(-0.28, 0.02, 1.29), (-0.34, -0.02, 1.10), (-0.38, -0.05, 0.95)],
-                         0, bark2, radii=[0.025, 0.014, 0.006], sides=6))
-
+    # --- the long branch to the viewer's right (+X), rising a little: the yarn ball hangs from it ---
+    branch([(0.08, 0.0, 1.55), (0.38, 0.0, 1.7), (0.68, 0.0, 1.8), (1.0, 0.0, 1.9)], [0.09, 0.06, 0.035, 0.0])
+    branch([(0.4, 0.0, 1.7), (0.46, 0.0, 1.9), (0.5, 0.0, 2.06)], [0.045, 0.028, 0.0])   # two thorns up
+    branch([(0.62, 0.0, 1.78), (0.68, 0.0, 1.93), (0.71, 0.0, 2.02)], [0.035, 0.02, 0.0])
+    # --- the shorter branch to the left, with a thorn up, and a thorn off the trunk higher up ---
+    branch([(-0.08, 0.0, 1.25), (-0.32, 0.0, 1.32), (-0.58, 0.0, 1.4)], [0.08, 0.045, 0.0])
+    branch([(-0.3, 0.0, 1.31), (-0.34, 0.0, 1.47), (-0.36, 0.0, 1.6)], [0.035, 0.02, 0.0])
+    branch([(-0.04, 0.0, 1.95), (-0.2, 0.0, 2.06), (-0.34, 0.0, 2.14)], [0.04, 0.022, 0.0])
     if mg.at_least("mobile-mid"):
-        # extra small twig near top
-        parts.append(mg.tube([(0.35, 0.03, 1.92), (0.42, 0.06, 2.10), (0.46, 0.08, 2.25)],
-                             0, bark2, radii=[0.02, 0.012, 0.005], sides=6))
+        branch([(0.05, 0.0, 0.95), (0.18, 0.02, 1.02), (0.28, 0.03, 1.06)], [0.035, 0.02, 0.0])   # a stub
+        branch([(0.0, 0.05, 1.7), (0.02, 0.2, 1.8), (0.03, 0.32, 1.86)], [0.035, 0.02, 0.0])       # one to the back
 
-    # --- broken roots at the base ---
-    root_ang = [0.4, 2.3, 4.1, 5.4]
-    for i, a in enumerate(root_ang):
-        rr = 0.16
-        x, y = math.cos(a) * rr, math.sin(a) * rr
-        parts.append(mg.part("cube", bark, loc=(x, y, 0.06),
-                             scale=(0.11, 0.09, 0.14), rot=(0.3 * math.cos(a), 0.3 * math.sin(a), a),
-                             taper=0.4, bevel=0.01))
-
+    # --- roots: short thick buttresses flaring into the ground ---
+    for i in range(nroots):
+        a = (i / nroots) * math.tau + 0.35
+        dx, dy = math.cos(a), math.sin(a)
+        reach = 0.44 + 0.08 * mg.rng.random()
+        parts.append(mg.tube([(dx * 0.1, dy * 0.1, 0.42), (dx * 0.26, dy * 0.26, 0.14), (dx * reach, dy * reach, 0.0)],
+                             0.0, wood_d, radii=[0.13, 0.085, 0.0], sides=twig_sides, smooth=smooth))
     tree = mg.join("dead_tree", parts)
+    # bark: shallow vertical furrows and a rough surface
+    for k in range(6):
+        a = k / 6 * math.tau + 0.2
+        mg.sculpt(tree, "crease", path=[(math.cos(a) * 0.26, math.sin(a) * 0.26, 0.3), (math.cos(a) * 0.2, math.sin(a) * 0.2, 1.0),
+                                        (math.cos(a + 0.2) * 0.15, math.sin(a + 0.2) * 0.15, 1.6)], radius=0.03, amount=0.012)
+    mg.sculpt(tree, "noise", amount=0.008, scale=14)
 
-    # --- red ball of yarn on a string (hanging, gentle sway) ---
-    hang = (0.62, 0.05, 1.94)
-    ball_c = (0.62, 0.05, 1.52)
-    yparts = [mg.tube([hang, (ball_c[0], ball_c[1], ball_c[2] + 0.07)], 0.006, string, sides=6)]
-    yparts.append(mg.part("sphere", yarn, loc=ball_c, scale=(0.14, 0.14, 0.14)))
-    if mg.at_least("mobile-high"):
-        # faint wound strands across the ball
-        for k in range(5):
-            ang = k * 1.05
-            yparts.append(mg.part("torus", yarn, loc=ball_c, scale=(0.155, 0.155, 0.155),
-                                  rot=(ang, ang * 0.7, 0), minor_radius=0.012))
-    yarn_ball = mg.join("yarn_ball", yparts)
+    # --- red ball of yarn on a string, swaying ---
+    hang = (0.8, 0.0, 1.83)
+    ball_c = (0.8, 0.0, 1.07)
+    string_ = mg.tube([hang, (ball_c[0], ball_c[1], ball_c[2] + 0.12)], 0.008, rope, sides=6)
+    ball = mg.part("sphere", yarn, loc=ball_c, scale=(0.26, 0.26, 0.26))
+    mg.sculpt(ball, "noise", amount=0.006, scale=40)   # wound yarn, not a billiard ball
+    yarn_ball = mg.join("yarn_ball", [string_, ball])
     mg.pivot(yarn_ball, hang)
     mg.attach(yarn_ball, tree)
-    mg.animate(yarn_ball, "sway",
+    mg.animate(yarn_ball, "yarn_swing",
                [(0, (0, 0, 0)), (45, (0.08, 0, 0.05)), (90, (0, 0, 0)),
                 (135, (-0.08, 0, -0.05)), (180, (0, 0, 0))])

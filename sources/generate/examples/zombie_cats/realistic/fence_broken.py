@@ -3,8 +3,8 @@ import math
 
 
 def build(mg):
-    wood_dark = mg.color("wood_dark", "#4a2e17", rough=0.85, material="wood")
-    wood = mg.color("wood", "#c1893f", rough=0.8, material="wood")
+    wood_dark = mg.color("wood_dark", "#4a2c1e", rough=0.85, material="wood")
+    wood = mg.color("wood", "#b8824e", rough=0.8, material="wood")
     iron = mg.color("iron", (0.18, 0.18, 0.2), rough=0.45, metal=1.0)
     rust = mg.color("rust", "#7a4a2a", rough=0.75, metal=0.1, material="rust")
 

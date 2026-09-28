@@ -1,50 +1,58 @@
-"""zc_bones_pile — a small pile of three fish skeletons lying flat (skull, spine, ribs, tail fin)."""
+"""zc_bones_pile — a fish skeleton on the ground, like the concept art: a big skull with an eye socket and an open jaw,
+a spine with ribs up and down, a tail fin, and a couple of loose little bones beside it. It stands on its belly ribs,
+side on to the viewer, the way cartoon fishbones are drawn."""
 import math
 
 
 def build(mg):
-    bone = mg.color("bone", "#dcd7c4", rough=0.72)
-    bone_d = mg.color("bone_dark", "#c7bfa6", rough=0.75)
+    bone = mg.color("bone", "#e6e0cf", rough=0.7, material="bone")
+    bone_d = mg.color("bone_dark", "#cfc6ae", rough=0.75, material="bone")
+    hollow = mg.color("socket_dark", "#3a3230", rough=0.9)
+    sides = 8 if mg.at_least("mobile-mid") else 6
+    smooth = True
 
-    def make_fish(length, z0):
-        parts = []
-        half = length / 2.0
-        n = 7
-        spine = [(-half + length * (i / (n - 1)), 0.0, z0) for i in range(n)]
-        radii = [0.021, 0.021, 0.018, 0.015, 0.012, 0.009, 0.006]
-        parts.append(mg.tube(spine, 0.0, bone, radii=radii, sides=8))
+    parts = []
+    z = 0.11                                   # the spine's height above the ground
+    x0, x1 = -0.15, 0.22                       # from behind the skull to the tail
+    n = 7
+    spine = [(x0 + (x1 - x0) * i / (n - 1), 0.0, z + 0.012 * math.sin(i / (n - 1) * math.pi)) for i in range(n)]
+    parts.append(mg.tube(spine, 0.0, bone, radii=[0.016, 0.015, 0.013, 0.011, 0.009, 0.007, 0.005], sides=sides,
+                         smooth=smooth))
 
-        # skull: open scoop cone, wide mouth facing outward
-        parts.append(mg.part("cone", bone_d, loc=(-half - 0.02, 0.0, z0),
-                             scale=(0.095, 0.095, 0.15), rot=(0, math.pi / 2, 0), smooth=True))
-        # little jaw bone under the skull
-        parts.append(mg.part("cyl", bone_d, loc=(-half - 0.01, 0.0, z0 - 0.02),
-                             scale=(0.02, 0.02, 0.09), rot=(0, math.pi / 2, 0), vertices=6))
-        # a couple of eye-socket rings on the skull
-        if mg.at_least("mobile-mid"):
-            parts.append(mg.part("torus", bone_d, loc=(-half + 0.02, 0.0, z0 + 0.02),
-                                 scale=(0.055, 0.055, 0.04), rot=(0, math.pi / 2, 0),
-                                 major_radius=0.5, minor_radius=0.12))
+    # the skull: a rounded head with a dark eye socket and an open jaw pointing forward (-X)
+    parts.append(mg.part("sphere", bone, loc=(-0.2, 0.0, z + 0.01), scale=(0.15, 0.075, 0.13), smooth=smooth))
+    parts.append(mg.part("sphere", hollow, loc=(-0.215, -0.028, z + 0.03), scale=(0.045, 0.03, 0.045), smooth=smooth))
+    parts.append(mg.part("cone", bone_d, loc=(-0.3, 0.0, z + 0.025), scale=(0.07, 0.05, 0.11),
+                         rot=(0, -math.pi / 2 - 0.25, 0), smooth=smooth))                       # upper jaw
+    parts.append(mg.part("cone", bone_d, loc=(-0.29, 0.0, z - 0.04), scale=(0.06, 0.045, 0.1),
+                         rot=(0, -math.pi / 2 + 0.35, 0), smooth=smooth))                       # lower jaw, open
+    if mg.at_least("mobile-mid"):
+        for k in range(3):   # a few teeth on the upper jaw
+            parts.append(mg.part("cone", bone, loc=(-0.32 + k * 0.025, -0.005, z + 0.0), scale=(0.012, 0.012, 0.025),
+                                 rot=(math.pi, 0, 0), smooth=smooth))
 
-        # ribs: thin curved bones angled back and down on both sides
-        ts = [0.24, 0.36, 0.48, 0.60, 0.72]
-        if mg.at_least("mobile-mid"):
-            ts = [0.22, 0.31, 0.40, 0.49, 0.58, 0.67, 0.76]
-        for t in ts:
-            xr = -half + length * t
-            reach = 0.075 * (1.0 - 0.4 * t)
-            for s in (1, -1):
-                base = (xr, 0.0, z0)
-                tip = (xr - 0.025, s * reach, z0 - 0.012)
-                parts.append(mg.tube([base, tip], 0.0055, bone, sides=6))
+    # ribs: long curved bones down to the ground and shorter ones up along the back, sweeping back to the tail
+    ribs = 7 if mg.at_least("mobile-mid") else 5
+    for i in range(ribs):
+        t = i / (ribs - 1)
+        x = -0.1 + 0.26 * t
+        down = 0.1 * (1.0 - 0.45 * t)
+        up = 0.07 * (1.0 - 0.5 * t)
+        parts.append(mg.tube([(x, 0.0, z), (x + 0.02, 0.0, z - down * 0.6), (x + 0.045, 0.0, max(z - down, 0.008))], 0.0,
+                             bone, radii=[0.007, 0.006, 0.004], sides=6, smooth=smooth))
+        parts.append(mg.tube([(x, 0.0, z), (x + 0.02, 0.0, z + up * 0.6), (x + 0.05, 0.0, z + up)], 0.0,
+                             bone, radii=[0.006, 0.005, 0.003], sides=6, smooth=smooth))
 
-        # tail fin: fanned fishtail, laid flat on the ground
-        fin = [(0.0, 0.0), (0.11, 0.065), (0.075, 0.0), (0.11, -0.065)]
-        parts.append(mg.extrude(fin, 0.012, bone, loc=(half - 0.02, 0.0, z0),
-                                rot=(math.pi / 2, 0, 0), bevel=0.004))
-        return parts
+    # the tail fin: a fan standing up at the end of the spine
+    parts.append(mg.extrude([(0.0, 0.0), (0.1, 0.085), (0.07, 0.0), (0.1, -0.085)], 0.016, bone,
+                            loc=(x1 - 0.005, 0.0, z + 0.005), bevel=0.004))
+    mg.join("zc_bones_pile", parts)
 
-    fish1 = mg.join("fish1", make_fish(0.5, 0.022))
-    fish2 = mg.copy(fish1, loc=(0.03, 0.075, 0.0), rot=(0, 0, -0.55), scale=(0.95, 0.95, 0.95))
-    fish3 = mg.copy(fish1, loc=(-0.04, -0.05, 0.042), rot=(0, 0, 1.35), scale=(0.86, 0.86, 0.86))
-    mg.join("zc_bones_pile", [fish1, fish2, fish3])
+    # two loose little bones on the ground beside it
+    for (bx, by, a, ln) in ((0.05, 0.16, 0.6, 0.12), (-0.12, 0.18, -0.3, 0.09)):
+        dx, dy = math.cos(a) * ln / 2, math.sin(a) * ln / 2
+        loose = [mg.tube([(bx - dx, by - dy, 0.012), (bx + dx, by + dy, 0.012)], 0.009, bone_d, sides=6, smooth=smooth)]
+        for s in (-1, 1):
+            loose.append(mg.part("sphere", bone_d, loc=(bx + s * dx, by + s * dy, 0.014), scale=(0.028, 0.028, 0.026),
+                                 smooth=smooth))
+        mg.join("loose_bone", loose)
