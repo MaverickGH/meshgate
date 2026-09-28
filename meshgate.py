@@ -317,7 +317,7 @@ def cmd_samples(args) -> int:
                       "--out", str(SAMPLES / f"meshgate_{name}.glb"), "--fbx", "--validate"])
     steps.append([blender, "-b", str(SAMPLES / "meshgate_demo.blend"), "-P", str(BLENDER_SCRIPTS / "export_meshgate.py"), "--",
                   "--out", str(SAMPLES / "meshgate_demo.draco.glb"), "--draco", "--validate"])
-    steps.append([blender, "-b", "-P", str(BLENDER_SCRIPTS / "make_pack_zombie_cats.py"), "--", "--out-dir", str(SAMPLES / "packs" / "zombie_cats")])
+    steps.append([sys.executable, str(ROOT / "sources" / "generate" / "make_zombie_cats_pack.py"), "--blender", blender])   # Zombie Cats
     steps.append([sys.executable, str(ROOT / "sources" / "generate" / "make_generated_pack.py"), "--blender", blender])   # the generated pack
     for step in steps:
         if args.only and not any(args.only in part for part in step):
@@ -455,10 +455,11 @@ def _check_blender(generators: bool = True) -> int:
                     if sorted(rep.get("animations", [])) != want:
                         gen_ok = False
                         print(f"  ✗ {glb.name}: clips {sorted(rep.get('animations', []))}, expected {want}")
-            # the example pack: every asset exported + validated inside the generator, clip names checked here
+            # the example pack: the stylized kit models built by gen (mobile-low and pc here, to keep the check short),
+            # the diorama laid out from them; clip names checked here
             pack_dir = gen_dir / "packs" / "zombie_cats"
-            r = subprocess.run([exe, "-b", "--factory-startup", "-P", str(BLENDER_SCRIPTS / "make_pack_zombie_cats.py"), "--",
-                                "--out-dir", str(pack_dir)], env=env, capture_output=True, text=True)
+            r = subprocess.run([sys.executable, str(ROOT / "sources" / "generate" / "make_zombie_cats_pack.py"), "--out", str(pack_dir),
+                                "--blender", exe, "--tiers", "mobile-low,pc"], env=env, capture_output=True, text=True)
             pack_ok = r.returncode == 0 and "every asset satisfies the contract" in r.stdout
             try:
                 idx = json.load(open(pack_dir / "index.json"))

@@ -1425,6 +1425,14 @@ class Kit:
         keys = _preset(motion, [b.name for b in arm.data.bones], float(strength)) if isinstance(motion, str) else motion
         if not keys:
             raise ModelError(f"clip: unknown motion {motion!r} — use idle, zombie_walk, walk, attack, hit or keys")
+        if motion == "zombie_walk":   # arms modelled hanging at the sides: a zombie holds them out in front
+            for side in ("Left", "Right"):
+                b = arm.data.bones.get(f"{side}UpperArm")
+                if b is None or (b.tail_local - b.head_local).normalized().z > -0.5:
+                    continue
+                for f in keys:
+                    x, y, z = keys[f].get(f"{side}UpperArm", (0, 0, 0))
+                    keys[f][f"{side}UpperArm"] = (x - 80 * float(strength), y, z)
         ad = arm.animation_data or arm.animation_data_create()
         ad.action = bpy.data.actions.new(f"{self._ascii(name)}_{arm.name}")
         for pb in arm.pose.bones:

@@ -1,5 +1,5 @@
 """Beauty render of a Zombie Cats style pack as a tabletop diorama: Cycles, night, warm lantern pools, one camera for
-every style. The street is laid out like zc_diorama in make_pack_zombie_cats.py.
+every style. The street is laid out like zc_diorama in make_zombie_cats_diorama.py.
 
     blender -b -P scripts/render/zombie_cats_diorama.py -- out/packs/zombie_cats_realistic docs/img/zc-realistic.png \
             [--samples 128] [--res 1600x1000]

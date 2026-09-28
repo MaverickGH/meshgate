@@ -275,6 +275,7 @@ def _decimated(context, me, ratio: float):
     finally:
         bpy.data.objects.remove(tmp)
     low.name = f"{me.name}_tier"
+    low.validate(clean_customdata=False)   # the evaluated copy can keep stale loop data (glTF export in 3.5 fails on it)
     return low
 
 
