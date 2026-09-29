@@ -70,7 +70,12 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
    (**Move**, **Turn** round the vertical, **Scale**), pick another palette **Colour** (kit models) or **Remove** it;
    **Save and rebuild** builds every tier with the changes. They are kept as `edits.json` next to the model and come
    back on every rebuild; **Back to as built** drops them.
-10. **Send to…** Unity, Godot, Unreal or Blender (next to **Show files**): the files go into your project —
+10. **The dock under the model** works on the model in view: **Texture** (size, textures or vertex colours, full
+    PBR), **Remesh** (one target polycount — Default, 3K, 10K, 30K, 100K — and quads or triangles), **Unwrap UV** (the
+    UV grid on the model, or unwrap and bake again), **Parts**, the plug to send it to an engine, and **Download**
+    (every GLB, the FBX and the .blend). Each change rebuilds every tier and keeps the previous state as a version.
+    The notes on the settings live in the ⓘ next to their names.
+11. **Send to…** Unity, Godot, Unreal or Blender (the plug in the dock): the files go into your project —
     `Assets/MeshGate/<model>/` (the GLB of every tier and the FBX), `res://meshgate/<model>/`, or
     `Content/MeshGate/<model>/` (the FBX) — and are replaced in place the next time, so the engine re-imports them.
     Blender opens the model's `.blend`. The project folder is asked once and remembered (`~/.meshgate/bridge.json`).

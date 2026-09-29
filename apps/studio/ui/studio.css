@@ -215,3 +215,42 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 .parts-list .part.edited::after { content: " •"; color: var(--accent); }
 .parts-list .part.gone { text-decoration: line-through; opacity: .55; }
 #part-tools .tune-row > span { font-size: 12px; min-width: 48px; }
+
+/* hints: an ⓘ next to a setting's name, its text shown on hover, focus or a tap */
+.tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 6px;
+  border: 1px solid #5a5c61; border-radius: 50%; color: var(--muted); font: italic 600 10px/1 Georgia, serif; cursor: help; vertical-align: 1px; flex: none; }
+.tip:hover, .tip:focus-visible, .tip.open { border-color: var(--accent); color: var(--text); outline: none; }
+.tip-pop { display: none; position: fixed; z-index: 50; padding: 9px 11px; border: 1px solid #4b4d52; border-radius: 7px; background: #26282c;
+  color: #d6d8db; font: 11.5px/1.45 var(--font); font-style: normal; box-shadow: 0 12px 30px rgba(0,0,0,.45); pointer-events: none; white-space: normal; }
+.tip-pop.show { display: block; }
+
+/* the dock under the model: texture, remesh / UV, parts, send, download */
+.dock { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px;
+  padding: 8px; border: 1px solid #3a3c41; border-radius: 16px; background: rgba(34, 36, 40, .92); backdrop-filter: blur(8px);
+  box-shadow: 0 14px 40px rgba(0,0,0,.45); max-width: calc(100% - 24px); }
+.dock-btn { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border: 0; border-radius: 11px; background: #2e3035; color: #e4e5e7; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.dock-btn:hover:not(:disabled) { background: #3a3c42; }
+.dock-btn.lime { background: #d8f55f; color: #16170f; font-weight: 600; }
+.dock-btn.lime:hover:not(:disabled) { background: #e4fb7c; }
+.dock-btn.square { width: 44px; justify-content: center; padding: 0; }
+.dock-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.dock-btn svg.caret { width: 9px; height: 9px; stroke-width: 1.6; opacity: .8; }
+.dock-sep { width: 1px; height: 24px; background: #45474c; margin: 0 2px; }
+.dock-pop { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); width: min(320px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid #3a3c41; border-radius: 14px; background: #222428; box-shadow: 0 18px 44px rgba(0,0,0,.5); }
+.dock-pop.menu { width: 220px; gap: 2px; padding: 6px; }
+.dock-pop.menu > button, .dock-pop.menu > a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px; background: transparent;
+  color: #e4e5e7; font-size: 13.5px; text-align: left; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-pop.menu > button:hover, .dock-pop.menu > a:hover { background: #303237; }
+.dock-pop svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.dock-pop .pop-field { display: flex; flex-direction: column; gap: 7px; }
+.dock-pop .pop-field > span { font-size: 12px; color: #c9cbce; }
+.dock-pop .seg { display: grid; border-radius: 8px; overflow: hidden; gap: 1px; background: #34363a; }
+.seg.five { grid-template-columns: repeat(5, 1fr); }
+.dock-pop .seg button { padding: 8px 2px; }
+.dock-pop .seg button.on { color: #d8f55f; box-shadow: inset 0 -2px #d8f55f; }
+.dock-pop button.primary { display: flex; align-items: center; justify-content: center; gap: 8px; text-align: center; background: #d8f55f; border-color: #d8f55f; color: #16170f; border-radius: 9px; }
+.dock-pop button.primary:hover:not(:disabled) { background: #e4fb7c; }
+.dock-pop .pop-note { margin: 0; color: var(--muted); font-size: 11.5px; text-align: center; }
+@media (max-width: 560px) { .dock-btn span { display: none; } .dock-btn { padding: 0 10px; } }
+.dock-pop .pop-warn { margin: 0; padding: 9px 11px; border: 1px solid #6b5230; border-radius: 9px; background: #2e271d; color: #e7b77a; font-size: 11.5px; }

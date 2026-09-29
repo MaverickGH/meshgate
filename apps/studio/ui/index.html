@@ -154,6 +154,48 @@
         <p data-i18n="empty">Describe a model and press Generate. Results appear here, one file per quality tier.</p>
       </div>
       <img class="still hidden" id="still" alt="">
+      <div class="dock hidden" id="dock">
+        <div class="dock-pop menu hidden" id="pop-mesh">
+          <button type="button" data-open="pop-remesh"><svg viewBox="0 0 20 20"><path d="M10 2 17 6v8l-7 4-7-4V6z"/><path d="M3 6l7 4 7-4M10 10v8"/></svg><span data-i18n="dock_remesh">Remesh</span></button>
+          <button type="button" data-open="pop-uv"><svg viewBox="0 0 20 20"><path d="M7 3h6v4h4v6h-4v4H7v-4H3V7h4z"/></svg><span data-i18n="dock_uv">Unwrap UV</span></button>
+        </div>
+        <div class="dock-pop hidden" id="pop-remesh">
+          <div class="pop-field"><span data-i18n="dock_target">Target polycount</span>
+            <small data-i18n="dock_target_hint">The triangle count of the model. Every tier gets it, or less when its own budget is lower; Default keeps the tier budgets.</small>
+            <div class="seg five" id="remesh-tris"></div></div>
+          <div class="pop-field"><span data-i18n="topology">Topology</span>
+            <small data-i18n="dock_topo_hint">Quads: a neural or your own mesh is remeshed into clean quads, and FBX and .blend keep them. Triangles are what engines draw — GLB is always triangles.</small>
+            <div class="seg two" id="remesh-topo"></div></div>
+          <p class="pop-warn hidden" id="remesh-warn" data-i18n="dock_quad_warn">Quads below about 8K triangles can tear thin parts (flaps, ears, leaves) — pick more triangles, or Triangles, which reduce more gently.</p>
+          <p class="pop-note" id="remesh-note"></p>
+          <button type="button" class="primary" id="remesh-go"><svg viewBox="0 0 20 20"><path d="M10 2 17 6v8l-7 4-7-4V6z"/><path d="M3 6l7 4 7-4M10 10v8"/></svg><span data-i18n="dock_remesh">Remesh</span></button>
+        </div>
+        <div class="dock-pop hidden" id="pop-uv">
+          <div class="pop-field"><span data-i18n="dock_uv">Unwrap UV</span>
+            <small data-i18n="dock_uv_hint">Every build unwraps the model itself: seams on hard edges, islands packed without overlaps, then textures baked into them. Kit models keep their colours in palette cells.</small></div>
+          <button type="button" class="ghost" id="uv-show" data-i18n="dock_uv_show">Show the UV grid on the model</button>
+          <button type="button" class="primary" id="uv-go"><span data-i18n="dock_uv_go">Unwrap and bake again</span></button>
+        </div>
+        <div class="dock-pop hidden" id="pop-texture">
+          <div class="pop-field"><span data-i18n="texture_size">Texture size</span>
+            <small data-i18n="dock_tex_hint">The largest texture of the PC file; the phone tiers keep their own limits. 8K also writes a master file.</small>
+            <div class="seg five" id="tex-size"></div></div>
+          <div class="pop-field"><span data-i18n="colors">Colours</span><div class="seg two" id="tex-colors"></div></div>
+          <label class="check"><input type="checkbox" id="tex-pbr"> <span data-i18n="dock_pbr">Full PBR maps</span></label>
+          <button type="button" class="primary" id="tex-go"><span data-i18n="dock_apply">Apply and rebuild</span></button>
+        </div>
+        <div class="dock-pop menu hidden" id="pop-send">
+          <button type="button" data-send="unity">Unity</button><button type="button" data-send="godot">Godot</button>
+          <button type="button" data-send="unreal">Unreal</button><button type="button" data-send="blender">Blender</button>
+        </div>
+        <div class="dock-pop menu hidden" id="pop-download"></div>
+        <button type="button" class="dock-btn lime" data-pop="pop-texture"><svg viewBox="0 0 20 20"><path d="M3 13 13 3M3 17 17 3M7 17 17 7M11 17l6-6"/></svg><span data-i18n="dock_texture">Texture</span></button>
+        <button type="button" class="dock-btn" data-pop="pop-mesh" data-i18n-title="dock_mesh_title" title="Remesh and UV"><svg viewBox="0 0 20 20"><path d="M10 2 17 6v8l-7 4-7-4V6z"/><path d="M3 6l7 4 7-4M10 10v8M6.5 4 13.5 16M13.5 4 6.5 16"/></svg><svg class="caret" viewBox="0 0 10 10"><path d="M2 6.5 5 3.5l3 3"/></svg></button>
+        <button type="button" class="dock-btn" id="dock-parts" data-i18n-title="parts" title="Parts"><svg viewBox="0 0 20 20"><rect x="2.5" y="10" width="7" height="7" rx="1"/><rect x="10.5" y="10" width="7" height="7" rx="1"/><rect x="6.5" y="3" width="7" height="7" rx="1"/></svg><span data-i18n="parts">Parts</span></button>
+        <i class="dock-sep"></i>
+        <button type="button" class="dock-btn" data-pop="pop-send" data-i18n-title="send_to" title="Send to…"><svg viewBox="0 0 20 20"><path d="M7 2v4M13 2v4M5 6h10v3a5 5 0 0 1-10 0zM10 14v4"/></svg><svg class="caret" viewBox="0 0 10 10"><path d="M2 6.5 5 3.5l3 3"/></svg></button>
+        <button type="button" class="dock-btn lime square" data-pop="pop-download" data-i18n-title="dock_download" title="Download"><svg viewBox="0 0 20 20"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 17h12"/></svg></button>
+      </div>
     </div>
     <div class="bar">
       <div class="tabs" id="tier-tabs" role="tablist"></div>
@@ -161,9 +203,6 @@
         <div class="clips hidden" id="clips"></div>
         <button class="ghost" id="wire" data-i18n="wireframe">Wireframe</button>
         <button class="ghost" id="reveal" data-i18n="reveal">Show files</button>
-        <select id="send-to" aria-label="Send to"><option value="" data-i18n="send_to">Send to…</option>
-          <option value="unity">Unity</option><option value="godot">Godot</option><option value="unreal">Unreal</option>
-          <option value="blender">Blender</option></select>
       </div>
     </div>
     <div class="info" id="info"></div>

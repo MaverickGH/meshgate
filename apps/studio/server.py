@@ -269,6 +269,24 @@ class Studio:
         if not kit and (change or params or version or not raw or not raw.is_file()):
             raise ValueError("only models built from kit code can be tuned — a mesh can be split and its parts edited")
         edits = parse_part_edits(req["parts"]) if "parts" in req else None
+        # new output settings from the toolbar under the model (remesh, texture): over what the model was built with
+        st = req.get("settings") if isinstance(req.get("settings"), dict) else {}
+        if st:
+            g = dict(g)
+            if st.get("topology") in {"tri", "quad"}:
+                g["topology"] = st["topology"]
+            if st.get("texture") in generate.TEXTURES:
+                g["texture"] = st["texture"]
+            if st.get("colors") in {"texture", "vertex"}:
+                g["colors"] = st["colors"]
+            if isinstance(st.get("pbr"), bool):
+                g["pbr"] = st["pbr"]
+            if "tris" in st:   # one target for the model: every tier gets it, or less when its own budget is lower
+                n = st["tris"]
+                if n is not None and (not isinstance(n, int) or not 100 <= n <= 2_000_000):
+                    raise ValueError("the triangle target is out of range")
+                budgets = {t["id"]: t["max_tris"] for t in self.status()["tiers"]}
+                g["caps"] = {t: min(n, budgets.get(t, n)) for t in (g.get("tiers") or generate.ORDER)} if n else {}
         split = bool(g.get("split") or req.get("split") is True or edits)
         code_src = item / g["code"] if kit else None
         if version:
@@ -373,6 +391,10 @@ class Studio:
                           "style": g.get("style"), "tiers": {t: {k: v.get(k) for k in ("file", "tris", "max_tris", "within_budget")}
                                                              for t, v in (rep.get("tiers") or {}).items()},
                           "canonical": rep.get("canonical"), "preview": rep.get("preview"), "files": rep.get("files", []),
+                          "settings": {"topology": g.get("topology") or "tri", "texture": g.get("texture") or "auto",
+                                       "pbr": bool(g.get("pbr")), "colors": g.get("colors") or "texture",
+                                       "tris": max((g.get("caps") or {}).values(), default=None)},
+                          "files": sorted(f.name for f in gen_json.parent.iterdir() if f.suffix in {".glb", ".fbx", ".blend"}),
                           "split": bool(g.get("split")), "part_edits": _read_json(gen_json.parent / "edits.json"),
                           "palette": [{"name": k, "hex": "#" + "".join(f"{round(max(0, min(1, c)) * 255):02x}" for c in (v.get("rgb") or [0.5] * 3)[:3])}
                                       for k, v in sorted((rep.get("palette") or {}).items(), key=lambda kv: kv[1].get("index", 0))],

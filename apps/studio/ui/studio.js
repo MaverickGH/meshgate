@@ -41,6 +41,16 @@ const STRINGS = {
     need_login: "Sign-in needed", attempt: "Attempt", own_code: "own build code",
     picture: "Picture or model", drop: "Drop a picture or click — optional. With a picture you get image → 3D; with a model of your own (GLB, FBX, OBJ, PLY, STL) it goes to the library, cleaned and baked per tier.",
     model_picked: "your model — Generate puts it in the library", uploading_model: "Uploading the model…",
+    dock_texture: "Texture", dock_remesh: "Remesh", dock_uv: "Unwrap UV", dock_mesh_title: "Remesh and UV", dock_download: "Download",
+    dock_target: "Target polycount", dock_default: "Default",
+    dock_target_hint: "The triangle count of the model. Every tier gets it, or less when its own budget is lower; Default keeps the tier budgets.",
+    dock_topo_hint: "Quads: a neural or your own mesh is remeshed into clean quads, and FBX and .blend keep them. Triangles are what engines draw — GLB is always triangles.",
+    dock_uv_hint: "Every build unwraps the model itself: seams on hard edges, islands packed without overlaps, then textures baked into them. Kit models keep their colours in palette cells.",
+    dock_uv_show: "Show the UV grid on the model", dock_uv_hide: "Hide the UV grid", dock_uv_go: "Unwrap and bake again",
+    dock_tex_hint: "The largest texture of the PC file; the phone tiers keep their own limits. 8K also writes a master file.",
+    dock_pbr: "Full PBR maps", dock_apply: "Apply and rebuild", dock_now: "Now: {tris} triangles on {tier}.",
+    dock_no_source: "This model has no source to rebuild from.",
+    dock_quad_warn: "Quads below about 8K triangles can tear thin parts (flaps, ears, leaves) — pick more triangles, or Triangles, which reduce more gently.",
     send_to: "Send to…", send_project: "Project folder", send_go: "Send",
     send_title: "Send to {tool}", send_done: "{files} → {folder}", send_opened: "Opened {file} in Blender",
     send_where: { unity: "The GLB of every tier (glTFast) and the FBX go to Assets/MeshGate/<model>/. Send again after a change and Unity re-imports them.",
@@ -111,6 +121,16 @@ const STRINGS = {
     need_login: "Нужен вход", attempt: "Попытка", own_code: "свой код сборки",
     picture: "Картинка или модель", drop: "Перетащи картинку или нажми — по желанию. С картинкой получится картинка → 3D, а своя модель (GLB, FBX, OBJ, PLY, STL) ляжет в библиотеку: её почистят и запекут под каждый уровень.",
     model_picked: "твоя модель — «Создать» положит её в библиотеку", uploading_model: "Загружаю модель…",
+    dock_texture: "Текстура", dock_remesh: "Ремеш", dock_uv: "Развернуть UV", dock_mesh_title: "Ремеш и UV", dock_download: "Скачать",
+    dock_target: "Целевой полигонаж", dock_default: "Обычный",
+    dock_target_hint: "Число треугольников модели. Его получит каждый уровень, или меньше, если у уровня свой бюджет ниже; «Обычный» оставляет бюджеты уровней.",
+    dock_topo_hint: "Четырёхугольники: сетка из нейросети или твоя модель перестраивается в чистые квады, FBX и .blend их сохраняют. Треугольники рисуют движки — GLB всегда из треугольников.",
+    dock_uv_hint: "Каждая сборка сама разворачивает модель: швы по жёстким рёбрам, острова уложены без наложений, в них запекаются текстуры. У моделей kit цвета лежат в ячейках палитры.",
+    dock_uv_show: "Показать UV-сетку на модели", dock_uv_hide: "Скрыть UV-сетку", dock_uv_go: "Развернуть и запечь заново",
+    dock_tex_hint: "Самая большая текстура файла PC; уровни для телефонов держат свои лимиты. 8K ещё пишет мастер-файл.",
+    dock_pbr: "Полный набор PBR", dock_apply: "Применить и пересобрать", dock_now: "Сейчас: {tris} треугольников на {tier}.",
+    dock_no_source: "У этой модели нет исходника для пересборки.",
+    dock_quad_warn: "Квады меньше ~8K треугольников могут порвать тонкие части (клапаны, уши, листья) — возьми больше треугольников или «Треугольники», они упрощают бережнее.",
     send_to: "Отправить в…", send_project: "Папка проекта", send_go: "Отправить",
     send_title: "Отправить в {tool}", send_done: "{files} → {folder}", send_opened: "{file} открыт в Blender",
     send_where: { unity: "GLB каждого уровня (glTFast) и FBX лягут в Assets/MeshGate/<модель>/. Отправь снова после правки — Unity переимпортирует их.",
@@ -170,6 +190,7 @@ function applyLang() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => { el.title = t(el.dataset.i18nTitle); el.setAttribute("aria-label", el.title); });
   $("lang").textContent = lang === "ru" ? "EN" : "RU";
   renderExamples(); renderStyles(); renderEngine(); renderColors(); if (status) { renderPills(); renderAi(); renderProviders(); }
   renderTierTabs(); renderLibrary();
@@ -504,7 +525,7 @@ async function show(item, tier) {
     $("still").src = fileUrl(item.name, item.preview); $("still").classList.remove("hidden");
   }
   if (!job) showHistory(item);
-  collectParts(); renderClips(item); renderTune(item); renderParts();
+  collectParts(); renderClips(item); renderTune(item); renderParts(); renderDock();
   const clips = item.clips?.length ? ` · ${t("clips")}: ${item.clips.join(", ")}` : "";
   const how = item.engine === "mesh" ? `${t("engine_opts").mesh}${item.provider ? " · " + item.provider : ""}` : t("engine_opts").kit;
   const text = `${item.description || item.name}${clips} · ${how} · ${item.attempts} ${plural(item.attempts, t("attempts_forms"))}, ${item.seconds ?? "?"} ${t("seconds")}`;
@@ -576,6 +597,7 @@ function log(ev) {
   $("log").append(li); li.scrollIntoView({ block: "end" });
 }
 function busy(on) {
+  if (current) setTimeout(renderDock);
   $("go").disabled = on; $("go").textContent = on ? t("generating") : t("generate");
   $("cancel").classList.toggle("hidden", !on);
   ["edit-go", "rebuild", "params-reset", "restore"].forEach((id) => { $(id).disabled = on; });
@@ -720,18 +742,6 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
   };
 });
 
-// ---------------------------------------------------------------- start
-(async () => {
-  applyLang();
-  try {
-    status = await api("/api/status");
-    renderPills(); renderAi(); renderTiers(); renderProviders(); renderConnect();
-    await refreshLibrary();
-    if (library[0]) show(library[0]);
-  } catch (e) {
-    $("pills").innerHTML = `<span class="pill bad">${e.message}</span>`;
-  }
-})();
 
 // ---------------------------------------------------------------- parts: move, turn, scale, repaint or remove the
 // pieces of a split model by hand; saved as edits.json next to the model and rebuilt into every tier
@@ -842,8 +852,7 @@ async function sendModel(tool, project) {
   log({ stage: "done", ok: true, message: got.opened ? fill(t("send_opened"), { file: got.opened }) : fill(t("send_done"), { files: got.files.join(", "), folder: got.folder }) });
   document.querySelector('[data-pane="log"]').click();
 }
-$("send-to").onchange = async () => {
-  const tool = $("send-to").value; $("send-to").value = "";
+async function openSend(tool) {
   if (!tool || !current) return;
   if (tool === "blender") { try { await sendModel(tool); } catch (e) { log({ stage: "error", message: e.message }); } return; }
   sendTool = tool;
@@ -853,9 +862,116 @@ $("send-to").onchange = async () => {
   $("send-project").value = status?.bridge?.[tool]?.project || "";
   $("send-error").textContent = "";
   $("send-dialog").showModal(); $("send-project").focus();
-};
+}
 $("send-go").onclick = async () => {
   try { await sendModel(sendTool, $("send-project").value.trim()); $("send-dialog").close(); }
   catch (e) { $("send-error").textContent = e.message; }
 };
 $("send-project").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("send-go").click(); } });
+
+// ---------------------------------------------------------------- hints: the text under a setting lives in an ⓘ next
+// to its name, shown on hover, focus or a tap
+function tipify(root = document) {
+  root.querySelectorAll('small[data-i18n$="_hint"], small#engine-hint').forEach((small) => {
+    if (small.closest(".tip")) return;
+    const box = small.closest(".field, fieldset, .pop-field") || small.parentElement;
+    let head = box.querySelector(":scope > span, :scope > legend");
+    const prev = small.previousElementSibling;
+    if (prev?.matches("label.check")) head = prev.querySelector("span");   // a checkbox: the ⓘ goes after its words
+    if (!head) return;
+    const tip = document.createElement("span");
+    tip.className = "tip"; tip.tabIndex = 0; tip.setAttribute("role", "button"); tip.setAttribute("aria-label", "?");
+    tip.textContent = "i";
+    small.classList.add("tip-pop"); document.body.append(small);   // at the top level: no panel clips or shifts it
+    if (head.dataset.i18n) {   // the words move into their own span, so a language switch keeps the ⓘ
+      const words = document.createElement("span");
+      words.dataset.i18n = head.dataset.i18n; words.textContent = head.textContent;
+      delete head.dataset.i18n; head.replaceChildren(words);
+    }
+    head.append(tip);
+    const show = (on) => {
+      small.classList.toggle("show", on); tip.classList.toggle("open", on);
+      if (!on) return;
+      const r = tip.getBoundingClientRect(), w = Math.min(280, innerWidth - 16);
+      small.style.width = `${w}px`;
+      small.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8))}px`;
+      const h = small.offsetHeight;
+      small.style.top = `${r.bottom + 8 + h > innerHeight - 8 ? r.top - h - 8 : r.bottom + 8}px`;
+    };
+    tip.addEventListener("mouseenter", () => show(true)); tip.addEventListener("mouseleave", () => show(false));
+    tip.addEventListener("focus", () => show(true)); tip.addEventListener("blur", () => show(false));
+    tip.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); show(!small.classList.contains("show")); });
+  });
+}
+
+// ---------------------------------------------------------------- the dock under the model: remesh, UV, texture,
+// parts, send to an engine, download — each rebuilds or acts on the model in view
+const dockPick = { tris: null, topology: "tri", texture: "auto", colors: "texture" };
+function seg(id, options, key, onPick) {
+  $(id).replaceChildren(...options.map(([v, label]) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+    b.className = dockPick[key] === v ? "on" : "";
+    b.onclick = () => { dockPick[key] = v; seg(id, options, key, onPick); onPick?.(); };
+    return b;
+  }));
+}
+function closePops(except) {
+  document.querySelectorAll(".dock-pop").forEach((p) => p !== except && p.classList.add("hidden"));
+  document.querySelectorAll(".tip-pop.show").forEach((p) => p.classList.remove("show"));
+}
+const remeshWarn = () => $("remesh-warn").classList.toggle("hidden", !(dockPick.topology === "quad" && dockPick.tris && dockPick.tris < 8000));
+function openPop(id) {
+  const pop = $(id), open = pop.classList.contains("hidden");
+  closePops(); if (!open) return;
+  renderDock(); pop.classList.remove("hidden");
+}
+function renderDock() {
+  const it = current;
+  $("dock").classList.toggle("hidden", !it);
+  if (!it) return;
+  const can = !!it.rebuildable && !job, st = it.settings || {};
+  Object.assign(dockPick, { tris: st.tris ?? null, topology: st.topology || "tri", texture: st.texture || "auto", colors: st.colors || "texture" });
+  seg("remesh-tris", [[null, t("dock_default")], [3000, "3K"], [10000, "10K"], [30000, "30K"], [100000, "100K"]], "tris", remeshWarn);
+  seg("remesh-topo", [["quad", t("topo_quad")], ["tri", t("topo_tri")]], "topology", remeshWarn);
+  remeshWarn();
+  seg("tex-size", [["auto", t("auto")], ["1k", "1K"], ["2k", "2K"], ["4k", "4K"], ["8k", "8K"]], "texture");
+  seg("tex-colors", [["texture", t("colors_opts")?.texture || "Textures"], ["vertex", t("colors_opts")?.vertex || "Vertex"]], "colors");
+  $("tex-pbr").checked = !!st.pbr;
+  const e = it.tiers[currentTier] || {};
+  const tierName = status?.tiers.find((x) => x.id === currentTier)?.label || currentTier;
+  $("remesh-note").textContent = it.rebuildable ? fill(t("dock_now"), { tris: (e.tris || 0).toLocaleString(), tier: tierName }) : t("dock_no_source");
+  ["remesh-go", "uv-go", "tex-go"].forEach((id) => { $(id).disabled = !can; });
+  $("uv-show").textContent = t(uvOn ? "dock_uv_hide" : "dock_uv_show");
+  $("pop-download").replaceChildren(...(it.files || []).map((f) => {
+    const a = document.createElement("a"); a.href = fileUrl(it.name, f); a.download = f; a.textContent = f;
+    a.onclick = () => closePops();
+    return a;
+  }));
+}
+let uvOn = false;
+document.querySelectorAll("[data-pop]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); openPop(b.dataset.pop); }));
+document.querySelectorAll("[data-open]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); openPop(b.dataset.open); }));
+document.querySelectorAll(".dock-pop").forEach((p) => p.addEventListener("click", (e) => e.stopPropagation()));
+document.addEventListener("click", () => closePops());
+window.addEventListener("scroll", () => document.querySelectorAll(".tip-pop.show").forEach((p) => p.classList.remove("show")), true);
+document.querySelectorAll("[data-send]").forEach((b) => (b.onclick = () => { closePops(); openSend(b.dataset.send); }));
+$("dock-parts").onclick = (e) => { e.stopPropagation(); closePops(); const tab = document.querySelector('[data-pane="parts"]'); tab.click(); tab.scrollIntoView({ block: "nearest" }); };
+$("uv-show").onclick = () => { uvOn = !uvOn; viewer?.setUvChecker(uvOn); renderDock(); };
+const rebuildWith = (settings) => { closePops(); $("log").replaceChildren(); refine({ settings }); };
+$("remesh-go").onclick = () => rebuildWith({ tris: dockPick.tris, topology: dockPick.topology });
+$("uv-go").onclick = () => rebuildWith({ topology: current?.settings?.topology || "tri" });
+$("tex-go").onclick = () => rebuildWith({ texture: dockPick.texture, colors: dockPick.colors, pbr: $("tex-pbr").checked });
+tipify();
+
+// ---------------------------------------------------------------- start
+(async () => {
+  applyLang();
+  try {
+    status = await api("/api/status");
+    renderPills(); renderAi(); renderTiers(); renderProviders(); renderConnect();
+    await refreshLibrary();
+    if (library[0]) show(library[0]);
+  } catch (e) {
+    $("pills").innerHTML = `<span class="pill bad">${e.message}</span>`;
+  }
+})();

@@ -132,6 +132,26 @@ except ValueError:
 step("part edits refuse odd names and wild values, drop no-op changes",
      bad_name and bad_scale and server.parse_part_edits({"crate_1": {"move": [0, 0, 0], "turn": 0, "scale": 1}, "crate_2": {"delete": True}})
      == {"crate_2": {"delete": True}})
+# the dock under the model: a remesh or texture change rebuilds with the new settings over the model's own
+mitem = lib / "my_mesh"
+mitem.mkdir(exist_ok=True)
+(mitem / "gen.json").write_text(json.dumps({"name": "my_mesh", "engine": "mesh", "raw": str(lib / "_inputs" / "models" / mup["id"]),
+                                            "tiers": ["mobile-low", "pc"], "topology": "tri", "report": {}}))
+_Job = server.Job
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+try:
+    jb = studio.refine({"name": "my_mesh", "settings": {"tris": 10000, "topology": "quad", "texture": "2k", "pbr": True}})
+    try:
+        studio.refine({"name": "my_mesh", "settings": {"tris": 5}})
+        wild = False
+    except ValueError:
+        wild = True
+finally:
+    server.Job = _Job
+caps = jb.cmd[jb.cmd.index("--tris") + 1] if "--tris" in jb.cmd else ""
+step("remesh from the dock rebuilds a mesh from its source with the target on every tier (capped by its budget) and quads",
+     "--mesh" in jb.cmd and "mobile-low=8000" in caps and "pc=10000" in caps and jb.cmd[jb.cmd.index("--topology") + 1] == "quad"
+     and jb.cmd[jb.cmd.index("--texture") + 1] == "2k" and "--pbr" in jb.cmd and wild)
 # send to an engine: the files land in the project, a folder that is not a project is refused
 item = lib / "crate_pile"
 item.mkdir(exist_ok=True)
