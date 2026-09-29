@@ -41,17 +41,17 @@ def build(mg):
 
     # ---- legs and feet: short cream legs with brown stripes, big feet with toes and claws
     for sx in (-1, 1):
-        leg = mg.part("cube", cream, loc=(sx * 0.09, 0.0, 0.1), scale=(0.1, 0.1, 0.16), bevel=0.03, subdiv=1, smooth=True,
+        leg = mg.part("cube", cream, loc=(sx * 0.082, 0.0, 0.1), scale=(0.095, 0.11, 0.16), bevel=0.03, subdiv=1, smooth=True,
                       taper=1.1)
-        foot = mg.part("cube", cream, loc=(sx * 0.1, -0.03, 0.034), scale=(0.15, 0.19, 0.07), bevel=0.025, subdiv=1,
+        foot = mg.part("cube", cream, loc=(sx * 0.1, -0.045, 0.034), scale=(0.15, 0.22, 0.07), bevel=0.025, subdiv=1,
                        smooth=True, taper=0.8)
         parts += [leg, foot]
         for t in (0.35, 0.65):   # stripes that stand off the fur a little
-            parts.append(mg.wrap(leg, stripe, (sx * 0.09, 0, 0.02), (sx * 0.09, 0, 0.18), t, width=0.022, thickness=0.003))
+            parts.append(mg.wrap(leg, stripe, (sx * 0.082, 0, 0.02), (sx * 0.082, 0, 0.18), t, width=0.022, thickness=0.003))
         for k in (-1, 0, 1):   # three toes, each with a claw
             tx = sx * 0.1 + k * 0.043
-            parts.append(mg.part("sphere", cream, loc=(tx, -0.115, 0.03), scale=(0.048, 0.05, 0.045)))
-            parts.append(mg.part("cone", bone, loc=(tx, -0.145, 0.022), scale=(0.02, 0.02, 0.04), rot=(math.pi / 2 + 0.3, 0, 0)))
+            parts.append(mg.part("sphere", cream, loc=(tx, -0.155, 0.03), scale=(0.044, 0.05, 0.045)))
+            parts.append(mg.part("cone", bone, loc=(tx, -0.185, 0.022), scale=(0.02, 0.02, 0.04), rot=(math.pi / 2 + 0.3, 0, 0)))
 
     # ---- torn brown shorts flaring at the hem, a sewn patch, a belt with two pouches
     shorts = mg.part("cube", shorts_c, loc=(0, 0.0, 0.205), scale=(0.3, 0.2, 0.13), bevel=0.035, subdiv=1, smooth=True,
@@ -80,7 +80,7 @@ def build(mg):
     for sx in (-1, 1):
         sh = (sx * 0.14, 0.0, 0.46)
         drop = math.radians(55)
-        d = (sx * math.cos(drop), 0.0, -math.sin(drop))
+        d = tuple(c / math.hypot(math.cos(drop), 0.15, math.sin(drop)) for c in (sx * math.cos(drop), -0.15, -math.sin(drop)))   # reaching a little forward
         el = tuple(s + k * 0.12 for s, k in zip(sh, d))
         wr = tuple(s + k * 0.22 for s, k in zip(sh, d))
         tip = tuple(s + k * 0.28 for s, k in zip(sh, d))
@@ -112,7 +112,7 @@ def build(mg):
     # ---- the head: seen from the front a soft hexagon (a narrow crown between the ears, the widest at the cheeks, a
     # narrower chin), fluffy cheeks; a cream stripe down the middle and a cream muzzle
     hz = 0.7
-    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.6, 0.38, 0.36), bevel=0.1, subdiv=2, taper=0.74,
+    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.6, 0.44, 0.36), bevel=0.1, subdiv=2, taper=0.74,
                    taper_bottom=0.66, smooth=True)
     mg.cast(head, "sphere", 0.2)
     parts.append(head)
@@ -121,15 +121,15 @@ def build(mg):
     mg.focus((0, face, hz - 0.03), 0.15)   # the face is where players look
     for sx in (-1, 1):   # fluffy cheeks: tufts sticking out at the jaw, breaking the head's outline as in the sheet
         for dz, sc in ((0.0, 1.0), (-0.045, 0.8)):
-            parts.append(mg.part("cone", grey, loc=(sx * (hw - 0.01), -0.03, hz - 0.05 + dz), scale=(0.06 * sc, 0.05, 0.1 * sc),
+            parts.append(mg.part("cone", grey, loc=(sx * (hw - 0.01), -0.03, hz - 0.05 + dz), scale=(0.042 * sc, 0.04, 0.075 * sc),
                                  rot=(0.15, sx * 1.95, 0), vertices=4))
     parts.append(mg.patch(head, cream, at=(0.0, face, hz + 0.05), size=(0.085, 0.24), thickness=0.004))     # the stripe
     parts.append(mg.patch(head, cream, at=(0.0, face, hz - 0.095), size=(0.21, 0.11), thickness=0.005, dome=0.01))   # muzzle
     # ears: big, tilted out, pink inside; the right one torn
     for sx in (-1, 1):
-        ear = mg.part("cone", grey, loc=(sx * 0.17, 0.0, htop + 0.06), scale=(0.22, 0.07, 0.26), rot=(0.05, sx * 0.45, 0),
+        ear = mg.part("cone", grey, loc=(sx * 0.17, 0.02, htop + 0.06), scale=(0.22, 0.16, 0.26), rot=(-0.3, sx * 0.45, 0),
                       vertices=4)
-        inner = mg.part("cone", pink, loc=(sx * 0.168, -0.025, htop + 0.05), scale=(0.16, 0.02, 0.2), rot=(0.05, sx * 0.45, 0),
+        inner = mg.part("cone", pink, loc=(sx * 0.168, -0.03, htop + 0.05), scale=(0.16, 0.03, 0.2), rot=(-0.3, sx * 0.45, 0),
                         vertices=4)
         if sx > 0:
             for dz in (0.0, 0.05):   # notches bitten out of the torn ear
@@ -169,9 +169,9 @@ def build(mg):
         parts.append(mg.part("cube", leather, loc=(sx * 0.105, 0.195, 0.36), scale=(0.02, 0.012, 0.16)))   # side straps
 
     # ---- the striped tail curling up behind
-    pts = [(0, 0.1, 0.2), (0.03, 0.22, 0.17), (0.08, 0.3, 0.22), (0.12, 0.33, 0.33), (0.13, 0.3, 0.44)]
-    tail = mg.skin(pts, [0.035, 0.034, 0.032, 0.03, 0.026], cream)
-    for z0, z1 in ((0.16, 0.19), (0.24, 0.28), (0.34, 0.38)):
+    pts = [(0, 0.1, 0.2), (0.02, 0.2, 0.14), (0.05, 0.29, 0.13), (0.09, 0.35, 0.19), (0.12, 0.37, 0.3), (0.13, 0.33, 0.4)]
+    tail = mg.skin(pts, [0.035, 0.034, 0.033, 0.031, 0.029, 0.026], cream)   # back, down, then up, as the side view shows
+    for z0, z1 in ((0.13, 0.15), (0.2, 0.24), (0.3, 0.34)):
         mg.paint(tail, stripe, above=z0, below=z1)
     mg.paint(tail, stripe, at=pts[-1], radius=0.04)
     parts.append(tail)

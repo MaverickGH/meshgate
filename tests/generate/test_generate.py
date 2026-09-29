@@ -118,6 +118,11 @@ _new2 = generate.colour_corrections(_pal, _meas2, {})
 step("colour fit follows the picture's relative brightness, not its overall light",
      abs(_new2.get("fur", [0])[0] - 0.5) < 0.02 and 0.6 < _new2["belly"][0] <= 1.0)
 
+_adv = generate.band_advice({"views": [{"name": "front", "iou": 0.7}, {"name": "left", "iou": 0.5}],
+                             "bands": [[0.4, 0.5, 0.8]], "depth_bands": [[0.8, 0.9, 1.6], [0.1, 0.2, 1.05]]})
+step("review names every view of a sheet and the bands that differ most",
+     "left 0.50" in _adv and "20 % narrower" in _adv and "60 % deeper" in _adv and "10–20" not in _adv)
+
 # answer parsing and names
 ans = "Here you go:\n```python\nimport math\n\ndef build(mg):\n    pass\n```\nEnjoy!"
 step("extract_code takes the python block", generate.extract_code(ans).startswith("import math"))

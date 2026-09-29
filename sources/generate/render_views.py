@@ -232,7 +232,8 @@ def _colour_compare(np, cam_dir, ref_img, ref_main, cells):
 
 
 def _main_shape(mask):
-    """The largest connected shape of a mask with its holes filled (a picture's shadow specks and background noise go)."""
+    """The figure in a mask: its largest connected shape with the big pieces right next to it, holes filled (a picture's
+    shadow specks, background noise and captions go)."""
     import numpy as np
     h, w = mask.shape
     label = np.zeros((h, w), int)
@@ -254,6 +255,25 @@ def _main_shape(mask):
             if n > best_n:
                 best, best_n = k, n
     shape = label == best
+    # a figure is not always one piece in the mask: dark clothes on a dark background break it (shorts part the legs
+    # from the body). Big pieces right above or below it, with a small gap, belong to it; a caption further down does not
+    if best:
+        ys, xs = np.nonzero(shape)
+        y0_, y1_, x0_, x1_ = ys.min(), ys.max(), xs.min(), xs.max()
+        gap = max(2, int(0.05 * (y1_ - y0_ + 1)))
+        for j in range(1, k + 1):
+            if j == best:
+                continue
+            part = label == j
+            n = int(part.sum())
+            if n < 0.02 * best_n:
+                continue
+            py, px_ = np.nonzero(part)
+            overlaps = px_.max() >= x0_ and px_.min() <= x1_
+            near = py.min() <= y1_ + gap and py.max() >= y0_ - gap
+            if overlaps and near:
+                shape |= part
+                y0_, y1_ = min(y0_, py.min()), max(y1_, py.max())
     outside = np.zeros((h, w), bool)   # fill holes: everything the border cannot reach around the shape
     stack = [(y, x) for y in range(h) for x in (0, w - 1)] + [(y, x) for x in range(w) for y in (0, h - 1)]
     while stack:
@@ -265,33 +285,66 @@ def _main_shape(mask):
 
 
 match = None
+# a reference: one picture (the view that matches is searched round the front), or a character sheet —
+# {"image": path, "views": ["front", "3/4front", "left", "back", "right", "3/4back"]} in the sheet's order, left to right
+VIEW_YAW = {"front": 0, "3/4front": 45, "34front": 45, "left": 90, "back": 180, "right": -90, "3/4back": -135,
+            "34back": -135, "3/4left": 45, "3/4right": -45}
+sheet_views = None
+if reference and reference.lstrip().startswith("{"):
+    spec = _json.loads(reference)
+    reference, sheet_views = spec["image"], [str(v).lower().replace(" ", "") for v in spec.get("views") or []]
+ref_front = None   # the part of the picture shown on the sheet's left (the front view of a character sheet)
 if reference:
-    # the view that matches the reference: its outline (the background is the border's colour) against the model's
-    # silhouette from a ring of angles; the best one is rendered next to the picture, with the outlines overlaid
     import numpy as np
     rimg = bpy.data.images.load(os.path.abspath(reference))
     rw_, rh_ = rimg.size
     ra = np.array(rimg.pixels[:]).reshape(rh_, rw_, rimg.channels)[..., :3]
     border = np.concatenate([ra[0], ra[-1], ra[:, 0], ra[:, -1]])
     bgc = np.median(border, axis=0)
-    step = max(1, max(rw_, rh_) // 160)   # a small copy is enough for an outline
+    step = max(1, max(rw_, rh_) // (160 * (len(sheet_views) if sheet_views else 1)))   # small copies suffice
     small = ra[::step, ::step]
     ref_mask = np.linalg.norm(small - bgc, axis=-1) > 0.15
     # a shadow is the background, only darker: the same hue at a lower brightness — not part of the object
     lum, bg_lum = small.mean(-1, keepdims=True), max(float(bgc.mean()), 1e-3)
     hue_off = np.linalg.norm(small / np.maximum(lum, 1e-3) - bgc / bg_lum, axis=-1)
     ref_mask &= ~((lum[..., 0] < bg_lum) & (hue_off < 0.25))
-    ref_sil = _mask_crop(_main_shape(ref_mask))
-    if ref_sil is not None:
+    # the views: the whole picture, or the sheet cut into its figures at the empty columns between them
+    cuts = [(0, ref_mask.shape[1])]
+    if sheet_views:
+        occ = ref_mask.sum(0) > max(2, 0.01 * ref_mask.shape[0])
+        runs, x = [], 0
+        while x < len(occ):
+            if occ[x]:
+                x0 = x
+                while x < len(occ) and occ[x:x + 3].any():
+                    x += 1
+                runs.append((x0, x))
+            x += 1
+        runs = sorted(sorted(runs, key=lambda r: -ref_mask[:, r[0]:r[1]].sum())[:len(sheet_views)])
+        if len(runs) == len(sheet_views):
+            cuts = runs
+        else:
+            print(f"MeshGate views: the sheet shows {len(runs)} figures for {len(sheet_views)} views — using it whole")
+            sheet_views = None
+    names = sheet_views or ["picture"]
+    refs = []
+    for name, (x0, x1) in zip(names, cuts):
+        main = np.zeros_like(ref_mask)
+        main[:, x0:x1] = _main_shape(ref_mask[:, x0:x1])
+        sil_ = _mask_crop(main)
+        if sil_ is not None:
+            refs.append((name, sil_, main, (x0, x1)))
+    if refs:
         floor.hide_render = True
         engine, film = sc.render.engine, sc.render.film_transparent
         sc.render.engine = "BLENDER_WORKBENCH"
         sc.render.film_transparent = True
         rx, ry = sc.render.resolution_x, sc.render.resolution_y
         sc.render.resolution_x = sc.render.resolution_y = 128
-        best = None
-        for elev in (0.1, 0.45):
-            for yaw in range(-70, 71, 20):
+        cache = {}
+
+        def silhouette(yaw, elev):
+            if (yaw, elev) not in cache:
                 a_ = math.radians(yaw)
                 d = Vector((math.sin(a_), -math.cos(a_), elev)).normalized()
                 cam.location = centre + d * dist
@@ -299,37 +352,92 @@ if reference:
                 sc.render.filepath = f"{tmp}.sil.png"
                 bpy.ops.render.render(write_still=True)
                 si = bpy.data.images.load(sc.render.filepath)
-                sil = _mask_crop(np.array(si.pixels[:]).reshape(128, 128, 4)[..., 3] > 0.5)
+                cache[(yaw, elev)] = (_mask_crop(np.array(si.pixels[:]).reshape(128, 128, 4)[..., 3] > 0.5), d)
                 bpy.data.images.remove(si)
-                if sil is None:
-                    continue
-                iou = float((sil & ref_sil).sum()) / max(1, (sil | ref_sil).sum())
-                if best is None or iou > best[0]:
-                    best = (iou, yaw, elev, d, sil)
-        os.remove(f"{tmp}.sil.png")
+            return cache[(yaw, elev)]
+
+        def widths(ref_s, mod_s):
+            """The picture's width against the model's in ten bands from the bottom (median row width: a whisker or a
+            stray speck in one row does not count)."""
+            out_ = []
+            for k in range(10):
+                r0, r1 = int(k * 6.4), int((k + 1) * 6.4)
+                rw = [int(x) for x in ref_s[r0:r1].sum(1) if x > 0]
+                mw_ = [int(x) for x in mod_s[r0:r1].sum(1) if x > 0]
+                if len(rw) >= 2 and len(mw_) >= 2:
+                    out_.append([round(k / 10, 2), round((k + 1) / 10, 2), round(float(np.median(rw)) / float(np.median(mw_)), 3)])
+            return out_
+        views_out = []
+        for name, ref_s, main, cut in refs:
+            nominal = VIEW_YAW.get(name)
+            yaws = range(-70, 71, 20) if nominal is None else (nominal - 15, nominal, nominal + 15)   # a sheet's angle is known
+            best = None
+            for elev in (0.1, 0.45):
+                for yaw in yaws:
+                    sil, d = silhouette(((yaw + 180) % 360) - 180, elev)
+                    if sil is None:
+                        continue
+                    iou = float((sil & ref_s).sum()) / max(1, (sil | ref_s).sum())
+                    if best is None or iou > best[0]:
+                        best = (iou, ((yaw + 180) % 360) - 180, elev, d, sil)
+            if best:
+                # widths and depths are measured square to the view (its exact angle on the sheet): at another angle a
+                # width mixes the model's breadth and depth
+                exact = silhouette(nominal, best[2])[0] if nominal is not None else best[4]
+                views_out.append({"name": name, "iou": round(best[0], 3), "yaw_deg": best[1], "elevation": best[2],
+                                  "bands": widths(ref_s, exact if exact is not None else best[4]), "_best": best,
+                                  "_ref": (ref_s, main, cut)})
+        if os.path.exists(f"{tmp}.sil.png"):
+            os.remove(f"{tmp}.sil.png")
         sc.render.engine, sc.render.film_transparent = engine, film
         sc.render.resolution_x, sc.render.resolution_y = rx, ry
         floor.hide_render = False
-        if best:
-            match = {"iou": round(best[0], 3), "yaw_deg": best[1], "elevation": best[2]}
-            # width of the reference against the model's in ten bands from the bottom (median row width: a whisker or
-            # a stray speck in one row does not count) — what a proportion fit scales by
-            bands = []
-            for k in range(10):
-                r0, r1 = int(k * 6.4), int((k + 1) * 6.4)
-                rw = [int(x) for x in ref_sil[r0:r1].sum(1) if x > 0]
-                mw_ = [int(x) for x in best[4][r0:r1].sum(1) if x > 0]
-                if len(rw) >= 2 and len(mw_) >= 2:
-                    bands.append([round(k / 10, 2), round((k + 1) / 10, 2), round(float(np.median(rw)) / float(np.median(mw_)), 3)])
-            match["bands"] = bands
+        if views_out:
+            prim = next((v for v in views_out if v["name"] in ("front", "picture")), views_out[0])
+            best, (ref_sil, main, cut) = prim["_best"], prim["_ref"]
+            match = {"iou": round(sum(v["iou"] for v in views_out) / len(views_out), 3), "yaw_deg": prim["yaw_deg"],
+                     "elevation": prim["elevation"], "bands": prim["bands"]}
+            if sheet_views:
+                match["views"] = [{k: v[k] for k in ("name", "iou", "yaw_deg", "elevation", "bands")} for v in views_out]
+                # every view of the sheet with its outlines laid over the model's (white both, red only the picture,
+                # blue only the model), side by side: <sheet>.views.png
+                strip = np.zeros((64, 64 * len(views_out), 3))
+                for i, v in enumerate(views_out):
+                    r_, m_ = v["_ref"][0], v["_best"][4]
+                    tile = np.zeros((64, 64, 3))
+                    tile[m_ & r_] = (1, 1, 1)
+                    tile[r_ & ~m_] = (0.9, 0.2, 0.2)
+                    tile[m_ & ~r_] = (0.25, 0.45, 1.0)
+                    strip[:, 64 * i:64 * (i + 1)] = tile
+                big = np.repeat(np.repeat(strip, 4, 0), 4, 1)
+                vimg = bpy.data.images.new("views", big.shape[1], big.shape[0], alpha=False)
+                vimg.pixels = np.concatenate([big, np.ones(big.shape[:2] + (1,))], axis=2).ravel().tolist()
+                vimg.filepath_raw = os.path.splitext(out)[0] + ".views.png"
+                vimg.file_format = "PNG"
+                vimg.save()
+                # the widths across (front and back) and the depths (the sides), each averaged over its views
+                def mean_bands(vs):
+                    acc = {}
+                    for v in vs:
+                        for b in v["bands"]:
+                            acc.setdefault((b[0], b[1]), []).append(b[2])
+                    return [[a_, b_, round(sum(r) / len(r), 3)] for (a_, b_), r in sorted(acc.items())]
+                across = [v for v in views_out if v["name"] in ("front", "back")]
+                sides = [v for v in views_out if v["name"] in ("left", "right")]
+                if across:
+                    match["bands"] = mean_bands(across)
+                if sides:
+                    match["depth_bands"] = mean_bands(sides)
             shots.append(("matched", centre, best[3], dist))
             both = np.zeros((64, 64, 3))
             both[best[4] & ref_sil] = (1, 1, 1)
             both[ref_sil & ~best[4]] = (0.9, 0.2, 0.2)
             both[best[4] & ~ref_sil] = (0.25, 0.45, 1.0)
             match["_overlay"] = both
+            x0, x1 = cut
+            ref_front = ra[:, x0 * step:min(rw_, x1 * step)]
             try:   # the colours at the matched view, per palette colour (what a colour fit corrects)
-                cols, err = _colour_compare(np, best[3], small, _main_shape(ref_mask), 8)
+                cols, err = _colour_compare(np, best[3], small, main, 8)
                 match["colours"], match["colour_error"] = cols, (round(err, 4) if err is not None else None)
             except Exception as exc:  # noqa: BLE001 — the outline match still stands without it
                 print(f"MeshGate views: colour compare skipped ({exc})")
@@ -381,8 +489,11 @@ def _paste(img_rgb, ox, oy, box):
 
 if reference:
     import numpy as np
-    ref = bpy.data.images.load(os.path.abspath(reference))
-    rgb = np.array(ref.pixels[:]).reshape(ref.size[1], ref.size[0], ref.channels)[..., :3]
+    if ref_front is not None:
+        rgb = ref_front
+    else:
+        ref = bpy.data.images.load(os.path.abspath(reference))
+        rgb = np.array(ref.pixels[:]).reshape(ref.size[1], ref.size[0], ref.channels)[..., :3]
     if match:   # the picture and the matched view side by side on top, their outlines overlaid below
         _paste(rgb, 0, half, half)
         mt = tiles[[n for n, *_ in shots].index("matched")]
@@ -402,4 +513,6 @@ if match:
         _json.dump(match, f)
     print(f"MeshGate views: best match with the reference {match['iou']:.2f} at {match['yaw_deg']}° round, "
           f"elevation {match['elevation']}")
+    for v in match.get("views") or []:
+        print(f"MeshGate views:   {v['name']:9} {v['iou']:.2f} at {v['yaw_deg']}°")
 print(f"MeshGate views: {out}")

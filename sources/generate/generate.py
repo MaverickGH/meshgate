@@ -576,6 +576,9 @@ def build_parser() -> argparse.ArgumentParser:
                     "normal) for every style, not only realistic")
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"],
                     help="quad: FBX and .blend keep quads; the mesh engine remeshes to clean quads (GLB is always triangles)")
+    ap.add_argument("--views", help="the picture is a character sheet: its views left to right, e.g. "
+                                    "front,3/4front,left,back,right,3/4back — the model is compared with every one, "
+                                    "and --fit takes widths from the front and back, depths from the sides")
     ap.add_argument("--fit", default="auto", choices=["auto", "on", "off"],
                     help="kit: after the build, fit the model to the reference picture — widths per height band from the "
                          "outlines, and every palette colour to what the picture shows there — and keep it when it "
@@ -957,7 +960,7 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                 if meter:
                     meter.begin("render")
                 sheet = out_dir / "edit_views.png"
-                if not render_views(blender, current, sheet, reference=image):
+                if not render_views(blender, current, sheet, reference=ref_arg(args, image)):
                     sheet = None
                 if meter:
                     meter.end("render")
@@ -1230,7 +1233,25 @@ def match_block(match: dict | None) -> str:
             f"({match['yaw_deg']}° round from the front), and below them their outlines laid over each other: white where "
             f"they agree, red where only the reference has shape, blue where only your model has. Silhouette match "
             f"{match['iou']:.2f} (1.0 = the same outline); make the red and blue areas small — they are the proportions "
-            "to fix first.")
+            "to fix first." + band_advice(match))
+
+
+def band_advice(match: dict) -> str:
+    """The measured differences in words: the outline match of every view of a character sheet and the height bands
+    where the picture is clearly wider or deeper than the model (a fit stretches ±20 % at most; beyond that the
+    shapes themselves must change — a deeper head, arms reaching forward, a longer tail)."""
+    out = []
+    views = match.get("views") or []
+    if views:
+        out.append(" Outline match per view of the sheet: " + ", ".join(f"{v['name']} {v['iou']:.2f}" for v in views) + ".")
+    for key, what, where in (("bands", "wider", "seen from the front"), ("depth_bands", "deeper", "seen from the side")):
+        rows = [b for b in match.get(key) or [] if abs(b[2] - 1) >= 0.15]
+        rows = sorted(rows, key=lambda b: -abs(b[2] - 1))[:3]
+        for a, b, r in sorted(rows):
+            word = what if r > 1 else {"wider": "narrower", "deeper": "shallower"}[what]
+            out.append(f" At {a * 100:.0f}–{b * 100:.0f} % of the height the reference is {abs(r - 1) * 100:.0f} % {word} "
+                       f"than your model {where}.")
+    return "".join(out)
 
 
 def read_match(sheet: Path) -> dict | None:
@@ -1336,6 +1357,20 @@ def _match_score(m: dict) -> float:
     return float(m.get("iou") or 0) - 0.5 * float(m.get("colour_error") or 0)
 
 
+def ref_arg(args, image: str | None) -> str | None:
+    """What render_views compares with: the picture, or a character sheet with its views in order."""
+    views = [v.strip() for v in str(getattr(args, "views", "") or "").split(",") if v.strip()]
+    return json.dumps({"image": str(image), "views": views}) if image and views else image
+
+
+def fit_bands(m: dict) -> list:
+    """Width bands (front and back) joined with depth bands (the sides): [[from, to, width ratio, depth ratio], …]."""
+    depth = {(b[0], b[1]): b[2] for b in m.get("depth_bands") or []}
+    rows = [[b[0], b[1], b[2], depth.pop((b[0], b[1]), 1.0)] for b in m.get("bands") or []]
+    rows += [[a, b, 1.0, r] for (a, b), r in depth.items()]
+    return sorted(rows)
+
+
 def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str, say, report: dict) -> dict:
     """Fit the model to the reference, the way an artist checks it against the concept: compare the outlines and the
     colours, widen or narrow each height band by what they measure (the kit moves vertices and joints alike), bring
@@ -1344,11 +1379,11 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
     canon = report["tiers"][report["canonical"]]["file"]
     before = out_dir / "fit_before.png"
     say("[fit] comparing the proportions and colours with the reference…", stage="fit")
-    if not render_views(blender, out_dir / canon, before, reference=image, px=512, samples=8):
+    if not render_views(blender, out_dir / canon, before, reference=ref_arg(args, image), px=512, samples=8):
         return report
     m = read_match(before) or {}
-    bands = [b for b in (m.get("bands") or [])]
-    if bands and all(abs(b[2] - 1) < 0.04 for b in bands):
+    bands = fit_bands(m)
+    if bands and all(abs(b[2] - 1) < 0.04 and abs(b[3] - 1) < 0.04 for b in bands):
         bands = []
     colours: dict = {}
     first = m
@@ -1376,7 +1411,7 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
             return report
         after = side / "fit_after.png"
         if not render_views(blender, side / new_report["tiers"][new_report["canonical"]]["file"], after,
-                            reference=image, px=512, samples=8):
+                            reference=ref_arg(args, image), px=512, samples=8):
             return report
         m2 = read_match(after) or {}
         if float(m2.get("iou") or 0) < float(m.get("iou") or 0) - 0.005 or (rnd > 1 and _match_score(m2) <= _match_score(m)):
@@ -1419,7 +1454,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         meter = getattr(args, "meter", None)
         if meter:
             meter.begin("render")
-        rendered = render_views(blender, out_dir / canon, sheet, reference=image, closeups=closeups)
+        rendered = render_views(blender, out_dir / canon, sheet, reference=ref_arg(args, image), closeups=closeups)
         if meter:
             meter.end("render")
             meter.begin(f"ask:{args.ai_cmd and 'custom' or args.ai}")
@@ -1504,7 +1539,8 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
                 f"{versions[cur]['score']:g}/10)", stage="review")
     if any(e["accepted"] for e in reviews):
         final = out_dir / "views.png"
-        if render_views(blender, out_dir / report["tiers"][report["canonical"]]["file"], final, reference=image):
+        canon_file = out_dir / report["tiers"][report["canonical"]]["file"]
+        if render_views(blender, canon_file, final, reference=ref_arg(args, image)):
             say(f"    final views: {final.name}", stage="review")
     return report, code, reviews
 

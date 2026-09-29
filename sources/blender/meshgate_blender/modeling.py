@@ -206,7 +206,8 @@ class Kit:
             raise ModelError(f"unknown pose {pose!r} — use {', '.join(POSES)}")
         self._pose = pose                           # the rest pose of rigged characters (mg.rig): none, a or t
         self._outline = bool(outline) and finish in ("none", "faceted")   # toon ink line (baked finishes: one material)
-        self._fit = [tuple(float(x) for x in b) for b in (fit or []) if len(b) == 3]   # (from, to, width ratio) bands
+        # (from, to, width ratio[, depth ratio]) bands measured on a reference
+        self._fit = [tuple(float(x) for x in b) + ((1.0,) if len(b) == 3 else ()) for b in (fit or []) if len(b) in (3, 4)]
         self._colour_fit = {str(k): v for k, v in (colour_fit or {}).items()}   # colour name → rgb measured on a reference
         self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
@@ -3057,21 +3058,30 @@ class Kit:
         return 1
 
     def _apply_fit(self) -> list[str]:
-        """Proportions fitted to the reference picture: each height band of the model is made as wide as the picture's
-        (the ratios come from comparing their outlines), with a smooth profile between bands — vertices and the
-        skeleton's joints alike, so a rigged character still bends where it should. At most ±20 % per band."""
+        """Proportions fitted to the reference: each height band of the model made as wide as the picture's front shows
+        it and as deep as its side shows it (the ratios come from comparing their outlines), with a smooth profile
+        between bands — vertices and the skeleton's joints alike, so a rigged character still bends where it should.
+        At most ±20 % per band and direction."""
         meshes = [o for o in bpy.context.scene.objects if o.type == "MESH" and o.data.users == 1]
         if not meshes:
             return []
         lo, hi = self._bounds(meshes)
         h = max(hi.z - lo.z, 1e-6)
         cx = (lo.x + hi.x) / 2
-        pts = sorted(((a + b) / 2, max(0.8, min(1.2, r))) for a, b, r in self._fit)
-        if all(abs(r - 1) < 0.04 for _, r in pts):
+        ys = sorted((o.matrix_world @ v.co).y for o in meshes for v in o.data.vertices)
+        cy = ys[len(ys) // 2]   # the body's own middle, not the box's (a tail or a backpack would pull that back)
+        clamp = lambda r: max(0.8, min(1.2, r))
+        pts = sorted(((a + b) / 2, clamp(rx), clamp(ry)) for a, b, rx, ry in self._fit)
+        if all(abs(rx - 1) < 0.04 and abs(ry - 1) < 0.04 for _, rx, ry in pts):
             return []
-        sm = [(t, (pts[max(i - 1, 0)][1] + 2 * r + pts[min(i + 1, len(pts) - 1)][1]) / 4) for i, (t, r) in enumerate(pts)]
 
-        def ratio(z):
+        def smooth(k):
+            vals = [p[k] for p in pts]
+            return [(pts[i][0], (vals[max(i - 1, 0)] + 2 * vals[i] + vals[min(i + 1, len(vals) - 1)]) / 4)
+                    for i in range(len(vals))]
+        sx_, sy_ = smooth(1), smooth(2)
+
+        def profile(sm, z):
             t = (z - lo.z) / h
             if t <= sm[0][0]:
                 return sm[0][1]
@@ -3083,7 +3093,7 @@ class Kit:
             return sm[-1][1]
 
         def warp(w):
-            return Vector((cx + (w.x - cx) * ratio(w.z), w.y, w.z))
+            return Vector((cx + (w.x - cx) * profile(sx_, w.z), cy + (w.y - cy) * profile(sy_, w.z), w.z))
         for o in meshes:
             mw, inv = o.matrix_world, o.matrix_world.inverted()
             for v in o.data.vertices:
@@ -3098,9 +3108,10 @@ class Kit:
             for eb in arm.data.edit_bones:
                 eb.head, eb.tail = ainv @ warp(aw @ eb.head), ainv @ warp(aw @ eb.tail)
             bpy.ops.object.mode_set(mode="OBJECT")
-        widest = max(sm, key=lambda p: abs(p[1] - 1))
-        return [f"proportions fitted to the reference: widths scaled by {min(r for _, r in sm):.2f}–"
-                f"{max(r for _, r in sm):.2f} (most at {widest[0] * 100:.0f} % of the height)"]
+        note = f"proportions fitted to the reference: widths × {min(r for _, r in sx_):.2f}–{max(r for _, r in sx_):.2f}"
+        if any(abs(r - 1) > 0.01 for _, r in sy_):
+            note += f", depths × {min(r for _, r in sy_):.2f}–{max(r for _, r in sy_):.2f}"
+        return [note]
 
     def _ink(self, once, meshes) -> list[str]:
         """The toon ink line, as games draw it: an inverted hull — each mesh gets a slightly fatter copy of itself turned
