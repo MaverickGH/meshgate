@@ -1884,6 +1884,135 @@ class Kit:
         me.update()
         return obj
 
+    def _surface(self, obj):
+        """A BVH of a piece in world space (rays and nearest points on its surface)."""
+        from mathutils.bvhtree import BVHTree
+        self._bake(obj)
+        mw = obj.matrix_world
+        return BVHTree.FromPolygons([tuple(mw @ v.co) for v in obj.data.vertices], [tuple(p.vertices) for p in obj.data.polygons])
+
+    def _ring(self, bvh, centre, u, count):
+        """Where rays from `centre` outward, square to axis u, meet the surface: a cross-section as (points, normals)."""
+        u = u.normalized()
+        v = (Vector((1, 0, 0)) if abs(u.x) < 0.9 else Vector((0, 1, 0))).cross(u).normalized()
+        w = u.cross(v)
+        pts, nrm = [], []
+        for i in range(count):
+            a = 2 * math.pi * i / count
+            d = v * math.cos(a) + w * math.sin(a)
+            hit = bvh.ray_cast(centre, d)
+            if hit[0] is None:
+                continue
+            n = hit[1] if hit[1].dot(d) > 0 else -hit[1]
+            pts.append(hit[0])
+            nrm.append(n.normalized())
+        return pts, nrm
+
+    def fringe(self, piece, color, at_z: float | None = None, *, at=None, axis=(0, 0, 1), depth: float = 0.04,
+               width: float = 0.03, jag: float = 0.5, seed: int = 0):
+        """A torn edge round a piece — the ragged hem of a shirt or shorts, a torn sleeve or trouser leg, a banner, a
+        leaf's teeth: little flaps `depth` meters long (jag = how uneven, 0…1), about `width` apart, following the
+        piece's outline all the way round. at_z = a height for a hem; or at = a point on the axis and axis = the
+        direction back into the cloth (a sleeve's hem: at = the elbow end, axis = elbow → shoulder); the flaps hang
+        the other way. Put it in the parts list."""
+        import random as _r
+        rnd = _r.Random(seed)
+        bvh = self._surface(piece)
+        lo, hi = self._box(piece)
+        up = Vector(axis).normalized()
+        if at is None:
+            if at_z is None:
+                raise ModelError("fringe: give at_z (a hem's height) or at= and axis=")
+            c = Vector(((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, float(at_z)))
+        else:
+            c = Vector(at)
+        pts, nrm = self._ring(bvh, c, up, 48)
+        if len(pts) < 3:
+            raise ModelError("fringe: no outline there — pick a point inside the piece")
+        girth = sum((pts[i] - pts[(i + 1) % len(pts)]).length for i in range(len(pts)))
+        count = max(6, min(96, int(girth / max(width, 0.005))))
+        pts, nrm = self._ring(bvh, c, up, count)
+        t = 0.004
+        verts, faces = [], []
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            na, nb = nrm[i], nrm[(i + 1) % len(pts)]
+            if (a - b).length > width * 3:   # a gap in the outline (between legs): no flap across it
+                continue
+            n = (na + nb).normalized()
+            tip = (a + b) / 2 + n * 0.003 - up * (depth * (1 - jag + 2 * jag * rnd.random()))
+            quad = [a + na * 0.002, b + nb * 0.002, tip]
+            k = len(verts)
+            verts += [tuple(q) for q in quad] + [tuple(q - n * t) for q in quad]
+            faces += [(k, k + 1, k + 2), (k + 5, k + 4, k + 3), (k, k + 3, k + 4, k + 1), (k + 1, k + 4, k + 5, k + 2),
+                      (k + 2, k + 5, k + 3, k)]
+        obj = self._mesh("fringe", verts, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, False)
+        return obj
+
+    def wrap(self, piece, color, a, b, t: float = 0.5, *, width: float = 0.02, thickness: float = 0.004,
+             slant: float = 0.0):
+        """A band wrapped round a limb or a post, following its cross-section — a bandage, a belt, a strap, a bracelet,
+        a stripe that stands off the fur. a → b = the limb's axis (world points), t = where along it (0…1), width =
+        the band's width along the axis, slant = a tilt in radians (a bandage wound at an angle). Put it in the parts
+        list; several at different t make a wound bandage."""
+        bvh = self._surface(piece)
+        a, b = Vector(a), Vector(b)
+        u = (b - a).normalized()
+        if slant:
+            side = (Vector((1, 0, 0)) if abs(u.x) < 0.9 else Vector((0, 1, 0))).cross(u).normalized()
+            u = (Matrix.Rotation(float(slant), 3, side) @ u).normalized()
+        c = a.lerp(b, float(t))
+        n = self.seg(24)
+        pts, nrm = self._ring(bvh, c, u, n)
+        if len(pts) < 3:
+            raise ModelError("wrap: no surface round that point — a and b must run through the piece")
+        verts, faces = [], []
+        m = len(pts)
+        for (p, q) in zip(pts, nrm):
+            out = p + q * thickness
+            verts += [tuple(out - u * width / 2), tuple(out + u * width / 2), tuple(p - q * 0.002 - u * width / 2),
+                      tuple(p - q * 0.002 + u * width / 2)]
+        for i in range(m):
+            j = (i + 1) % m
+            o0, o1, i0, i1 = 4 * i, 4 * i + 1, 4 * i + 2, 4 * i + 3
+            p0, p1, j0, j1 = 4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3
+            faces += [(o0, p0, p1, o1), (i1, j1, j0, i0), (o1, p1, j1, i1), (i0, j0, p0, o0)]
+        obj = self._mesh("wrap", verts, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, True)
+        return obj
+
+    def stitch(self, on, color, points, *, facing=(0, -1, 0), ticks: int | None = None, width: float = 0.02,
+               thick: float = 0.004):
+        """Stitches laid on a surface — a sewn scar, a seam, a patch's edge: a thread along `points` (world, near the
+        surface; they are projected onto `on` along `facing`) with `ticks` cross stitches `width` long (default one
+        every 2 cm). Put it in the parts list."""
+        bvh = self._surface(on)
+        f = Vector(facing).normalized()
+        path = []
+        for p in points:
+            q = Vector(p)
+            hit = bvh.ray_cast(q + f * 0.5, -f)
+            path.append((hit[0] + f * thick * 0.6) if hit[0] is not None else q)
+        if len(path) < 2:
+            raise ModelError("stitch needs two points or more")
+        length = sum((b - a).length for a, b in zip(path, path[1:]))
+        k = int(ticks) if ticks else max(2, int(length / 0.02))
+        pieces = [self.tube([tuple(p) for p in path], thick / 2, color, sides=4)]
+        for i in range(k):
+            s_ = (i + 0.5) / k * length
+            for a, b in zip(path, path[1:]):
+                seg = (b - a).length
+                if s_ <= seg or (a, b) == (path[-2], path[-1]):
+                    q = a.lerp(b, min(1.0, s_ / max(seg, 1e-6)))
+                    side = (b - a).cross(f).normalized() * width / 2
+                    pieces.append(self.tube([tuple(q - side), tuple(q + side)], thick / 2, color, sides=4))
+                    break
+                s_ -= seg
+        return self.join(f"stitch_{len(self._sources)}", pieces) if len(pieces) > 1 else pieces[0]
+
     def bounds(self, obj):
         """The piece's real box in world meters as ((min x, min y, min z), (max x, max y, max z)) — measure instead of
         guessing: a subdivided or bevelled part ends inside the box you asked for, so put a face's eyes and nose on

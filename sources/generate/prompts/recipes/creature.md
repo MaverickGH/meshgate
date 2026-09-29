@@ -13,6 +13,11 @@ example: zombie_cats/stylized/zombie_cat.py
   with `edges=` for the branches — clean quads with loops at every joint. A single `mg.blob` of balls is for lumpy
   things only (a slime, a boulder). Sink touching blocks a centimetre into each other, or leave a clear gap (2 cm
   and more): a gap of a few millimetres bakes into a dark smudge.
+- Then detail, the way the sheet shows it — a clean blocky model with none of it reads as a toy box: torn cloth with
+  `mg.fringe` (a hem at a height; a sleeve with `at=` its end and `axis=` back into it), bandages, belts, bracelets and
+  raised stripes with `mg.wrap` round the limb (`slant=` for a bandage), scars and seams with `mg.stitch`, pouches,
+  buckles, straps, toes and claws as small pieces, tufts that break the outline (cheeks, elbows). Measure the piece
+  first with `mg.bounds` and put the details on its real surface.
 - Proportions first, detail later: for a cartoon or chibi look the head is 30–40 % of the height; for a real animal
   measure against the real one (a house cat: body 0.45 m, shoulder 0.25 m, head 0.1 m).
 - A pose sells the character, but model the arms relaxed at the sides: the clips move them (a zombie walk holds them
