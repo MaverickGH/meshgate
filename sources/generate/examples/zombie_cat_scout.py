@@ -59,22 +59,25 @@ def build(mg):
     parts += [shorts, mg.fringe(shorts, shorts_c, 0.15, depth=0.035, width=0.032, seed=3)]
     parts.append(mg.patch(shorts, leather, at=(0.085, -0.1, 0.19), size=(0.055, 0.05), thickness=0.004))
     parts.append(mg.stitch(shorts, dark, [(0.058, -0.12, 0.215), (0.112, -0.12, 0.215)], ticks=3, width=0.012))
-    parts.append(mg.part("cube", leather, loc=(0, 0.0, 0.262), scale=(0.29, 0.205, 0.03), bevel=0.005))       # belt
-    parts.append(mg.part("cube", brass, loc=(0, -0.106, 0.262), scale=(0.045, 0.01, 0.034), bevel=0.003))   # buckle
-    for sx in (-1, 1):   # pouches on the hips
-        parts.append(mg.part("cube", leather, loc=(sx * 0.135, -0.05, 0.235), scale=(0.06, 0.04, 0.065), bevel=0.008))
-        parts.append(mg.part("cube", shorts_c, loc=(sx * 0.135, -0.072, 0.255), scale=(0.062, 0.006, 0.028), bevel=0.003))
+    parts.append(mg.wrap(shorts, leather, (0, 0, 0.14), (0, 0, 0.27), 0.93, width=0.032, thickness=0.008))   # the belt
+    parts.append(mg.buckle(brass, (0, -0.108, 0.262), size=0.042))
+    for sx in (-1, 1):   # pouches on the hips, flaps buckled down
+        parts.append(mg.pouch(shorts, leather, (sx * 0.125, -0.1, 0.225), size=(0.06, 0.065, 0.04), flap=shorts_c,
+                              buckle=brass))
 
-    # ---- the torso in a torn olive shirt, open over the cream chest, suspenders with brass buckles
-    torso = mg.part("cube", shirt, loc=(0, 0.0, 0.365), scale=(0.33, 0.19, 0.24), bevel=0.05, subdiv=1, smooth=True,
+    # ---- the body: cream fur, and over it a torn olive shirt, open down the front over the chest
+    torso = mg.part("cube", cream, loc=(0, 0.0, 0.365), scale=(0.31, 0.18, 0.24), bevel=0.05, subdiv=1, smooth=True,
                     taper=0.84)   # wider at the hem
-    parts += [torso, mg.fringe(torso, shirt, 0.255, depth=0.045, width=0.036, seed=7)]
-    parts.append(mg.patch(torso, cream, at=(0, -0.095, 0.37), size=(0.085, 0.2), thickness=0.004))       # the open front
+    shirt_body = mg.garment(torso, shirt, above=0.245, below=0.49, open_front=0.075, thickness=0.012, gap=0.004)
+    parts += [torso, shirt_body, mg.fringe(shirt_body, shirt, 0.258, depth=0.045, width=0.036, seed=7)]
     parts.append(mg.patch(torso, wound, at=(-0.012, -0.1, 0.33), size=(0.025, 0.018), thickness=0.006))  # a wound
+    # suspenders: over each shoulder from the belt in front to the belt behind, brass buckles on the chest
     for sx in (-1, 1):
-        for y in (-0.1, 0.1):
-            parts.append(mg.part("cube", leather, loc=(sx * 0.07, y, 0.37), scale=(0.028, 0.012, 0.24)))
-        parts.append(mg.part("cube", brass, loc=(sx * 0.07, -0.108, 0.41), scale=(0.036, 0.008, 0.03), bevel=0.003))
+        x = sx * 0.075
+        parts.append(mg.strap(shirt_body, leather, [(x, -0.12, 0.27), (x, -0.12, 0.44), (x * 1.15, -0.02, 0.5),
+                                                    (x * 1.15, 0.06, 0.49), (x, 0.12, 0.44), (x, 0.12, 0.27)],
+                              width=0.028, thickness=0.006))
+        parts.append(mg.buckle(brass, (x, -0.118, 0.41), size=0.036))
 
     # ---- arms in an A-pose: flared, torn olive sleeves; striped cream forearms; a wound bandage; clawed hands
     for sx in (-1, 1):
@@ -85,10 +88,12 @@ def build(mg):
         wr = tuple(s + k * 0.22 for s, k in zip(sh, d))
         tip = tuple(s + k * 0.28 for s, k in zip(sh, d))
         c, n, r = along(sh, el)
-        sleeve = mg.part("cube", shirt, loc=c, scale=(0.08, 0.085, n + 0.04), rot=r, bevel=0.02, subdiv=1, smooth=True,
-                         taper=1.25)   # flaring to the torn end
-        parts += [sleeve, mg.fringe(sleeve, shirt, at=lerp(sh, el, 1.1), axis=tuple(-x for x in d), depth=0.03,
-                                    width=0.025, seed=11 + sx)]
+        upper = mg.part("cube", cream, loc=c, scale=(0.07, 0.075, n + 0.04), rot=r, bevel=0.02, subdiv=1, smooth=True,
+                        taper=1.15)
+        # the sleeve: a layer over the arm down to past the elbow, flaring and torn at its end
+        sleeve = mg.garment(upper, shirt, along=(sh, el), span=(-0.3, 1.05), thickness=0.012, gap=0.005)
+        parts += [upper, sleeve, mg.fringe(sleeve, shirt, at=lerp(sh, el, 1.0), axis=tuple(-x for x in d), depth=0.03,
+                                           width=0.025, seed=11 + sx)]
         c, n, r = along(el, wr)
         fore = mg.part("cube", cream, loc=c, scale=(0.07, 0.072, n + 0.03), rot=r, bevel=0.015, subdiv=1, smooth=True)
         parts.append(fore)

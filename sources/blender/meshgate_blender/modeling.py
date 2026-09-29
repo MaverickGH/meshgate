@@ -1909,6 +1909,136 @@ class Kit:
             nrm.append(n.normalized())
         return pts, nrm
 
+    def garment(self, body, color, *, above: float | None = None, below: float | None = None, along=None,
+                span=(0.0, 1.0), thickness: float = 0.01, gap: float = 0.004, open_front: float = 0.0):
+        """Clothes the way a character artist makes them: a layer cut from the body's own surface and given thickness —
+        a shirt, a vest, shorts, a skirt, a sleeve, a hood — so it follows the body (and a fringe, a patch or a stitch
+        on it tears, mends or seams it). Which part of the body it covers: above / below = heights (a shirt from the
+        belt to the neck), or along = (a, b) a limb's axis and span = (t0, t1) the stretch of it (a sleeve from the
+        shoulder to the elbow). open_front = the width in meters of an opening down the front (an open shirt shows the
+        chest); gap = how far it stands off the skin, thickness = the cloth's. Put it in the parts list."""
+        self._bake(body)
+        me = body.data
+        mw = body.matrix_world
+        nm = mw.to_3x3().inverted().transposed()
+        pos = [mw @ v.co for v in me.vertices]
+        nrm = [(nm @ v.normal).normalized() for v in me.vertices]
+        seg = None
+        if along is not None:
+            a_, b_ = Vector(along[0]), Vector(along[1])
+            seg = (a_, b_ - a_, max((b_ - a_).length_squared, 1e-9))
+        chosen = []
+        for p in me.polygons:
+            c = sum((pos[i] for i in p.vertices), Vector()) / len(p.vertices)
+            if above is not None and c.z < above or below is not None and c.z > below:
+                continue
+            if seg is not None:
+                t = (c - seg[0]).dot(seg[1]) / seg[2]
+                if not span[0] <= t <= span[1]:
+                    continue
+            if open_front and abs(c.x) < open_front / 2 and (mw.to_3x3() @ p.normal).y < -0.3:
+                continue
+            chosen.append(p)
+        if not chosen:
+            raise ModelError("garment: no part of the body there — check above / below or along / span")
+        used = sorted({i for p in chosen for i in p.vertices})
+        idx = {i: k for k, i in enumerate(used)}
+        inner = [tuple(pos[i] + nrm[i] * gap) for i in used]
+        outer = [tuple(pos[i] + nrm[i] * (gap + thickness)) for i in used]
+        m = len(used)
+        faces = [tuple(idx[i] + m for i in p.vertices) for p in chosen] + [tuple(idx[i] for i in reversed(p.vertices)) for p in chosen]
+        edges: dict = {}
+        for p in chosen:   # the rim: edges used by one chosen face only
+            vs = list(p.vertices)
+            for a_, b_ in zip(vs, vs[1:] + vs[:1]):
+                key = (min(a_, b_), max(a_, b_))
+                edges[key] = edges.get(key, 0) + 1
+                edges.setdefault(("dir",) + key, (a_, b_))
+        flat = []
+        for key, n in edges.items():
+            if key[0] == "dir" or n != 1:
+                continue
+            a_, b_ = edges[("dir",) + key]
+            faces.append((idx[b_], idx[a_], idx[a_] + m, idx[b_] + m))
+            flat.append(len(faces) - 1)
+        obj = self._mesh("garment", inner + outer, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, True, flat)
+        return obj
+
+    def strap(self, on, color, points, *, width: float = 0.03, thickness: float = 0.006, closed: bool = False):
+        """A strap laid along a path over a surface — suspenders over a shoulder, a belt round the hips, a harness, a
+        backpack's shoulder straps, a bandolier: points = the path (world, near the surface: each is pulled onto `on`),
+        the strap `width` wide lying flat on the surface all the way, following its curve. closed = a loop. Put it in
+        the parts list."""
+        bvh = self._surface(on)
+        raw = [Vector(p) for p in points] + ([Vector(points[0])] if closed else [])
+        if len(raw) < 2:
+            raise ModelError("strap needs two points or more")
+        path = []
+        for a_, b_ in zip(raw, raw[1:]):   # dense enough to follow the surface between the given points
+            k = max(1, int((b_ - a_).length / 0.015))
+            path += [a_.lerp(b_, i / k) for i in range(k)]
+        path.append(raw[-1])
+        on_s = []
+        for p in path:
+            hit = bvh.find_nearest(p)
+            if hit[0] is None:
+                continue
+            n = hit[1] if (p - hit[0]).dot(hit[1]) >= 0 else -hit[1]
+            on_s.append((hit[0], n.normalized()))
+        verts, faces = [], []
+        for i, (p, n) in enumerate(on_s):
+            t = (on_s[min(i + 1, len(on_s) - 1)][0] - on_s[max(i - 1, 0)][0])
+            t = t.normalized() if t.length > 1e-9 else Vector((0, 0, 1))
+            side = t.cross(n).normalized() * width / 2
+            base = p + n * 0.002
+            top = base + n * thickness
+            verts += [tuple(base - side), tuple(base + side), tuple(top + side), tuple(top - side)]
+        for i in range(len(on_s) - 1):
+            a0, b0 = 4 * i, 4 * (i + 1)
+            for k in range(4):
+                faces.append((a0 + k, a0 + (k + 1) % 4, b0 + (k + 1) % 4, b0 + k))
+        last = 4 * (len(on_s) - 1)
+        faces += [(3, 2, 1, 0), (last, last + 1, last + 2, last + 3)]
+        obj = self._mesh("strap", verts, faces)
+        self._fix_normals(obj)
+        self._finish_piece(obj, color, False)
+        return obj
+
+    def buckle(self, color, at, *, facing=(0, -1, 0), size: float = 0.04, bar=None):
+        """A buckle: a square frame with a prong across it, lying flat at `at` and facing `facing` (put it on a
+        strap or a belt; bar = the prong's colour, default the same). Returns one piece."""
+        f = Vector(facing).normalized()
+        rot = Vector((0, -1, 0)).rotation_difference(f).to_euler()
+        c = Vector(at) + f * 0.003
+        frame = self.part("cube", color, loc=tuple(c), scale=(size, 0.006, size * 0.8), rot=tuple(rot), bevel=size * 0.08)
+        hole = self.part("cube", color, loc=tuple(c), scale=(size * 0.62, 0.03, size * 0.45), rot=tuple(rot))
+        self.cut(frame, hole)
+        prong = self.part("cube", bar or color, loc=tuple(c + f * 0.002), scale=(size * 0.12, 0.006, size * 0.62), rot=tuple(rot))
+        return self.join(f"buckle_{len(self._sources)}", [frame, prong])
+
+    def pouch(self, on, color, at, *, size=(0.06, 0.05, 0.04), facing=(0, -1, 0), flap=None, buckle=None):
+        """A pouch sewn on a belt, a strap or a garment: a soft box `size` = (width, height, depth) meters sitting on
+        `on` at `at` (pulled onto its surface along `facing`), with a flap over its top (flap = its colour) and a
+        small buckle on it (buckle = its colour). Returns one piece."""
+        f = Vector(facing).normalized()
+        bvh = self._surface(on)
+        hit = bvh.ray_cast(Vector(at) + f * 0.5, -f)
+        base = hit[0] if hit[0] is not None else Vector(at)
+        w, h, d = (float(x) for x in size)
+        rot = Vector((0, -1, 0)).rotation_difference(f).to_euler()
+        c = base + f * (d / 2 - 0.004)
+        pieces = [self.part("cube", color, loc=tuple(c), scale=(w, d, h), rot=tuple(rot), bevel=min(w, h, d) * 0.18,
+                            subdiv=1, smooth=True)]
+        up = Vector((0, 0, 1))
+        top = c + up * (h * 0.32) + f * (d / 2 + 0.003)
+        pieces.append(self.part("cube", flap or color, loc=tuple(top), scale=(w * 1.04, 0.008, h * 0.42), rot=tuple(rot),
+                                bevel=0.003))
+        if buckle:
+            pieces.append(self.buckle(buckle, tuple(top - up * (h * 0.12) + f * 0.004), facing=tuple(f), size=min(w, h) * 0.35))
+        return self.join(f"pouch_{len(self._sources)}", pieces)
+
     def fringe(self, piece, color, at_z: float | None = None, *, at=None, axis=(0, 0, 1), depth: float = 0.04,
                width: float = 0.03, jag: float = 0.5, seed: int = 0):
         """A torn edge round a piece — the ragged hem of a shirt or shorts, a torn sleeve or trouser leg, a banner, a

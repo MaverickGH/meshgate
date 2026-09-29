@@ -13,6 +13,11 @@ example: zombie_cats/stylized/zombie_cat.py
   with `edges=` for the branches — clean quads with loops at every joint. A single `mg.blob` of balls is for lumpy
   things only (a slime, a boulder). Sink touching blocks a centimetre into each other, or leave a clear gap (2 cm
   and more): a gap of a few millimetres bakes into a dark smudge.
+- Dress a character the way a character artist does: the body first (fur or skin), then the clothes over it with
+  `mg.garment(body, cloth, above=, below=)` — a layer of the body's own surface with thickness, `open_front=` for an
+  open shirt (the chest shows through), `along=` + `span=` for a sleeve — then straps with `mg.strap` along a path over
+  the clothes (suspenders from the belt in front, over the shoulder, to the belt behind), buckles with `mg.buckle`,
+  gear with `mg.pouch`. Clothes made as blocks with the body painted on them read as a toy; layers read as a character.
 - Then detail, the way the sheet shows it — a clean blocky model with none of it reads as a toy box: torn cloth with
   `mg.fringe` (a hem at a height; a sleeve with `at=` its end and `axis=` back into it), bandages, belts, bracelets and
   raised stripes with `mg.wrap` round the limb (`slant=` for a bandage), scars and seams with `mg.stitch`, pouches,
