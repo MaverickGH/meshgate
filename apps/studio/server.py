@@ -42,7 +42,7 @@ import keys  # noqa: E402
 import mesh  # noqa: E402
 import components  # noqa: E402  optional local models (TripoSR, Hunyuan3D, Kimodo)
 
-VERSION = "0.6.7"
+VERSION = "0.6.8"
 THREE_VERSION = "0.169.0"   # same as targets/web/index.html
 NAME_RE = re.compile(r"^[a-z0-9_\-.]{1,80}$")
 UPLOAD_RE = re.compile(r"^[0-9a-f]{16}\.(png|jpg|jpeg|webp)$")

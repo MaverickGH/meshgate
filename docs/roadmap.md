@@ -112,6 +112,12 @@
 - [x] Rigs that hold together: pieces on a moving body take the weights of the surface under them, weights are smoothed across the skin, faces under a moving arm are kept, spine rings on low-poly bodies; A-Pose / T-Pose rest pose (`--pose`, Studio).
 - [x] Toon ink line (inverted hull, `--outline`), a softer glow halo in the viewer.
 
+## v0.6.8 — Parts, your own models, a DCC bridge, dressed characters (done)
+- [x] `--split`: every separate thing its own object under one root, named by its colour, its origin at its base (kit and your own meshes); a part editor in Studio (move, turn, scale, repaint, remove) kept as `edits.json` and reapplied on every rebuild.
+- [x] Your own GLB, FBX, OBJ, PLY or STL into the Studio library; Send to Unity, Godot, Unreal or Blender (`meshgate.py send`).
+- [x] A dock under the model in Studio: texture, remesh to a target polycount in quads or triangles, the UV grid, parts, send, download; the notes on the settings in an ⓘ.
+- [x] Dressing and detail tools for the kit: mg.garment, mg.strap, mg.buckle, mg.pouch, mg.fringe, mg.wrap, mg.stitch, mg.bounds; colours fitted to the reference; comparison with every view of a character sheet and depth fitted from the sides.
+
 ## Later — characters and PBR
 - [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.

@@ -13,7 +13,14 @@
   program that builds it from simple parts, and Blender builds it.
 - **Picture → 3D.** Drop a picture. TripoSR on your computer, or a cloud generator, turns it into a mesh; MeshGate
   stands it upright, simplifies it and bakes its colours.
-- **Your own models.** The Blender add-on checks a model, fixes what engines trip over and exports it.
+- **Your own models.** Drop a GLB, FBX, OBJ, PLY or STL into Studio and it goes into the library, cleaned, remeshed
+  and baked for every tier. In Blender, the add-on checks a model, fixes what engines trip over and exports it.
+- **Parts you can move.** **Split into parts** makes every separate thing its own object — a pile of crates becomes one
+  object per crate, named by its colour, its origin at its base — so it can be moved and reworked on its own in the
+  engine. In Studio you drag, turn, scale, repaint or remove the parts and every tier is rebuilt with the changes.
+- **Edit under the model, send to the engine.** A bar under the model changes the texture, remeshes to a target
+  polycount in quads or triangles and shows the UV layout; **Send to** puts the files straight into your Unity, Godot
+  or Unreal project (and replaces them there next time), or opens the model in Blender.
 - **Ready for every device.** Each model is built for four quality tiers — PC, mobile high, mobile mid, mobile low —
   within each tier's triangle and texture budget, as `.glb` plus `.fbx` and engine variants with collision and LODs.
   Every file is checked against the engines' rules before you see it.
@@ -54,7 +61,8 @@ plugins: **[Installation](docs/install.md)**.
 3. Optional: **Output settings** for the size, the tiers, your own triangle limits and textures or vertex colours;
    **Animations** to describe clips such as "open: the lid opens".
 4. Press **Generate**. In one to three minutes every tier appears in 3D with its triangle count.
-5. **Show files** opens the folder with the `.glb`, `.fbx` and engine files.
+5. Under the model: **Texture**, **Remesh / UV**, **Parts**, the plug to send it into your engine project, and
+   **Download**. **Show files** opens the folder with the `.glb`, `.fbx` and engine files.
 
 ![MeshGate Studio](docs/img/studio.png)
 
@@ -124,6 +132,8 @@ The same without a window, and in CI:
 python3 meshgate.py doctor                                    # what is installed and what is missing
 python3 meshgate.py gen "a wooden treasure chest" --size 0.8  # text → model for every tier
 python3 meshgate.py gen --image photo.jpg --size 0.8          # picture → model
+python3 meshgate.py gen --mesh crates.fbx --split             # your own model → every tier, one object per crate
+python3 meshgate.py send out/gen/crates --to unity --project ~/Games/MyGame   # into a Unity / Godot / Unreal project
 python3 meshgate.py studio                                    # MeshGate Studio in your browser
 python3 meshgate.py mcp                                       # MCP server: an AI client builds in live Blender
 python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # Blender file → checked GLB (+ FBX)
@@ -156,7 +166,7 @@ For AI coding agents, [`SKILL.md`](SKILL.md) turns the pipeline into a repeatabl
 <summary>Repository layout</summary>
 
 ```
-meshgate.py      the command line: doctor, gen, studio, export, validate, serve, check, install-blender, …
+meshgate.py      the command line: doctor, gen, studio, send, export, validate, serve, check, install-blender, …
 core/            asset contract, quality tiers, GLB and FBX validators (standard library only)
 sources/blender  the Blender add-on, the modeling kit, headless export, demo generators
 sources/generate text and picture → model: prompts, AI tool adapters, guard rails, generators, refine, examples
@@ -172,8 +182,9 @@ tests/           automated checks; .github/ runs them on Linux and Windows and b
 
 ## Status
 
-**v0.6.7.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
-and Linux (portable). Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
+**v0.6.8.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
+and Linux (portable), your own models in the library, models split into parts you can edit, and sending to Unity,
+Godot, Unreal and Blender. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
 GitHub runs the web, Blender, Godot and Unreal API checks on Linux, and the web and Blender checks on Windows. Characters with a skeleton, A/T-pose and clips come out of the kit. Next: a live Unreal run, animation from text
 (Kimodo), Maya, signed installers — see the [roadmap](docs/roadmap.md).
 
