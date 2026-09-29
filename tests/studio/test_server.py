@@ -96,6 +96,60 @@ s, b = req("POST", "/api/gen", J, body=json.dumps({"description": "", "image": "
 step("gen refuses a picture id that is not an upload", s == 400)
 s, b = req("POST", "/api/gen", J, body=json.dumps({"description": "", "image": "0123456789abcdef.png"}))
 step("gen refuses a picture that was never uploaded", s == 400)
+# models of your own: checked by their first bytes, stored by hash, built with --mesh (and --split when asked)
+glb = (ROOT / "samples" / "packs" / "zombie_cats" / "zc_cardboard_barricade.glb").read_bytes()
+s, b = req("POST", "/api/upload-model", J, body=json.dumps({"data": base64.b64encode(glb).decode(), "filename": "Crate Pile.glb"}))
+mup = json.loads(b) if s == 200 else {}
+step("model upload stores it under _inputs/models with a content hash and suggests a name",
+     s == 200 and (lib / "_inputs" / "models" / mup.get("id", "x")).read_bytes() == glb and mup.get("name") == "crate_pile")
+s, _ = req("POST", "/api/upload-model", J, body=json.dumps({"data": base64.b64encode(b"<html>").decode(), "filename": "x.glb"}))
+step("model upload refuses a file that is not what its name says", s == 400)
+s, _ = req("POST", "/api/upload-model", J, body=json.dumps({"data": base64.b64encode(glb).decode(), "filename": "x.exe"}))
+step("model upload refuses other file types", s == 400)
+s, _ = req("POST", "/api/gen", J, body=json.dumps({"mesh": "../../etc/passwd"}))
+step("gen refuses a model id that is not an upload", s == 400)
+_Job = server.Job
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+try:
+    jb = studio.start({"mesh": mup.get("id"), "name": "crate_pile", "split": True, "concept": "sheet"})
+finally:
+    server.Job = _Job
+step("gen with an uploaded model builds from it, split into parts, without a concept picture",
+     "--mesh" in jb.cmd and jb.cmd[jb.cmd.index("--mesh") + 1].endswith(mup.get("id", "?")) and "--split" in jb.cmd
+     and "--concept" not in jb.cmd and "--image" not in jb.cmd)
+studio.jobs.pop(jb.id, None)
+# part edits are checked before they are saved
+try:
+    server.parse_part_edits({"../x": {"move": [0, 0, 1]}})
+    bad_name = False
+except ValueError:
+    bad_name = True
+try:
+    server.parse_part_edits({"crate_1": {"scale": 500}})
+    bad_scale = False
+except ValueError:
+    bad_scale = True
+step("part edits refuse odd names and wild values, drop no-op changes",
+     bad_name and bad_scale and server.parse_part_edits({"crate_1": {"move": [0, 0, 0], "turn": 0, "scale": 1}, "crate_2": {"delete": True}})
+     == {"crate_2": {"delete": True}})
+# send to an engine: the files land in the project, a folder that is not a project is refused
+item = lib / "crate_pile"
+item.mkdir(exist_ok=True)
+(item / "crate_pile.glb").write_bytes(glb)
+(item / "crate_pile.fbx").write_bytes(b"Kaydara FBX Binary  \0")
+(item / "gen.json").write_text(json.dumps({"name": "crate_pile", "ok": True, "report": {"canonical": "pc", "tiers": {"pc": {"file": "crate_pile.glb"}}}}))
+proj = Path(tempfile.mkdtemp())
+(proj / "Assets").mkdir(); (proj / "ProjectSettings").mkdir()
+s, b = req("POST", "/api/send", J, body=json.dumps({"name": "crate_pile", "tool": "unity", "project": str(proj)}))
+got = json.loads(b) if s == 200 else {}
+step("send to Unity copies the GLB and FBX into Assets/MeshGate/<model> and remembers the project",
+     s == 200 and (proj / "Assets" / "MeshGate" / "crate_pile" / "crate_pile.glb").is_file()
+     and (proj / "Assets" / "MeshGate" / "crate_pile" / "crate_pile.fbx").is_file()
+     and json.loads(req("GET", "/api/status?refresh=1", TOK)[1])["bridge"]["unity"]["ok"])
+s, _ = req("POST", "/api/send", J, body=json.dumps({"name": "crate_pile", "tool": "godot", "project": str(proj)}))
+step("send refuses a folder that is not a project of that engine", s == 400)
+s, _ = req("POST", "/api/send", J, body=json.dumps({"name": "../crate_pile", "tool": "unity"}))
+step("send refuses names outside the library", s == 400)
 s, _ = req("POST", "/api/refine", J, body=json.dumps({"name": "../../etc"}))
 step("refine refuses a name outside the library", s == 400)
 s, _ = req("POST", "/api/refine", J, body=json.dumps({"name": "not_made_yet"}))

@@ -22,6 +22,8 @@ python3 meshgate.py gen --image photo.jpg --size 0.8                 # карт�
 python3 meshgate.py gen --image photo.jpg --engine kit               # картинка → код набора, ИИ смотрит на неё
 python3 meshgate.py gen "ржавый робот" --engine mesh --provider meshy   # текст → облачная сетка (MESHY_API_KEY)
 python3 meshgate.py gen --mesh downloaded.glb --size 1.5             # любая сетка → контракт, без генерации
+python3 meshgate.py gen --mesh crates.fbx --split                    # …каждая отдельная вещь своим объектом, чтобы двигать в движке
+python3 meshgate.py send out/gen/crates --to unity --project ~/Games/MyGame   # в проект Unity / Godot / Unreal или в Blender
 python3 meshgate.py gen --code my_model.py --name my_model           # свой build(mg), без ИИ
 ```
 
@@ -139,7 +141,9 @@ Blender для любого генератора и для файлов из `--
 | `--fal-model` | `fal-ai/trellis` | или `fal-ai/hunyuan3d/v2`, `fal-ai/triposr` |
 | `--image-provider` | первый готовый | Кто рисует картинки по тексту: `codex` (вход через ChatGPT, без ключа), `openai` или `fal` |
 | `--concept` | `none` | `sheet`: сначала нарисовать лист видов спереди/сбоку/сзади/сверху и строить по нему; `single`: один ракурс 3/4 |
-| `--mesh` | — | Довести готовый файл сетки вместо генерации |
+| `--mesh` | — | Довести готовый файл сетки вместо генерации. Studio: перетащи модель (GLB, FBX, OBJ, PLY, STL) туда же, куда картинку — она сохранится в `_inputs/models` библиотеки и соберётся как сгенерированная |
+| `--split` | выкл | Каждая отдельная вещь — свой объект под общим корнем: из кучи ящиков получится объект на каждый ящик, с именем по цвету и точкой опоры внизу, чтобы двигать, менять и переделывать их по отдельности в Unity, Godot, Unreal или Blender. Мелочи, касающиеся большой детали (гвоздь, наклейка), остаются с ней. Kit и `--mesh`. Studio: **Разделить на части** |
+| `--edits` | — | Вместе с `--split`: JSON-файл ручных правок частей по имени — `{"crate_2": {"move": [0, 0, 0.4], "turn": 30, "scale": 1.2, "colour": "red"}, "nail_1": {"delete": true}}` (метры, Z вверх; поворот и масштаб вокруг основания части). Хранится как `edits.json` рядом с моделью и применяется при каждой пересборке. Studio: вкладка **«Части»** |
 | `--library` | — | Бесплатная модель CC0 / CC-BY с Sketchfab по id: скачивается с указанием автора и доводится, как `--mesh` |
 | `--detail` / `--turn` / `--no-upright` | `1` / `0` / выкл. | Движок mesh: множитель доли треугольников, поворот переда, оставить наклон |
 | `--vertex-srgb` | авто | Движок mesh: цвет вершин записан как значения картинки (авто для TripoSR и файлов trimesh) |

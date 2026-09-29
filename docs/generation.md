@@ -23,6 +23,8 @@ python3 meshgate.py gen --image photo.jpg --size 0.8                 # picture �
 python3 meshgate.py gen --image photo.jpg --engine kit               # picture → kit code, the AI looks at it
 python3 meshgate.py gen "a rusty robot" --engine mesh --provider meshy   # text → cloud mesh (MESHY_API_KEY)
 python3 meshgate.py gen --mesh downloaded.glb --size 1.5             # any mesh → contract, no generation
+python3 meshgate.py gen --mesh crates.fbx --split                    # …one object per separate thing, to move in the engine
+python3 meshgate.py send out/gen/crates --to unity --project ~/Games/MyGame   # into a Unity / Godot / Unreal project, or Blender
 python3 meshgate.py gen --code my_model.py --name my_model           # your own build(mg), no AI
 ```
 
@@ -137,7 +139,9 @@ their mean to the object in the photo.
 | `--fal-model` | `fal-ai/trellis` | or `fal-ai/hunyuan3d/v2`, `fal-ai/triposr` |
 | `--image-provider` | first ready | Who draws pictures from text: `codex` (ChatGPT sign-in, no key), `openai` or `fal` |
 | `--concept` | `none` | `sheet`: draw a front/side/back/top turnaround first and build from it; `single`: one 3/4 view |
-| `--mesh` | — | Refine an existing mesh file instead of generating one |
+| `--mesh` | — | Refine an existing mesh file instead of generating one. Studio: drop the model (GLB, FBX, OBJ, PLY, STL) where the picture goes — it is stored in the library's `_inputs/models` and built like a generated one |
+| `--split` | off | Every separate thing its own object under one root: a pile of crates gives one object per crate, each named by its colour, its origin at its base, so it can be moved, swapped or reworked on its own in Unity, Godot, Unreal or Blender. Small bits that touch a bigger piece (a nail, a label) stay with it. Kit and `--mesh`. Studio: **Split into parts** |
+| `--edits` | — | With `--split`: a JSON file of hand changes to the parts by name — `{"crate_2": {"move": [0, 0, 0.4], "turn": 30, "scale": 1.2, "colour": "red"}, "nail_1": {"delete": true}}` (metres, Z up; turning and scaling round the part's base). Kept as `edits.json` next to the model and applied on every rebuild. Studio: the **Parts** tab |
 | `--library` | — | A free CC0 / CC-BY model from Sketchfab by id: downloaded with its credit, then refined like `--mesh` |
 | `--detail` / `--turn` / `--no-upright` | `1` / `0` / off | Mesh engine: triangle share multiplier, front rotation, keep the tilt |
 | `--vertex-srgb` | auto | Mesh engine: vertex colours are picture values (auto for TripoSR and trimesh files) |

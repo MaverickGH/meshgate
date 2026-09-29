@@ -60,6 +60,8 @@ def _args():
     ap.add_argument("--finish", default="none", choices=["none", "faceted", "weathered", "clean"],
                     help="faceted: low-poly look enforced (flat, few segments); weathered: dirt, variation and relief baked into textures")
     ap.add_argument("--outline", action="store_true", help="toon ink line: an inverted hull on mobile-high and PC")
+    ap.add_argument("--split", action="store_true", help="every separate thing its own object (to move in an engine)")
+    ap.add_argument("--edits", default="", help="JSON file of hand changes to the split parts (Studio's part editor)")
     ap.add_argument("--fit", default="[]", help="JSON [[from, to, width ratio], …]: proportions fitted to a reference")
     ap.add_argument("--colour-fit", default="{}", help='JSON {colour name: [r, g, b]}: colours fitted to a reference')
     ap.add_argument("--pose", default="none", choices=list(modeling.POSES),
@@ -81,7 +83,8 @@ def _trace(exc: BaseException) -> str:
 def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: str, colors: str = "texture",
                finish_: str = "none", texture: int = 0, topology: str = "tri", budget_override: dict | None = None,
                save_high: str | None = None, high: str | None = None, params: dict | None = None,
-               pose: str = "none", outline: bool = False, fit: list | None = None, colour_fit: dict | None = None) -> dict:
+               pose: str = "none", outline: bool = False, fit: list | None = None, colour_fit: dict | None = None,
+               split: bool = False, edits: dict | None = None) -> dict:
     """Fresh scene → build(mg) at the tier's detail → finalize → contract fixes. Returns notes and in-Blender issues.
     save_high = write this (PC) build's geometry to a .blend; high = such a .blend: a lighter tier bakes its normal map
     from that detailed model (high → low, as an artist bakes a sculpt onto a game mesh)."""
@@ -90,7 +93,8 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     kit = modeling.Kit(tier, seed=seed, name=name, tmp=tmp, colors=colors, max_materials=budget["max_materials"],
                        max_influences=budget.get("max_influences", 4), params=params, max_tris=budget.get("max_tris"),
                        finish=finish_, max_texture=budget.get("max_texture"), max_texture_mb=budget.get("max_texture_mb"),
-                       pose=pose, outline=outline, fit=fit, colour_fit=colour_fit)
+                       pose=pose, outline=outline, fit=fit, colour_fit=colour_fit, split=split,
+                       edits=edits)
     g = safety.restricted_globals({"math": math, "random": random, "mathutils": mathutils})
     exec(code_obj, g)  # noqa: S102 — code passed safety.check before reaching here
     g["build"](kit)
@@ -229,6 +233,10 @@ def main() -> int:
         params = {str(k): float(v) for k, v in json.loads(args.params or "{}").items()}
     except (ValueError, AttributeError):
         params = {}
+    try:
+        edits = json.load(open(args.edits, encoding="utf-8")) if args.edits else {}
+    except (OSError, ValueError):
+        edits = {}
 
     # weathered textures are photo-like: JPEG, as for the mesh engine's bakes; the flat palette stays lossless
     baked = args.finish in ("weathered", "clean")
@@ -243,7 +251,8 @@ def main() -> int:
                 info = build_tier(code_obj, name, tier, args.seed, tmp, args.collision, args.colors, args.finish,
                                   args.texture, args.topology, save_high=high if tier == "pc" else None,
                                   high=high if tier != "pc" else None, params=params, pose=args.pose, outline=args.outline,
-                                  fit=json.loads(args.fit or "[]"), colour_fit=json.loads(args.colour_fit or "{}"))
+                                  fit=json.loads(args.fit or "[]"), colour_fit=json.loads(args.colour_fit or "{}"),
+                                  split=args.split, edits=edits)
             except Exception as exc:  # noqa: BLE001 — every failure goes back to the AI as feedback
                 report["problems"].append(f"build(mg) failed at tier {tier}:\n{_trace(exc)}")
                 return done(1)
@@ -336,7 +345,8 @@ def main() -> int:
             # above the PC tier's limit: one more PC build baked at the full size, for renders and film
             build_tier(code_obj, name, "pc", args.seed, tmp, "none", args.colors, args.finish, args.texture, args.topology,
                        budget_override={"max_texture": args.texture, "max_texture_mb": 4096}, params=params, pose=args.pose, outline=args.outline,
-                                  fit=json.loads(args.fit or "[]"), colour_fit=json.loads(args.colour_fit or "{}"))
+                                  fit=json.loads(args.fit or "[]"), colour_fit=json.loads(args.colour_fit or "{}"),
+                                  split=args.split, edits=edits)
             master = os.path.join(out, f"{name}.master.glb")
             export.export_asset(bpy.context, master, targets=(), fbx=False, validate=False, image_format=image_format)
             report["files"].append(os.path.basename(master))

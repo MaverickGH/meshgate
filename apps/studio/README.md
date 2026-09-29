@@ -62,6 +62,19 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
    - **Parameters** — sliders the build code declared with `mg.param` (ear size, fur length, arm reach…); **Rebuild**
      builds again without the AI, in seconds for stylized models.
    - **Versions** — every change keeps the previous state (code, sliders, preview); **Restore** brings one back.
+8. **Your own model.** Drop a GLB, FBX, OBJ, PLY or STL where the picture goes and press **Generate**: it goes into
+   the library, cleaned, re-topologised and baked for every tier and checked like a generated one.
+9. **Parts.** Tick **Split into parts** (Output settings) before Generate, or press **Split this model into parts** on
+   the **Parts** tab: every separate thing becomes its own object — a pile of crates gives one object per crate, named
+   by its colour, its origin at its base. On **Parts** click a piece in the view or the list and drag the handles
+   (**Move**, **Turn** round the vertical, **Scale**), pick another palette **Colour** (kit models) or **Remove** it;
+   **Save and rebuild** builds every tier with the changes. They are kept as `edits.json` next to the model and come
+   back on every rebuild; **Back to as built** drops them.
+10. **Send to…** Unity, Godot, Unreal or Blender (next to **Show files**): the files go into your project —
+    `Assets/MeshGate/<model>/` (the GLB of every tier and the FBX), `res://meshgate/<model>/`, or
+    `Content/MeshGate/<model>/` (the FBX) — and are replaced in place the next time, so the engine re-imports them.
+    Blender opens the model's `.blend`. The project folder is asked once and remembered (`~/.meshgate/bridge.json`).
+    From the command line: `python3 meshgate.py send <model folder> --to unity --project <folder>`.
 
 ## How it is built
 

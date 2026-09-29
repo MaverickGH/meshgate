@@ -39,7 +39,21 @@ const STRINGS = {
     styles: { stylized: "Stylized", lowpoly: "Low-poly", realistic: "Realistic", toon: "Toon" },
     tris: "tris", of: "of", clips: "clips", attempts_forms: ["attempt", "attempts"], seconds: "s", over: "over budget",
     need_login: "Sign-in needed", attempt: "Attempt", own_code: "own build code",
-    picture: "Picture", drop: "Drop a picture or click — optional. With a picture you get image → 3D.", remove: "Remove",
+    picture: "Picture or model", drop: "Drop a picture or click — optional. With a picture you get image → 3D; with a model of your own (GLB, FBX, OBJ, PLY, STL) it goes to the library, cleaned and baked per tier.",
+    model_picked: "your model — Generate puts it in the library", uploading_model: "Uploading the model…",
+    send_to: "Send to…", send_project: "Project folder", send_go: "Send",
+    send_title: "Send to {tool}", send_done: "{files} → {folder}", send_opened: "Opened {file} in Blender",
+    send_where: { unity: "The GLB of every tier (glTFast) and the FBX go to Assets/MeshGate/<model>/. Send again after a change and Unity re-imports them.",
+      godot: "The GLB of every tier goes to res://meshgate/<model>/; Godot imports it when it gets focus. Send again after a change to update it.",
+      unreal: "The FBX goes to Content/MeshGate/<model>/; the editor offers to import new files. Send again after a change to re-import." },
+    parts: "Parts", parts_title: "Parts of the model", parts_split: "Split this model into parts",
+    parts_hint: "Click a part in the view or the list, then drag the handles. Save rebuilds every tier with your changes; they stay with the model and come back on every rebuild.",
+    parts_none: "This model is one piece. Split it to move, turn, scale, repaint or remove its parts one by one.",
+    parts_cannot: "This model has no source to rebuild from.", part_move: "Move", part_turn: "Turn", part_scale: "Scale",
+    part_colour: "Colour", part_as_built: "as built", part_delete: "Remove", part_restore: "Keep", part_reset: "Undo its changes",
+    parts_save: "Save and rebuild", parts_clear: "Back to as built", part_colour_mesh: "Repainting works on kit models",
+    split: "Split into parts — every separate thing its own object",
+    split_hint: "A pile of crates becomes one object per crate, each named by its colour with its origin at its base, so it can be moved, swapped or reworked on its own in Unity, Godot, Unreal or Blender.", remove: "Remove",
     engine: "How to build", engine_opts: { auto: "Auto", kit: "Kit code", mesh: "Neural mesh" },
     engine_hints: { auto: "Neural mesh when there is a picture and a generator is ready, otherwise kit code.",
       kit: "An AI writes clean, editable build code: hard-surface and stylized props. Works with a picture as a guide.",
@@ -95,7 +109,21 @@ const STRINGS = {
     styles: { stylized: "Стилизация", lowpoly: "Low-poly", realistic: "Реализм", toon: "Мульт" },
     tris: "трис", of: "из", clips: "клипы", attempts_forms: ["попытка", "попытки", "попыток"], seconds: "с", over: "сверх бюджета",
     need_login: "Нужен вход", attempt: "Попытка", own_code: "свой код сборки",
-    picture: "Картинка", drop: "Перетащи картинку или нажми — по желанию. С картинкой получится картинка → 3D.", remove: "Убрать",
+    picture: "Картинка или модель", drop: "Перетащи картинку или нажми — по желанию. С картинкой получится картинка → 3D, а своя модель (GLB, FBX, OBJ, PLY, STL) ляжет в библиотеку: её почистят и запекут под каждый уровень.",
+    model_picked: "твоя модель — «Создать» положит её в библиотеку", uploading_model: "Загружаю модель…",
+    send_to: "Отправить в…", send_project: "Папка проекта", send_go: "Отправить",
+    send_title: "Отправить в {tool}", send_done: "{files} → {folder}", send_opened: "{file} открыт в Blender",
+    send_where: { unity: "GLB каждого уровня (glTFast) и FBX лягут в Assets/MeshGate/<модель>/. Отправь снова после правки — Unity переимпортирует их.",
+      godot: "GLB каждого уровня ляжет в res://meshgate/<модель>/; Godot импортирует его, когда окно получит фокус. Отправь снова после правки, чтобы обновить.",
+      unreal: "FBX ляжет в Content/MeshGate/<модель>/; редактор предложит импортировать новые файлы. Отправь снова после правки — он переимпортирует." },
+    parts: "Части", parts_title: "Части модели", parts_split: "Разделить эту модель на части",
+    parts_hint: "Нажми на часть в окне или в списке и тяни за ручки. «Сохранить» пересоберёт все уровни с твоими правками; они остаются с моделью и повторяются при каждой пересборке.",
+    parts_none: "Эта модель — один кусок. Раздели её, чтобы двигать, поворачивать, масштабировать, перекрашивать или удалять части по отдельности.",
+    parts_cannot: "У этой модели нет исходника для пересборки.", part_move: "Двигать", part_turn: "Повернуть", part_scale: "Масштаб",
+    part_colour: "Цвет", part_as_built: "как было", part_delete: "Удалить", part_restore: "Оставить", part_reset: "Отменить её правки",
+    parts_save: "Сохранить и пересобрать", parts_clear: "Вернуть как было", part_colour_mesh: "Перекраска работает для моделей kit",
+    split: "Разделить на части — каждая отдельная вещь своим объектом",
+    split_hint: "Куча ящиков станет отдельным объектом на каждый ящик: имя по цвету, точка опоры внизу — их можно двигать, менять и переделывать по отдельности в Unity, Godot, Unreal или Blender.", remove: "Убрать",
     engine: "Как строить", engine_opts: { auto: "Авто", kit: "Код набора", mesh: "Нейросетка" },
     engine_hints: { auto: "Нейросетка, если есть картинка и готов генератор, иначе код набора.",
       kit: "ИИ пишет чистый редактируемый код модели: предметы и стилизация. Картинку использует как образец.",
@@ -150,7 +178,7 @@ $("lang").onclick = () => { lang = lang === "ru" ? "en" : "ru"; try { localStora
 
 // ---------------------------------------------------------------- state
 let status = null, library = [], current = null, currentTier = null, job = null, style = "stylized";
-let engine = "auto", picture = null;   // picture = uploaded id
+let engine = "auto", picture = null, model = null;   // picture / model = uploaded id
 let colors = "texture";
 let viewer = null, viewerFailed = false, wire = false;
 
@@ -294,8 +322,21 @@ $("setup-triposr").onclick = async () => {
     status = await api("/api/status?refresh=1"); renderPills(); renderProviders();
   } catch (e) { log({ stage: "error", message: e.message }); } finally { job = null; }
 };
+async function pickModel(file) {
+  const data = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(file); });
+  unpick(); $("drop-text").textContent = t("uploading_model");
+  try {
+    const up = await api("/api/upload-model", { data, filename: file.name });
+    model = up.id;
+    if (!$("name").value.trim()) $("name").value = up.name;
+    $("unpick").classList.remove("hidden");
+    $("drop-text").textContent = `${file.name} — ${t("model_picked")}`;
+  } catch (e) { model = null; $("drop-text").textContent = e.message; }
+}
 async function pickPicture(file) {
+  if (file && /\.(glb|fbx|obj|ply|stl)$/i.test(file.name)) return pickModel(file);
   if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) return;
+  model = null;
   const data = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(file); });
   $("drop-text").textContent = t("uploading");
   try {
@@ -305,7 +346,7 @@ async function pickPicture(file) {
   } catch (e) { picture = null; $("drop-text").textContent = e.message; }
 }
 function unpick(e) {
-  e?.preventDefault(); e?.stopPropagation(); picture = null; $("file").value = "";
+  e?.preventDefault(); e?.stopPropagation(); picture = null; model = null; $("file").value = "";
   $("thumb").classList.add("hidden"); $("unpick").classList.add("hidden"); $("drop-text").textContent = t("drop");
 }
 $("file").onchange = () => pickPicture($("file").files[0]);
@@ -463,7 +504,7 @@ async function show(item, tier) {
     $("still").src = fileUrl(item.name, item.preview); $("still").classList.remove("hidden");
   }
   if (!job) showHistory(item);
-  renderClips(item); renderTune(item);
+  collectParts(); renderClips(item); renderTune(item); renderParts();
   const clips = item.clips?.length ? ` · ${t("clips")}: ${item.clips.join(", ")}` : "";
   const how = item.engine === "mesh" ? `${t("engine_opts").mesh}${item.provider ? " · " + item.provider : ""}` : t("engine_opts").kit;
   const text = `${item.description || item.name}${clips} · ${how} · ${item.attempts} ${plural(item.attempts, t("attempts_forms"))}, ${item.seconds ?? "?"} ${t("seconds")}`;
@@ -576,11 +617,11 @@ $("anim-on").onchange = () => { $("anim-box").classList.toggle("hidden", !$("ani
 $("form").onsubmit = async (e) => {
   e.preventDefault();
   const checked = (id) => [...$(id).querySelectorAll("input:checked")].map((x) => x.value);
-  if (!$("description").value.trim() && !picture) { log({ stage: "error", message: t("need_input") }); return; }
+  if (!$("description").value.trim() && !picture && !model) { log({ stage: "error", message: t("need_input") }); return; }
   const req = {
     description: $("description").value, name: $("name").value, size: parseFloat($("size").value) || 0, style,
-    image: picture, engine, provider: $("provider").value, fal_model: $("fal_model").value, colors,
-    concept: $("concept").checked && !picture ? (engine === "mesh" ? "single" : "sheet") : "none",
+    image: picture, mesh: model, split: $("split").checked, engine, provider: $("provider").value, fal_model: $("fal_model").value, colors,
+    concept: $("concept").checked && !picture && !model ? (engine === "mesh" ? "single" : "sheet") : "none",
     anim: $("anim-on").checked ? $("anim").value.trim() : "",
     texture: $("texture").value, topology: $("topology").value, pose: $("pose").value, outline: $("outline").value, pbr: $("pbr").checked,
     tris: tierPlan().tris,
@@ -674,6 +715,8 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
     $("pane-log").classList.toggle("hidden", b.dataset.pane !== "log");
     $("pane-code").classList.toggle("hidden", b.dataset.pane !== "code");
     $("pane-tune").classList.toggle("hidden", b.dataset.pane !== "tune");
+    $("pane-parts").classList.toggle("hidden", b.dataset.pane !== "parts");
+    if (b.dataset.pane === "parts") renderParts(); else viewer?.setGizmo(null);
   };
 });
 
@@ -689,3 +732,130 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
     $("pills").innerHTML = `<span class="pill bad">${e.message}</span>`;
   }
 })();
+
+// ---------------------------------------------------------------- parts: move, turn, scale, repaint or remove the
+// pieces of a split model by hand; saved as edits.json next to the model and rebuilt into every tier
+let parts = [], partSel = null, partMode = "translate", partBase = new Map(), partDraft = {}, partsHooked = false;
+const yawOf = (o) => { const v = new viewer.THREE.Vector3(1, 0, 0).applyQuaternion(o.quaternion); return Math.atan2(-v.z, v.x); };
+function collectParts() {
+  const root = viewer?.model && current ? viewer.model.getObjectByName(current.name) : null;
+  parts = root && root.children.length > 1 ? root.children.filter((o) => o.name) : [];
+  partBase = new Map(parts.map((o) => [o.name, { p: o.position.clone(), yaw: yawOf(o), s: o.scale.x }]));
+  partDraft = {}; partSel = null; viewer?.setGizmo(null);
+  if (viewer && !partsHooked) {
+    partsHooked = true;
+    viewer.on("transform", () => renderParts());
+    viewer.on("select", ({ object }) => {
+      if ($("pane-parts").classList.contains("hidden")) return;
+      let o = object;
+      while (o && !parts.includes(o)) o = o.parent;
+      partSel = o || null;
+      viewer.setGizmo(partSel && !partDraft[partSel.name]?.delete ? partSel : null, partMode);
+      renderParts();
+    });
+  }
+}
+function renderParts() {
+  const item = current, can = !!item?.rebuildable, busyNow = !!job;
+  $("parts-split").classList.toggle("hidden", !can || parts.length > 0);
+  $("parts-split").disabled = busyNow;
+  $("parts-hint").textContent = !item ? "" : !can ? t("parts_cannot") : parts.length ? t("parts_hint") : t("parts_none");
+  $("parts-list").replaceChildren(...parts.map((o) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = o.name;
+    b.className = "ghost small part" + (o === partSel ? " on" : "") + (partDraft[o.name]?.delete ? " gone" : "")
+      + (item.part_edits?.[o.name] || partChanged(o) ? " edited" : "");
+    b.onclick = () => viewer.select(o);
+    return b;
+  }));
+  $("part-tools").classList.toggle("hidden", !partSel);
+  if (partSel) {
+    const d = partDraft[partSel.name] || {};
+    $("part-name").textContent = partSel.name;
+    const kit = item.engine !== "mesh" && item.palette?.length;
+    $("part-colour").replaceChildren(...[{ name: "", hex: "" }, ...(kit ? item.palette : [])].map((c) => {
+      const o = document.createElement("option"); o.value = c.name; o.textContent = c.name || t("part_as_built");
+      if (c.hex) o.style.background = c.hex;
+      return o;
+    }));
+    $("part-colour").value = d.colour || item.part_edits?.[partSel.name]?.colour || "";
+    $("part-colour").disabled = !kit; $("part-colour").title = kit ? "" : t("part_colour_mesh");
+    $("part-delete").textContent = t(d.delete ? "part_restore" : "part_delete");
+  }
+  document.querySelectorAll("#part-mode button").forEach((b) => b.classList.toggle("on", b.dataset.mode === partMode));
+  const dirty = parts.some((o) => partChanged(o));
+  $("parts-save").disabled = !can || busyNow || !dirty;
+  $("parts-clear").disabled = !can || busyNow || !Object.keys(item?.part_edits || {}).length;
+}
+function partChanged(o) {
+  const b = partBase.get(o.name), d = partDraft[o.name] || {};
+  if (!b) return false;
+  return o.position.distanceTo(b.p) > 1e-5 || Math.abs(yawOf(o) - b.yaw) > 1e-4 || Math.abs(o.scale.x / b.s - 1) > 1e-4 || !!d.delete || !!d.colour;
+}
+function partEdits() {
+  // this session's changes on top of the loaded file, added to the saved ones (moves add up, turns add, scales multiply);
+  // the view is Y-up, the model file Z-up: (x, y, z) here is (x, -z, y) there
+  const out = JSON.parse(JSON.stringify(current.part_edits || {}));
+  for (const o of parts) {
+    if (!partChanged(o)) continue;
+    const b = partBase.get(o.name), d = partDraft[o.name] || {}, e = out[o.name] || {};
+    const dp = o.position.clone().sub(b.p), mv = e.move || [0, 0, 0];
+    let turn = ((yawOf(o) - b.yaw) * 180) / Math.PI;
+    turn = ((turn + 540) % 360) - 180;
+    e.move = [mv[0] + dp.x, mv[1] - dp.z, mv[2] + dp.y];
+    e.turn = (e.turn || 0) + turn; e.scale = (e.scale || 1) * (o.scale.x / b.s);
+    if (d.delete) e.delete = true;
+    if (d.colour) e.colour = d.colour;
+    out[o.name] = e;
+  }
+  return out;
+}
+document.querySelectorAll("#part-mode button").forEach((b) => (b.onclick = () => {
+  partMode = b.dataset.mode;
+  if (partSel && !partDraft[partSel.name]?.delete) viewer.setGizmo(partSel, partMode);
+  renderParts();
+}));
+$("part-colour").onchange = () => { if (partSel) { (partDraft[partSel.name] ||= {}).colour = $("part-colour").value; renderParts(); } };
+$("part-delete").onclick = () => {
+  if (!partSel) return;
+  const d = (partDraft[partSel.name] ||= {});
+  d.delete = !d.delete; partSel.visible = !d.delete;
+  viewer.setGizmo(d.delete ? null : partSel, partMode); renderParts();
+};
+$("part-reset").onclick = () => {
+  if (!partSel) return;
+  const b = partBase.get(partSel.name);
+  partSel.position.copy(b.p); partSel.scale.setScalar(b.s);
+  partSel.quaternion.setFromAxisAngle(new viewer.THREE.Vector3(0, 1, 0), b.yaw);
+  delete partDraft[partSel.name]; partSel.visible = true; viewer.select(partSel);
+};
+const rebuildParts = (extra) => { if (!current) return; $("log").replaceChildren(); viewer?.setGizmo(null); return refine(extra).then(() => document.querySelector('[data-pane="parts"]').click()); };
+$("parts-save").onclick = () => rebuildParts({ parts: partEdits() });
+$("parts-clear").onclick = () => rebuildParts({ parts: {} });
+$("parts-split").onclick = () => rebuildParts({ split: true });
+
+// ---------------------------------------------------------------- send to an engine project or Blender
+let sendTool = null;
+const fill = (text, vars) => text.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+async function sendModel(tool, project) {
+  const got = await api("/api/send", { name: current.name, tool, project });
+  status = await api("/api/status?refresh=1").catch(() => status);
+  log({ stage: "done", ok: true, message: got.opened ? fill(t("send_opened"), { file: got.opened }) : fill(t("send_done"), { files: got.files.join(", "), folder: got.folder }) });
+  document.querySelector('[data-pane="log"]').click();
+}
+$("send-to").onchange = async () => {
+  const tool = $("send-to").value; $("send-to").value = "";
+  if (!tool || !current) return;
+  if (tool === "blender") { try { await sendModel(tool); } catch (e) { log({ stage: "error", message: e.message }); } return; }
+  sendTool = tool;
+  const name = { unity: "Unity", godot: "Godot", unreal: "Unreal" }[tool];
+  $("send-title").textContent = fill(t("send_title"), { tool: name });
+  $("send-where").textContent = t("send_where")[tool];
+  $("send-project").value = status?.bridge?.[tool]?.project || "";
+  $("send-error").textContent = "";
+  $("send-dialog").showModal(); $("send-project").focus();
+};
+$("send-go").onclick = async () => {
+  try { await sendModel(sendTool, $("send-project").value.trim()); $("send-dialog").close(); }
+  catch (e) { $("send-error").textContent = e.message; }
+};
+$("send-project").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("send-go").click(); } });

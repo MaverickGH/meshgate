@@ -315,7 +315,7 @@ def recipes_for(text: str, limit: int = 2) -> list[dict]:
 
 def build_prompt(description: str, *, name: str, style: str, size: float, tiers: list[str], feedback: str = "",
                  reference: str | None = None, caps: dict | None = None, reference_kind: str = "picture",
-                 finish: str = "none", anims: list | None = None) -> str:
+                 finish: str = "none", anims: list | None = None, split: bool = False) -> str:
     profiles = json.loads(PROFILES.read_text(encoding="utf-8"))
     picked = recipes_for(f"{description} {name}")
     ex_file = next((HERE / "examples" / r["example"] for r in picked if r["example"] and (HERE / "examples" / r["example"]).is_file()),
@@ -335,7 +335,19 @@ def build_prompt(description: str, *, name: str, style: str, size: float, tiers:
         tiers=tiers_table(profiles, tiers, caps), built=", ".join(tiers), api=api_reference(), example=example, recipes=recipes,
         feedback=feedback) + ((REFERENCE_SHEET.format(file=reference) if reference_kind == "sheet"
                                 else REFERENCE.format(file=reference, how=" in the working folder")) if reference else "") \
-        + (ANIM_BLOCK.format(rows="\n".join(f"| `{n}` | {w.replace('|', '/')} |" for n, w in anims)) if anims else "")
+        + (ANIM_BLOCK.format(rows="\n".join(f"| `{n}` | {w.replace('|', '/')} |" for n, w in anims)) if anims else "") \
+        + (SPLIT_BLOCK if split else "")
+
+
+SPLIT_BLOCK = """
+# Separate parts
+
+The file is split into parts: every loose piece becomes its own object that a game designer moves, swaps or reworks
+on its own in the engine. So build every thing that could move on its own (each crate, plank, barrel, rock, chair) as
+its own part — do not `mg.union` or `mg.join` separate things together, and leave a hair of space between things that
+only touch. Details fixed to a thing (nails, a label, a handle) should touch it: they stay with it. Colour each thing in
+one main palette colour; the part takes that colour's name.
+""".lstrip("\n")
 
 
 def missing_clips(report: dict, anims: list) -> list[str]:
@@ -515,7 +527,7 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
                    on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
                    texture: int = 0, topology: str = "tri", params: dict | None = None,
                    pose: str = "none", outline: bool = False, fit: list | None = None,
-                   colour_fit: dict | None = None) -> tuple[dict, str]:
+                   colour_fit: dict | None = None, split: bool = False) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
            "--texture", str(texture), "--topology", topology, "--pose", pose,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
@@ -529,6 +541,10 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
         cmd += ["--fit", json.dumps(fit)]
     if colour_fit:
         cmd += ["--colour-fit", json.dumps(colour_fit)]
+    if split:
+        cmd.append("--split")
+        if (out_dir / "edits.json").is_file():   # hand changes to the parts, kept next to the model
+            cmd += ["--edits", str(out_dir / "edits.json")]
     if preview:
         cmd.append("--preview")
     return run_blender(cmd, timeout=timeout, on_line=on_line)
@@ -576,6 +592,12 @@ def build_parser() -> argparse.ArgumentParser:
                     "normal) for every style, not only realistic")
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"],
                     help="quad: FBX and .blend keep quads; the mesh engine remeshes to clean quads (GLB is always triangles)")
+    ap.add_argument("--edits", help="with --split: a JSON file of hand changes to the parts by name — "
+                    '{"crate_2": {"move": [0, 0.4, 0], "turn": 30, "scale": 1.2, "colour": "red"}, "nail_1": {"delete": true}}; '
+                    "kept as edits.json next to the model and reapplied on every rebuild")
+    ap.add_argument("--split", action="store_true",
+                    help="every separate thing its own object, named and with its origin at its base — crates, "
+                         "planks, rocks, a lid — so a level designer can move or swap them one by one in an engine")
     ap.add_argument("--views", help="the picture is a character sheet: its views left to right, e.g. "
                                     "front,3/4front,left,back,right,3/4back — the model is compared with every one, "
                                     "and --fit takes widths from the front and back, depths from the sides")
@@ -620,7 +642,8 @@ def build_parser() -> argparse.ArgumentParser:
 def run_refine(blender: str, src: str, *, name: str, out_dir: Path, tiers: list[str], targets: str, collision: str,
                size: float, turn: float, detail: float, preview: bool, upright: bool = True, vertex_srgb: bool = False,
                timeout: int = 1800, on_line=None, cpu: bool = False, colors: str = "texture",
-               caps: dict | None = None, texture: int = 0, topology: str = "tri", pbr: bool = False) -> tuple[dict, str]:
+               caps: dict | None = None, texture: int = 0, topology: str = "tri", pbr: bool = False,
+               split: bool = False) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(REFINE), "--", "--src", src,
            "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers), "--targets", targets,
            "--collision", collision, "--size", str(size or 0), "--turn", str(turn or 0), "--detail", str(detail or 1)]
@@ -633,7 +656,9 @@ def run_refine(blender: str, src: str, *, name: str, out_dir: Path, tiers: list[
     if cpu:
         cmd.append("--cpu")
     cmd += ["--colors", colors, "--caps", ",".join(f"{k}={v}" for k, v in (caps or {}).items()),
-            "--texture", str(texture), "--topology", topology] + (["--pbr"] if pbr else [])
+            "--texture", str(texture), "--topology", topology] + (["--pbr"] if pbr else []) + (["--split"] if split else [])
+    if split and (Path(out_dir) / "edits.json").is_file():
+        cmd += ["--edits", str(Path(out_dir) / "edits.json")]
     return run_blender(cmd, timeout=timeout, on_line=on_line)
 
 
@@ -736,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.prompt_only:
-        print(build_prompt(args.description or ("the object in the reference image" if args.image else ""), name=name,
+        print(build_prompt(args.description or ("the object in the reference image" if args.image else ""), name=name, split=args.split,
                            style=args.style, size=args.size, tiers=tiers,
                            reference=reference_name(args.image) or ("reference.png" if args.concept == "sheet" else None),
                            caps=args.caps_parsed, reference_kind="sheet" if args.concept == "sheet" else "picture",
@@ -749,6 +774,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     out_dir = Path(args.out_dir or ROOT / "out" / "gen" / name).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.edits:
+        try:
+            edits = json.loads(Path(args.edits).read_text(encoding="utf-8"))
+            assert isinstance(edits, dict)
+        except (OSError, ValueError, AssertionError):
+            sys.exit(f"--edits: {args.edits} is not a JSON object of part changes")
+        if Path(args.edits).resolve() != out_dir / "edits.json":
+            (out_dir / "edits.json").write_text(json.dumps(edits, indent=1), encoding="utf-8")
+        args.split = True
     reference, reference_kind = None, "picture"
     if args.image:   # keep the picture next to the result: the Studio shows it, and the run is reproducible
         reference = out_dir / f"input{Path(args.image).suffix.lower() or '.png'}"
@@ -799,7 +833,8 @@ def main(argv: list[str] | None = None) -> int:
               "colors": args.colors, "caps": args.caps_parsed, "finish": args.finish_resolved if engine == "kit" else None,
               "anims": [{"clip": n, "what": w} for n, w in args.anims] or None,
               "texture": args.texture, "pbr": args.pbr, "topology": args.topology, "pose": args.pose,
-              "outline": args.outline, "params": args.params_parsed or None,
+              "outline": args.outline, "split": args.split, "params": args.params_parsed or None,
+              "detail": args.detail if engine == "mesh" else None, "turn": args.turn if engine == "mesh" else None,
               "edit": args.edit,
               "engine": engine, "input_image": reference.name if reference else None, "out_dir": str(out_dir)}
     if engine == "mesh":
@@ -921,7 +956,7 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
                              vertex_srgb=args.vertex_srgb or srgb_vertex_colours(raw, extra["provider"]),
                              on_line=refine_line,
                              colors=args.colors, caps=args.caps_parsed, texture=TEXTURES[args.texture],
-                             topology=args.topology, pbr=args.pbr)
+                             topology=args.topology, pbr=args.pbr, split=args.split)
     if any(p.startswith("Blender stopped without a report") for p in report.get("problems", [])):
         # A GPU bake can take Blender down without a word (seen with Metal on 5.2): once more on the CPU
         say("    Blender stopped during the bake — retrying on the CPU", stage="progress")
@@ -933,7 +968,7 @@ def generate_mesh(args, name: str, out_dir: Path, tiers: list[str], blender: str
                                  vertex_srgb=args.vertex_srgb or srgb_vertex_colours(raw, extra["provider"]),
                                  on_line=lambda line: (streamed.append(line), say("  " + line.strip(), stage="progress")),
                                  cpu=True, colors=args.colors, caps=args.caps_parsed, texture=TEXTURES[args.texture],
-                                 topology=args.topology, pbr=args.pbr)
+                                 topology=args.topology, pbr=args.pbr, split=args.split)
         if report.get("ok"):
             report.setdefault("advice", []).append("the GPU bake crashed once; the files were baked on the CPU")
     (out_dir / "refine.blender.log").write_text(log, encoding="utf-8")
@@ -964,7 +999,7 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                     sheet = None
                 if meter:
                     meter.end("render")
-            prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
+            prompt = build_prompt(args.description or "the object in the reference image", name=name, split=args.split, style=args.style,
                                   size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
                                   anims=args.anims, feedback=edit_block(code, args.edit, reference_name(str(sheet)) if sheet else None,
                                                                          bool(image), current_facts(out_dir)))
@@ -983,7 +1018,7 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
             (out_dir / "edit.answer.md").write_text(answer, encoding="utf-8")
             code = extract_code(answer)
         else:
-            prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
+            prompt = build_prompt(args.description or "the object in the reference image", name=name, split=args.split, style=args.style,
                                   size=args.size, tiers=tiers, feedback=feedback, reference=reference_name(image),
                                   caps=args.caps_parsed, reference_kind=reference_kind, finish=args.finish_resolved,
                                   anims=args.anims)
@@ -1040,7 +1075,7 @@ def generate_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str,
                                          on_line=line_seen,
                                          colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
                                          texture=TEXTURES[args.texture], topology=args.topology, params=args.params_parsed,
-                                         pose=args.pose, outline=wants_outline(args))
+                                         pose=args.pose, outline=wants_outline(args), split=args.split)
             (out_dir / f"attempt_{attempt}.blender.log").write_text(log, encoding="utf-8")
             if meter:
                 meter.end()
@@ -1405,7 +1440,7 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
                                        seed=args.seed, colors=args.colors, caps=args.caps_parsed,
                                        finish=args.finish_resolved, texture=tex, topology=args.topology,
                                        params=args.params_parsed, pose=args.pose, outline=wants_outline(args),
-                                       fit=bands, colour_fit=colours)
+                                       fit=bands, colour_fit=colours, split=args.split)
         if not new_report.get("ok"):
             say("    the fitted build failed — keeping the model as it was", stage="fit")
             return report
@@ -1464,7 +1499,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         m = read_match(sheet)
         if m:
             say(f"    silhouette match with the reference: {m['iou']:.2f} (from {m['yaw_deg']}° round)", stage="review", round=r)
-        prompt = build_prompt(args.description or "the object in the reference image", name=name, style=args.style,
+        prompt = build_prompt(args.description or "the object in the reference image", name=name, split=args.split, style=args.style,
                               size=args.size, tiers=tiers, caps=args.caps_parsed, finish=args.finish_resolved,
                               anims=args.anims, feedback=review_block(code, r, rounds, bool(image), reference_name(str(sheet)),
                                                                       report.get("facts"), read_match(sheet)))
@@ -1512,7 +1547,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
                                          preview=not args.no_preview, seed=args.seed, colors=args.colors,
                                          caps=args.caps_parsed, finish=args.finish_resolved, texture=tex,
                                          topology=args.topology, params=args.params_parsed, pose=args.pose,
-                                         outline=wants_outline(args))
+                                         outline=wants_outline(args), split=args.split)
         (side / "blender.log").write_text(log, encoding="utf-8")
         if meter:
             meter.end()

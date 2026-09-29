@@ -192,6 +192,144 @@ POSES = ("none", "a", "t")
 ARM_DROP = {"a": 45.0, "t": 0.0}   # degrees below horizontal
 
 
+def split_parts(obj, name_of_cell=None) -> list:
+    """Cut a mesh into the separate things it is made of, the way a level artist wants them to move them one by one:
+    its loose pieces, each small piece that sits on or in a bigger one kept with it (the tape and the flaps of a box, a
+    label, a handle), the big ones apart even where they touch (a box on a box). Each part is named by its main palette
+    colour (name_of_cell(palette cell) → name, else the mesh's own name), numbered, with its origin at the middle of its
+    base, under the original's parent. Returns the new objects ([] = it stays one piece; the caller removes the
+    original when there are parts)."""
+    import bmesh
+    me = obj.data
+    n = len(me.vertices)
+    if n == 0:
+        return []
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for e in me.edges:
+        a_, b_ = find(e.vertices[0]), find(e.vertices[1])
+        if a_ != b_:
+            parent[a_] = b_
+    mw = obj.matrix_world
+    isl: dict = {}
+    for v in me.vertices:
+        isl.setdefault(find(v.index), []).append(v.index)
+    if len(isl) < 2:
+        return []
+    boxes = {}
+    for k, vs in isl.items():
+        pts = [mw @ me.vertices[i].co for i in vs]
+        lo = Vector([min(p[c] for p in pts) for c in range(3)])
+        hi = Vector([max(p[c] for p in pts) for c in range(3)])
+        boxes[k] = (lo, hi, max(1e-9, (hi.x - lo.x) * (hi.y - lo.y) * (hi.z - lo.z)))
+    owner = {k: k for k in isl}
+
+    def root(k):
+        while owner[k] != k:
+            k = owner[k]
+        return k
+    pad = 0.01
+    for k in sorted(isl, key=lambda k: boxes[k][2]):   # smallest first: it joins the biggest piece its box touches
+        lo, hi, vol = boxes[k]
+        best = None
+        for j in isl:
+            if j == k or boxes[j][2] <= vol * 4:
+                continue
+            jl, jh, jv = boxes[j]
+            if all(lo[c] <= jh[c] + pad and hi[c] >= jl[c] - pad for c in range(3)) and (best is None or jv > boxes[best][2]):
+                best = j
+        if best is not None:
+            owner[k] = best
+    groups: dict = {}
+    for k, vs in isl.items():
+        groups.setdefault(root(k), []).extend(vs)
+    if len(groups) < 2:
+        return []
+    uv = me.uv_layers.active.data if me.uv_layers else None
+    counts: dict = {}
+    parts = []
+    for vs in sorted(groups.values(), key=lambda v: -len(v)):
+        keep = set(vs)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in keep], context="VERTS")
+        part_me = bpy.data.meshes.new(f"{obj.name}_part")
+        bm.to_mesh(part_me)
+        bm.free()
+        for mat in me.materials:
+            part_me.materials.append(mat)
+        label = None
+        if name_of_cell and uv is not None and part_me.uv_layers:
+            tally: dict = {}
+            puv = part_me.uv_layers.active.data
+            for p in part_me.polygons:
+                u, v = puv[p.loop_indices[0]].uv
+                cell = int(min(CELLS - 1, max(0, u) * CELLS)) + CELLS * int(min(CELLS - 1, max(0, v) * CELLS))
+                tally[cell] = tally.get(cell, 0) + p.area
+            if tally:
+                label = name_of_cell(max(tally, key=tally.get))
+        label = label or obj.name
+        counts[label] = counts.get(label, 0) + 1
+        part = bpy.data.objects.new(f"{label}_{counts[label]}", part_me)
+        for col in obj.users_collection:
+            col.objects.link(part)
+        part.matrix_world = mw.copy()
+        pts = [part.matrix_world @ v.co for v in part_me.vertices]
+        base = Vector(((min(p.x for p in pts) + max(p.x for p in pts)) / 2, (min(p.y for p in pts) + max(p.y for p in pts)) / 2,
+                       min(p.z for p in pts)))
+        local = part.matrix_world.inverted() @ base
+        part_me.transform(Matrix.Translation(-local))
+        part.matrix_world = part.matrix_world @ Matrix.Translation(local)
+        if obj.parent is not None:
+            mwp = part.matrix_world.copy()
+            part.parent = obj.parent
+            part.matrix_world = mwp
+        parts.append(part)
+    return parts
+
+
+def apply_edits(parts: list, edits: dict, recolour=None) -> list:
+    """Changes made to the parts of a split model by hand (Studio's part editor), applied by part name before export:
+    {"crate_2": {"move": [x, y, z] metres, "turn": degrees round the vertical, "scale": factor, "delete": true,
+    "colour": palette name}}. Turning and scaling happen round the part's origin (the middle of its base), so a crate
+    turns where it stands. recolour(part, colour) repaints a part (kit models); returns notes for the report."""
+    import math as _m
+    by_name = {p.name: p for p in parts}
+    moved, gone, missing = 0, 0, []
+    for nm, e in (edits or {}).items():
+        o = by_name.get(nm)
+        if o is None or not isinstance(e, dict):
+            missing.append(nm)
+            continue
+        if e.get("delete"):
+            bpy.data.objects.remove(o, do_unlink=True)
+            parts.remove(o)
+            gone += 1
+            continue
+        mw = o.matrix_world.copy()
+        at = mw.translation.copy()
+        k = float(e.get("scale") or 1.0)
+        k = min(20.0, max(0.05, k))
+        turn = _m.radians(float(e.get("turn") or 0.0))
+        move = Vector([float(x) for x in (e.get("move") or (0, 0, 0))][:3])
+        o.matrix_world = (Matrix.Translation(at + move) @ Matrix.Rotation(turn, 4, "Z") @ Matrix.Scale(k, 4)
+                          @ Matrix.Translation(-at) @ mw)
+        if e.get("colour") and recolour:
+            recolour(o, str(e["colour"]))
+        moved += 1
+    notes = []
+    if moved or gone:
+        notes.append(f"part edits: {moved} changed, {gone} removed")
+    if missing:
+        notes.append(f"part edits for parts this tier does not have: {', '.join(sorted(missing)[:8])}")
+    return notes
+
+
 class Kit:
     """The `mg` object passed to build(mg)."""
 
@@ -199,7 +337,8 @@ class Kit:
                  colors: str = "texture", max_materials: int | None = None, finish: str = "none",
                  max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
                  max_texture: int | None = None, max_texture_mb: float | None = None, pose: str = "none",
-                 outline: bool = False, fit: list | None = None, colour_fit: dict | None = None):
+                 outline: bool = False, fit: list | None = None, colour_fit: dict | None = None, split: bool = False,
+                 edits: dict | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         if pose not in POSES:
@@ -209,6 +348,8 @@ class Kit:
         # (from, to, width ratio[, depth ratio]) bands measured on a reference
         self._fit = [tuple(float(x) for x in b) + ((1.0,) if len(b) == 3 else ()) for b in (fit or []) if len(b) in (3, 4)]
         self._colour_fit = {str(k): v for k, v in (colour_fit or {}).items()}   # colour name → rgb measured on a reference
+        self._split = bool(split)   # every separate thing its own object (crates, planks, a lid) to move in an engine
+        self._edits = dict(edits or {})   # hand changes to those parts (Studio's part editor), by part name
         self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
         # "vertex": no textures at all — each part's colour goes into the COLOR_0 vertex attribute, and parts share a
@@ -2983,6 +3124,18 @@ class Kit:
             n = sum(self._weighted_normals(o) for o in once if not o.get("meshgate_cards"))
             if n:
                 notes.append(f"weighted normals on {n} mesh{'es' if n > 1 else ''} (clean shading on flat faces)")
+        if self._split:
+            made = [p for o in list(bpy.context.scene.objects)
+                    if o.type == "MESH" and o.data.users == 1 and not o.get("meshgate_cards")
+                    and not o.get("meshgate_collision_for") and not any(m.type == "ARMATURE" for m in o.modifiers)
+                    for p in self._split_parts(o)]
+            if made:
+                notes.append(f"split into parts: {len(made)} objects, each named by its colour, its origin at its base")
+            if self._edits:
+                notes += apply_edits(made, self._edits, self._recolour)
+            objs = [o for o in bpy.context.scene.objects]
+            meshes = [o for o in objs if o.type == "MESH"]
+            once = list({o.data: o for o in reversed(meshes)}.values())
         if self._outline:
             notes += self._ink(once, meshes)
         sockets = [o for o in objs if o.get("meshgate_socket") and o.parent is None]
@@ -3242,6 +3395,37 @@ class Kit:
         if any(abs(r - 1) > 0.01 for _, r in sy_):
             note += f", depths × {min(r for _, r in sy_):.2f}–{max(r for _, r in sy_):.2f}"
         return [note]
+
+    def _split_parts(self, obj) -> list:
+        """Split a kit mesh into its parts (see split_parts), each named by its main palette colour."""
+        cells = {c["index"]: nm for nm, c in self._colors.items()}
+        parts = split_parts(obj, lambda cell: cells.get(cell))
+        if parts:
+            self._forget(obj)
+        return parts
+
+    def _recolour(self, obj, colour: str):
+        """Repaint a part in another palette colour: the faces in its main colour move to that colour's cell (the
+        other colours on it — a label, the nails — stay)."""
+        if colour not in self._colors or not obj.data.uv_layers:
+            return
+        uv = obj.data.uv_layers.active.data
+        tally: dict = {}
+        cell_of = {}
+        for p in obj.data.polygons:
+            u, v = uv[p.loop_indices[0]].uv
+            c = int(min(CELLS - 1, max(0, u) * CELLS)) + CELLS * int(min(CELLS - 1, max(0, v) * CELLS))
+            cell_of[p.index] = c
+            tally[c] = tally.get(c, 0) + p.area
+        if not tally:
+            return
+        main = max(tally, key=tally.get)
+        to = self._colors[colour]["index"]
+        du, dv = ((to % CELLS) - (main % CELLS)) / CELLS, ((to // CELLS) - (main // CELLS)) / CELLS
+        for p in obj.data.polygons:
+            if cell_of[p.index] == main:
+                for li in p.loop_indices:
+                    uv[li].uv = (uv[li].uv[0] + du, uv[li].uv[1] + dv)
 
     def _ink(self, once, meshes) -> list[str]:
         """The toon ink line, as games draw it: an inverted hull — each mesh gets a slightly fatter copy of itself turned

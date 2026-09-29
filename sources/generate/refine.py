@@ -35,7 +35,7 @@ from mathutils import Matrix, Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "blender"))
-from meshgate_blender import checks, compat, export, finish, tools  # noqa: E402
+from meshgate_blender import checks, compat, export, finish, modeling, tools  # noqa: E402
 from meshgate_blender.modeling import TIERS  # noqa: E402
 
 # Share of each tier's triangle budget a single generated prop gets by default: neural meshes carry little real detail
@@ -66,6 +66,8 @@ def _args():
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"], help="quad: QuadriFlow remesh per tier instead of decimation")
     ap.add_argument("--pbr", action="store_true", help="also bake ambient occlusion into the glTF occlusion slot")
     ap.add_argument("--preview", action="store_true")
+    ap.add_argument("--split", action="store_true", help="every separate thing its own object (to move in an engine)")
+    ap.add_argument("--edits", default="", help="JSON file of hand changes to the split parts (Studio's part editor)")
     return ap.parse_args(argv)
 
 
@@ -543,6 +545,10 @@ def main() -> int:
     report = {"name": name, "canonical": canonical, "tiers": {}, "files": [], "ok": False, "problems": [], "advice": [],
               "preview": None, "blend": None, "engine": "mesh", "source": os.path.basename(args.src)}
     report_path = os.path.join(out, f"{name}.report.json")
+    try:
+        edits = json.load(open(args.edits, encoding="utf-8")) if args.edits else {}
+    except (OSError, ValueError):
+        edits = {}
     caps = {k: int(v) for k, v in (item.split("=") for item in args.caps.split(",") if "=" in item)}
 
     def done(code: int) -> int:
@@ -588,10 +594,26 @@ def main() -> int:
                 return done(1)
             low = info["low"]
             src.hide_render = True    # …and the exporter skips objects hidden from render
-            select_only([low])
+            parts = modeling.split_parts(low) if args.split else []
+            if parts:   # the separate things as objects of their own under one root, to move in an engine
+                bpy.data.objects.remove(low, do_unlink=True)   # first, so the root takes the asset's name
+                root = bpy.data.objects.new(name, None)
+                bpy.context.collection.objects.link(root)
+                for p_ in parts:
+                    mwp = p_.matrix_world.copy()
+                    p_.parent = root
+                    p_.matrix_world = mwp
+                low = root
+                if tier == canonical:
+                    notes.append(f"split into parts: {len(parts)} objects, each with its origin at its base")
+                if edits:
+                    got = modeling.apply_edits(parts, edits)
+                    if tier == canonical:
+                        notes += got
+            select_only([low, *parts])
             if tier == canonical:
                 if args.collision != "none":
-                    tools.add_collision(bpy.context, [low], args.collision.upper())
+                    tools.add_collision(bpy.context, parts or [low], args.collision.upper())
                 glb = os.path.join(out, f"{name}.glb")
                 res = export.export_asset(bpy.context, glb, targets=targets, fbx=bool({"unity", "unreal"} & set(targets)),
                                           image_format="JPEG", validate=True, strict=True)
@@ -620,9 +642,12 @@ def main() -> int:
                   + (f"  (your cap {caps[tier]:,})" if tier in caps else "")
                   + (f"  quads {round(info['quads'] * 100)} %" if info.get("quads") else ""), flush=True)
             if tier != canonical:
-                for img in {n.image for n in low.data.materials[0].node_tree.nodes if getattr(n, "image", None)}:
+                meshes_ = parts or [low]
+                for img in {n.image for o in meshes_ for m in o.data.materials[:1] for n in m.node_tree.nodes
+                            if getattr(n, "image", None)}:
                     bpy.data.images.remove(img)
-                bpy.data.objects.remove(low, do_unlink=True)
+                for o in [*parts, low]:
+                    bpy.data.objects.remove(o, do_unlink=True)
         pc_max = table["pc"]["asset"]["max_texture"] if "pc" in table else 4096
         if args.texture > pc_max and args.colors != "vertex" and "pc" in tiers:
             # above the PC tier's limit: one more PC copy baked at the full size, for renders and film

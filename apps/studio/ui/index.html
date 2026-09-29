@@ -32,11 +32,11 @@
     <details class="examples-wrap"><summary data-i18n="examples_label">Prompt examples</summary><div class="chips" id="examples"></div></details>
 
     <div class="field">
-      <span data-i18n="picture">Picture</span>
+      <span data-i18n="picture">Picture or model</span>
       <label class="drop" id="drop" tabindex="0">
-        <input type="file" id="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <input type="file" id="file" accept="image/png,image/jpeg,image/webp,.glb,.fbx,.obj,.ply,.stl" hidden>
         <img id="thumb" class="hidden" alt="">
-        <span id="drop-text" data-i18n="drop">Drop a picture or click — optional. With a picture you get image → 3D.</span>
+        <span id="drop-text" data-i18n="drop">Drop a picture or click — optional. With a picture you get image → 3D; with a model of your own (GLB, FBX, OBJ, PLY, STL) it goes to the library, cleaned and baked per tier.</span>
         <button type="button" class="ghost small hidden" id="unpick" data-i18n="remove">Remove</button>
       </label>
     </div>
@@ -101,6 +101,8 @@
           <select id="outline"><option value="auto" data-i18n="outline_auto">Auto (toon style)</option>
             <option value="on" data-i18n="on">On</option><option value="off" data-i18n="off">Off</option></select>
           <small data-i18n="outline_hint">A dark line round the silhouette, drawn the way games draw it (an inverted hull) on mobile-high and PC.</small></label>
+        <label class="check"><input type="checkbox" id="split"> <span data-i18n="split">Split into parts — every separate thing its own object</span></label>
+        <small data-i18n="split_hint">A pile of crates becomes one object per crate, each named by its colour with its origin at its base, so it can be moved, swapped or reworked on its own in Unity, Godot, Unreal or Blender.</small>
         <label class="check"><input type="checkbox" id="pbr"> <span data-i18n="pbr">Full PBR maps for every style (colour, occlusion, roughness, metallic, normal)</span></label>
         <small data-i18n="quality_hint">Textures are baked for the realistic style and with full PBR; the phone tiers keep their own limits, 8K also writes a master file. Quads go into FBX and .blend — GLB is always triangles.</small>
 
@@ -159,6 +161,9 @@
         <div class="clips hidden" id="clips"></div>
         <button class="ghost" id="wire" data-i18n="wireframe">Wireframe</button>
         <button class="ghost" id="reveal" data-i18n="reveal">Show files</button>
+        <select id="send-to" aria-label="Send to"><option value="" data-i18n="send_to">Send to…</option>
+          <option value="unity">Unity</option><option value="godot">Godot</option><option value="unreal">Unreal</option>
+          <option value="blender">Blender</option></select>
       </div>
     </div>
     <div class="info" id="info"></div>
@@ -170,6 +175,7 @@
       <button class="on" data-pane="log" data-i18n="progress">Progress</button>
       <button data-pane="code" data-i18n="code">Code</button>
       <button data-pane="tune" data-i18n="tune">Refine</button>
+      <button data-pane="parts" data-i18n="parts">Parts</button>
     </div>
     <div class="pane" id="pane-log"><ol id="log"></ol></div>
     <div class="pane hidden" id="pane-code"><pre id="code"></pre></div>
@@ -193,6 +199,31 @@
       </div>
       <small class="hint" id="tune-hint"></small>
     </div>
+    <div class="pane hidden" id="pane-parts">
+      <div class="tune-block">
+        <strong data-i18n="parts_title">Parts of the model</strong>
+        <small class="hint" id="parts-hint"></small>
+        <button type="button" class="ghost hidden" id="parts-split" data-i18n="parts_split">Split this model into parts</button>
+        <div class="parts-list" id="parts-list"></div>
+      </div>
+      <div class="tune-block hidden" id="part-tools">
+        <strong id="part-name"></strong>
+        <div class="seg three" id="part-mode">
+          <button type="button" class="ghost on" data-mode="translate" data-i18n="part_move">Move</button>
+          <button type="button" class="ghost" data-mode="rotate" data-i18n="part_turn">Turn</button>
+          <button type="button" class="ghost" data-mode="scale" data-i18n="part_scale">Scale</button>
+        </div>
+        <label class="tune-row"><span data-i18n="part_colour">Colour</span><select id="part-colour"></select></label>
+        <div class="tune-row">
+          <button type="button" class="ghost" id="part-delete" data-i18n="part_delete">Remove</button>
+          <button type="button" class="ghost" id="part-reset" data-i18n="part_reset">Undo its changes</button>
+        </div>
+      </div>
+      <div class="tune-row">
+        <button type="button" class="primary" id="parts-save" data-i18n="parts_save">Save and rebuild</button>
+        <button type="button" class="ghost" id="parts-clear" data-i18n="parts_clear">Back to as built</button>
+      </div>
+    </div>
   </aside>
 </main>
 
@@ -201,6 +232,16 @@
   <div class="cards" id="cards"></div>
 </section>
 
+<dialog id="send-dialog">
+  <form method="dialog" class="dlg">
+    <header><h2 id="send-title"></h2><span class="acts"><button class="ghost" value="close" aria-label="Close">✕</button></span></header>
+    <p class="hint" id="send-where"></p>
+    <label class="field"><span data-i18n="send_project">Project folder</span>
+      <input id="send-project" spellcheck="false" autocomplete="off" placeholder="/Users/me/Games/MyGame"></label>
+    <p class="hint" id="send-error"></p>
+    <div class="tune-row"><button type="button" class="primary" id="send-go" data-i18n="send_go">Send</button></div>
+  </form>
+</dialog>
 <dialog id="connect-dialog">
   <form method="dialog" class="dlg">
     <header><h2 data-i18n="connect_title">Status &amp; connections</h2>

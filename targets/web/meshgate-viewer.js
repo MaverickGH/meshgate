@@ -17,6 +17,7 @@ import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -241,6 +242,7 @@ export function createViewer(container, options = {}) {
 
   function unload() {
     if (!asset) return;
+    gizmo?.detach();
     hasGlow = false;
     scene.remove(asset.root);
     asset.root.traverse((o) => {
@@ -449,12 +451,42 @@ export function createViewer(container, options = {}) {
   el.addEventListener("pointerdown", (e) => { pointerDown = { x: e.clientX, y: e.clientY, t: performance.now() }; });
   el.addEventListener("pointerup", (e) => {
     if (!pointerDown || e.button !== 0) return;
+    if (gizmo && (gizmo.dragging || gizmo.axis)) { pointerDown = null; return; }   // a gizmo handle, not a pick
     const moved = Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y);
     pointerDown = null;
     if (moved > 6) return; // it was an orbit drag, not a click
     const hit = pick(e.clientX, e.clientY);
     select(hit?.object || null);
   });
+  // --- gizmo: move, turn (round the vertical) or scale (evenly) one object by hand — Studio's part editor ---------
+  let gizmo = null, gizmoScale = 1;
+  function setGizmo(object, mode = "translate") {
+    if (!object) { gizmo?.detach(); return; }
+    if (!gizmo) {
+      gizmo = new TransformControls(camera, renderer.domElement);
+      gizmo.addEventListener("dragging-changed", (e) => {
+        controls.enabled = !e.value;
+        if (e.value) gizmoScale = gizmo.object?.scale.x || 1;
+        else emit("transform-end", { object: gizmo.object });
+      });
+      gizmo.addEventListener("objectChange", () => {
+        const o = gizmo.object;
+        if (gizmo.mode === "scale") {   // even scale: the axis pulled the most sets all three
+          const k = [o.scale.x, o.scale.y, o.scale.z].reduce((a, b) => (Math.abs(b - gizmoScale) > Math.abs(a - gizmoScale) ? b : a));
+          o.scale.setScalar(Math.max(0.05, k));
+        }
+        if (selected) selectBox.box.setFromObject(selected, true);
+        emit("transform", { object: o });
+      });
+      scene.add(gizmo.getHelper ? gizmo.getHelper() : gizmo);
+    }
+    gizmo.setMode(mode);
+    gizmo.setSpace(mode === "scale" ? "local" : "world");
+    gizmo.showX = gizmo.showZ = mode !== "rotate";
+    gizmo.showY = true;
+    gizmo.attach(object);
+  }
+
   el.addEventListener("dblclick", (e) => {
     const hit = pick(e.clientX, e.clientY);
     frame(hit?.object || asset?.root);
@@ -693,7 +725,7 @@ export function createViewer(container, options = {}) {
 
   return {
     THREE, renderer, scene, camera, controls,
-    load, unload, frame, resetView, select, hover, describeObject,
+    load, unload, frame, resetView, select, hover, describeObject, setGizmo, get model() { return asset?.root || null; },
     get asset() { return asset; }, get selected() { return selected; }, get hovered() { return hovered; }, get stats() { return stats; },
     animations, setEnvironment, setShowEnvironment, setBackgroundColor, setWireframe, setGrid, setShadows, setExposure, screenshot,
     setSkeleton, setUvChecker, get viewState() { return { ...state }; },

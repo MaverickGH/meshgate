@@ -36,6 +36,7 @@ VIEWER = ROOT / "targets" / "web"
 sys.path.insert(0, str(ROOT / "sources" / "generate"))
 sys.path.insert(0, str(ROOT))
 import meshgate as cli  # noqa: E402  tool discovery (Blender, Unity, Godot, Unreal) and the add-on installer
+import bridge  # noqa: E402  send a model into an engine project or Blender
 import generate  # noqa: E402  (also puts the saved API keys into the environment)
 import keys  # noqa: E402
 import mesh  # noqa: E402
@@ -47,6 +48,8 @@ NAME_RE = re.compile(r"^[a-z0-9_\-.]{1,80}$")
 UPLOAD_RE = re.compile(r"^[0-9a-f]{16}\.(png|jpg|jpeg|webp)$")
 UPLOAD_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
 MAX_UPLOAD = 20 * 2 ** 20
+MODEL_RE = re.compile(r"^[0-9a-f]{16}\.(glb|fbx|obj|ply|stl)$")
+MAX_MODEL = 150 * 2 ** 20
 mimetypes.add_type("model/gltf-binary", ".glb")
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("font/woff2", ".woff2")
@@ -113,7 +116,7 @@ class Studio:
                 "login_hints": generate.LOGIN_HINTS, "styles": generate.STYLES,
                 "providers": mesh.status(), "image_providers": mesh.images.available(),
                 "keys": keys.status(), "keys_file": str(keys.path()), "setup": generate.SETUP,
-                "tools": cli.tools_status(), "components": components.status(),
+                "tools": cli.tools_status(), "components": components.status(), "bridge": bridge.status(),
                 "npm": bool(shutil.which("npm")),
                 "fal_models": list(mesh.fal.MODELS),
                 "tiers": [{"id": t, "label": profiles["profiles"][t]["label"], "max_tris": profiles["profiles"][t]["asset"]["max_tris"],
@@ -140,6 +143,34 @@ class Studio:
         (folder / name).write_bytes(raw)
         return name
 
+    def upload_model(self, req: dict) -> dict:
+        """A model of your own (GLB, FBX, OBJ, PLY or STL) as base64 → library/_inputs/models/<hash>.<ext>;
+        returns the id to pass to /api/gen as "mesh". The file is checked by its first bytes, not only its name."""
+        import base64
+        import hashlib
+        ext = Path(str(req.get("filename", ""))).suffix.lower().lstrip(".")
+        if ext not in {"glb", "fbx", "obj", "ply", "stl"}:
+            raise ValueError("send a GLB, FBX, OBJ, PLY or STL model (a .gltf with separate files: export it as .glb)")
+        data = str(req.get("data", ""))
+        raw = base64.b64decode(data.split(",", 1)[1] if data.startswith("data:") else data, validate=False)
+        if not raw:
+            raise ValueError("the file is empty")
+        if len(raw) > MAX_MODEL:
+            raise ValueError("the model is larger than 150 MB")
+        head = raw[:1024]
+        ok = {"glb": head.startswith(b"glTF"),
+              "fbx": head.startswith(b"Kaydara FBX Binary") or b"FBXHeaderExtension" in head or head.lstrip().startswith(b"; FBX"),
+              "ply": head.startswith(b"ply"),
+              "stl": len(raw) >= 84,
+              "obj": b"\0" not in head and bool(re.search(rb"^\s*(v|o|g|#|mtllib)\s", head, re.M))}[ext]
+        if not ok:
+            raise ValueError(f"the file does not look like a .{ext} model")
+        name = f"{hashlib.sha256(raw).hexdigest()[:16]}.{ext}"
+        folder = self.library / "_inputs" / "models"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(raw)
+        return {"id": name, "name": generate.slug(Path(str(req.get("filename"))).stem, words=6)}
+
     def start(self, req: dict) -> Job:
         desc = str(req.get("description", "")).strip()
         image = str(req.get("image") or "")
@@ -148,9 +179,16 @@ class Studio:
         image_path = self.library / "_inputs" / image if image else None
         if image_path and not image_path.is_file():
             raise ValueError("the picture is gone — upload it again")
-        if not desc and not image_path:
+        model = str(req.get("mesh") or "")
+        if model and not MODEL_RE.match(model):
+            raise ValueError("unknown model file — upload it again")
+        model_path = self.library / "_inputs" / "models" / model if model else None
+        if model_path and not model_path.is_file():
+            raise ValueError("the model file is gone — upload it again")
+        if not desc and not image_path and not model_path:
             raise ValueError("describe the model or add a picture first")
-        name = generate.slug(str(req.get("name") or desc or "from_picture"), words=6 if req.get("name") else 3)
+        name = generate.slug(str(req.get("name") or desc or ("imported" if model_path else "from_picture")),
+                             words=6 if req.get("name") else 3)
         tiers = [t for t in req.get("tiers", []) if t in generate.ORDER] or list(generate.ORDER)
         targets = [t for t in req.get("targets", []) if t in {"web", "unity", "godot", "unreal"}]
         cmd = [sys.executable, str(ROOT / "meshgate.py"), "gen", *([desc] if desc else []), "--name", name, "--events",
@@ -160,8 +198,12 @@ class Studio:
                "--out-dir", str(self.library / name)]
         if float(req.get("size") or 0) > 0:
             cmd += ["--size", str(float(req["size"]))]
-        if image_path:
+        if model_path:   # your own model: cleaned, re-topologised per tier, baked and checked like a generated one
+            cmd += ["--mesh", str(model_path)]
+        elif image_path:
             cmd += ["--image", str(image_path)]
+        if req.get("split") is True:
+            cmd.append("--split")
         engine = req.get("engine") if req.get("engine") in {"auto", "kit", "mesh"} else "auto"
         cmd += ["--engine", engine]
         if req.get("provider") in mesh.PROVIDERS and req.get("provider") != "command":
@@ -173,7 +215,7 @@ class Studio:
             pairs = [f"{k}={int(v)}" for k, v in caps.items() if k in generate.ORDER and str(v).strip().isdigit() and int(v) >= 12]
             if pairs:
                 cmd += ["--tris", ",".join(pairs)]
-        if req.get("concept") in {"sheet", "single"} and not image_path:
+        if req.get("concept") in {"sheet", "single"} and not image_path and not model_path:
             cmd += ["--concept", req["concept"]]
         if req.get("texture") in generate.TEXTURES and req.get("texture") != "auto":
             cmd += ["--texture", req["texture"]]
@@ -218,12 +260,17 @@ class Studio:
             raise ValueError("pick a model from the library first")
         item = self.library / name
         g = json.loads((item / "gen.json").read_text(encoding="utf-8"))
-        if (g.get("engine") or "kit") != "kit" or not g.get("code") or not (item / g["code"]).is_file():
-            raise ValueError("only models built from kit code can be tuned — this one came from a mesh generator")
         change = str(req.get("change") or "").strip()[:2000]
         params = {str(k): float(v) for k, v in (req.get("params") or {}).items() if isinstance(v, (int, float))}
-        code_src = item / g["code"]
+        kit = (g.get("engine") or "kit") == "kit" and g.get("code") and (item / g["code"]).is_file()
+        raw = Path(g["raw"]) if g.get("raw") else None
+        raw = raw if raw is None or raw.is_absolute() else item / raw
         version = str(req.get("version") or "")
+        if not kit and (change or params or version or not raw or not raw.is_file()):
+            raise ValueError("only models built from kit code can be tuned — a mesh can be split and its parts edited")
+        edits = parse_part_edits(req["parts"]) if "parts" in req else None
+        split = bool(g.get("split") or req.get("split") is True or edits)
+        code_src = item / g["code"] if kit else None
         if version:
             if not re.fullmatch(r"\d{3}", version) or not (item / "versions" / version / g["code"]).is_file():
                 raise ValueError("that version is gone")
@@ -238,13 +285,32 @@ class Studio:
         n = max([int(d.name) for d in versions.iterdir() if d.is_dir() and d.name.isdigit()] or [0]) + 1
         snap = versions / f"{n:03d}"
         snap.mkdir()
-        for f in (g["code"], "gen.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
+        for f in (g.get("code"), "gen.json", "edits.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
             if f and (item / f).is_file():
                 shutil.copyfile(item / f, snap / f)
-        code_path = snap / f"source_{g['code']}"   # the run reads its code from here; the result replaces the current
-        shutil.copyfile(code_src, code_path)
-        cmd = [sys.executable, str(ROOT / "meshgate.py"), "gen", *([g["description"]] if g.get("description") else []),
-               "--code", str(code_path), "--name", name, "--events", "--style", str(g.get("style") or "stylized"),
+        if version:   # the parts as they were edited then
+            old = item / "versions" / version / "edits.json"
+            if old.is_file():
+                shutil.copyfile(old, item / "edits.json")
+            else:
+                (item / "edits.json").unlink(missing_ok=True)
+        if edits is not None:
+            if edits:
+                (item / "edits.json").write_text(json.dumps(edits, indent=1), encoding="utf-8")
+            else:
+                (item / "edits.json").unlink(missing_ok=True)
+        if kit:
+            code_path = snap / f"source_{g['code']}"   # the run reads its code from here; the result replaces the current
+            shutil.copyfile(code_src, code_path)
+            source = ["--code", str(code_path)]
+        else:   # a mesh (generated or your own): refined again from its source file
+            source = ["--mesh", str(raw)]
+            if float(g.get("detail") or 1) != 1:
+                source += ["--detail", str(float(g["detail"]))]
+            if float(g.get("turn") or 0):
+                source += ["--turn", str(float(g["turn"]))]
+        cmd = [sys.executable, str(ROOT / "meshgate.py"), "gen", *([g["description"]] if g.get("description") and kit else []),
+               *source, "--name", name, "--events", "--style", str(g.get("style") or "stylized"),
                "--tiers", ",".join(g.get("tiers") or generate.ORDER), "--targets", str(req.get("targets") or "web,unity"),
                "--out-dir", str(item)]
         if float(g.get("size") or 0) > 0:
@@ -257,6 +323,8 @@ class Studio:
             cmd += ["--pose", g["pose"]]
         if g.get("outline") in {"on", "off"}:
             cmd += ["--outline", g["outline"]]
+        if split:
+            cmd.append("--split")
         if g.get("pbr"):
             cmd.append("--pbr")
         if g.get("colors") in {"texture", "vertex"}:
@@ -264,7 +332,7 @@ class Studio:
         caps = g.get("caps") or {}
         if caps:
             cmd += ["--tris", ",".join(f"{k}={int(v)}" for k, v in caps.items())]
-        if g.get("input_image") and (item / g["input_image"]).is_file():
+        if kit and g.get("input_image") and (item / g["input_image"]).is_file():
             cmd += ["--image", str(item / g["input_image"])]
         if params:
             cmd += ["--params", json.dumps(params)]
@@ -305,6 +373,10 @@ class Studio:
                           "style": g.get("style"), "tiers": {t: {k: v.get(k) for k in ("file", "tris", "max_tris", "within_budget")}
                                                              for t, v in (rep.get("tiers") or {}).items()},
                           "canonical": rep.get("canonical"), "preview": rep.get("preview"), "files": rep.get("files", []),
+                          "split": bool(g.get("split")), "part_edits": _read_json(gen_json.parent / "edits.json"),
+                          "palette": [{"name": k, "hex": "#" + "".join(f"{round(max(0, min(1, c)) * 255):02x}" for c in (v.get("rgb") or [0.5] * 3)[:3])}
+                                      for k, v in sorted((rep.get("palette") or {}).items(), key=lambda kv: kv[1].get("index", 0))],
+                          "rebuildable": bool(g.get("code") or g.get("raw")),
                           "code": g.get("code"), "clips": (rep.get("tiers") or {}).get(rep.get("canonical") or "", {}).get("clips", []),
                           "attempts": len(g.get("attempts", [])), "seconds": g.get("seconds"),
                           "engine": g.get("engine") or "kit", "provider": g.get("provider"),
@@ -349,6 +421,19 @@ class Studio:
         opener = {"Darwin": ["open"], "Windows": ["explorer"]}.get(platform.system(), ["xdg-open"])
         subprocess.Popen(opener + [str(target)])
         return str(folder)
+
+    def send(self, req: dict) -> dict:
+        """The model into a Unity / Godot / Unreal project (its folder remembered), or opened in Blender."""
+        name = str(req.get("name") or "")
+        if not re.fullmatch(r"[a-z0-9_]{1,80}", name) or not (self.library / name / "gen.json").is_file():
+            raise ValueError("pick a model from the library first")
+        project = str(req.get("project") or "").strip() or None
+        try:
+            got = bridge.send(self.library / name, str(req.get("tool") or ""), project, blender=cli.find_blender())
+        except OSError as exc:
+            raise ValueError(f"could not copy the files: {exc}") from exc
+        self._status = None   # the remembered projects changed
+        return got
 
     def reveal(self, name: str) -> None:
         path = self.library / name
@@ -397,9 +482,9 @@ def make_handler(studio: Studio, port_ref: list):
             ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             self._send(200, path.read_bytes(), ctype)
 
-        def _body(self) -> dict:
+        def _body(self, limit: int = MAX_UPLOAD) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_UPLOAD * 4 // 3 + 4096:
+            if n > limit * 4 // 3 + 4096:
                 raise ValueError("request too large")
             return json.loads(self.rfile.read(n) or b"{}")
 
@@ -464,7 +549,9 @@ def make_handler(studio: Studio, port_ref: list):
             if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
                 return self._json({"error": "JSON only"}, 415)
             try:
-                body = self._body()
+                body = self._body(MAX_MODEL if url.path == "/api/upload-model" else MAX_UPLOAD)
+                if url.path == "/api/upload-model":
+                    return self._json(studio.upload_model(body))
                 if url.path == "/api/upload":
                     return self._json({"id": studio.upload(body)})
                 if url.path == "/api/setup":
@@ -504,6 +591,8 @@ def make_handler(studio: Studio, port_ref: list):
                     return self._json({"ok": True, "keys": keys.status()})
                 if url.path == "/api/terminal":
                     return self._json({"ok": True, "command": studio.terminal(str(body.get("ai", "")), str(body.get("action", "")))})
+                if url.path == "/api/send":
+                    return self._json({"ok": True, **studio.send(body)})
                 if url.path == "/api/reveal":
                     studio.reveal(str(body.get("name", "")))
                     return self._json({"ok": True})
@@ -512,6 +601,48 @@ def make_handler(studio: Studio, port_ref: list):
             return self._json({"error": "not found"}, 404)
 
     return Handler
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def parse_part_edits(raw) -> dict:
+    """Hand changes to a split model's parts from the part editor, checked: {part name: {"move": [x, y, z] m (Blender
+    axes, Z up), "turn": degrees round the vertical, "scale": factor, "delete": bool, "colour": palette name}}."""
+    if not isinstance(raw, dict) or len(raw) > 2000:
+        raise ValueError("part edits must be an object of part names")
+    out = {}
+    for nm, e in raw.items():
+        if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,80}", str(nm)) or not isinstance(e, dict):
+            raise ValueError(f"bad part name {str(nm)[:40]!r}")
+        o = {}
+        if e.get("delete") is True:
+            o["delete"] = True
+        mv = e.get("move")
+        if mv is not None:
+            if not (isinstance(mv, list) and len(mv) == 3 and all(isinstance(v, (int, float)) and abs(v) <= 1000 for v in mv)):
+                raise ValueError(f"{nm}: move is [x, y, z] in metres")
+            if any(abs(v) > 1e-5 for v in mv):
+                o["move"] = [round(float(v), 5) for v in mv]
+        for k, lo, hi, idle in (("turn", -36000, 36000, 0.0), ("scale", 0.05, 20.0, 1.0)):
+            v = e.get(k)
+            if v is not None:
+                if not isinstance(v, (int, float)) or not lo <= v <= hi:
+                    raise ValueError(f"{nm}: {k} is out of range")
+                if abs(v - idle) > 1e-4:
+                    o[k] = round(float(v), 4)
+        c = e.get("colour")
+        if c:
+            if not re.fullmatch(r"[a-z0-9_]{1,40}", str(c)):
+                raise ValueError(f"{nm}: unknown colour")
+            o["colour"] = str(c)
+        if o:
+            out[str(nm)] = o
+    return out
 
 
 def default_library() -> Path:

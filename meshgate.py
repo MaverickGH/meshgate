@@ -296,6 +296,19 @@ def cmd_validate(args) -> int:
     return worst
 
 
+def cmd_send(args) -> int:
+    """A finished model into a Unity, Godot or Unreal project, or open it in Blender (see sources/generate/bridge.py)."""
+    sys.path.insert(0, str(ROOT / "sources" / "generate"))
+    import bridge
+    try:
+        got = bridge.send(Path(args.model).resolve(), args.to, args.project, blender=find_blender())
+    except (ValueError, OSError) as exc:
+        print(f"✗ {exc}")
+        return 1
+    print(f"✓ opened {got['opened']} in Blender" if "opened" in got else f"✓ {', '.join(got['files'])} → {got['folder']}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     cmd = [sys.executable, str(ROOT / "targets" / "web" / "serve.py"), "--port", str(args.port)]
     if args.glb:
@@ -529,6 +542,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_pose(exe, work)
     ok &= _check_shapes(exe, work)
     ok &= _check_outline(exe, work)
+    ok &= _check_split(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -1020,6 +1034,41 @@ def _check_shapes(exe: str, work: Path) -> bool:
     return good
 
 
+def _check_split(exe: str, work: Path) -> bool:
+    """--split: a pile of three crates (one with a nail) comes out as a root with three crates, each named by its colour
+    — the nail stays with its crate — so they can be moved one by one in an engine."""
+    out = work / "split"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code", str(ROOT / "tests" / "generate" / "split_crates.py"),
+                        "--name", "crate_pile", "--tiers", "pc", "--split", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        blob = (out / g["report"]["tiers"]["pc"]["file"]).read_bytes()
+        n = int.from_bytes(blob[12:16], "little")
+        nodes = json.loads(blob[20:20 + n])["nodes"]
+        roots = [x for x in nodes if len(x.get("children", [])) == 3]
+        names = sorted(nodes[i]["name"] for i in roots[0]["children"]) if roots else []
+        good = g["ok"] and len(roots) == 1 and all(any(c in x for x in names) for c in ("wood", "dark_wood", "red"))
+        why = names or [x.get("name") for x in nodes]
+        # a model of your own: the same, on the imported mesh (the cardboard barricade is seven pieces)
+        mout = work / "split_mesh"
+        r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--mesh",
+                            str(ROOT / "samples" / "packs" / "zombie_cats" / "zc_cardboard_barricade.glb"), "--name", "barricade",
+                            "--tiers", "mobile-low", "--split", "--blender", exe, "--no-preview", "--out-dir", str(mout)],
+                           capture_output=True, text=True)
+        g = json.load(open(mout / "gen.json"))
+        blob = (mout / g["report"]["tiers"]["mobile-low"]["file"]).read_bytes()
+        mnodes = json.loads(blob[20:20 + int.from_bytes(blob[12:16], "little")])["nodes"]
+        root = [x for x in mnodes if x.get("name") == "barricade"]
+        if not (g["ok"] and root and len(root[0].get("children", [])) >= 3):
+            good, why = False, ["imported mesh:", *[x.get("name") for x in mnodes]]
+    except Exception as exc:  # noqa: BLE001
+        good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ split into parts: {why}")
+    return good
+
+
 def _check_outline(exe: str, work: Path) -> bool:
     """The toon ink line: the toon style gives the PC file an inverted hull in a second material, as thick as it should
     be — no spikes out of sharp tips (the model keeps its size)."""
@@ -1257,6 +1306,12 @@ def main() -> int:
     p = sub.add_parser("samples", help="rebuild all demo assets in samples/ from their Blender scripts")
     p.add_argument("--only", help="substring filter, e.g. 'drone'"); p.add_argument("--quiet", action="store_true")
     p.set_defaults(fn=cmd_samples)
+
+    p = sub.add_parser("send", help="send a finished model into a Unity, Godot or Unreal project, or open it in Blender")
+    p.add_argument("model", help="the model's folder (out/gen/<name> or a Studio library folder)")
+    p.add_argument("--to", required=True, choices=["unity", "godot", "unreal", "blender"])
+    p.add_argument("--project", help="the engine project's folder (remembered for next time)")
+    p.set_defaults(fn=cmd_send)
 
     sub.add_parser("gen", help="generate an asset from a text description through an AI CLI (meshgate.py gen --help)")
     sub.add_parser("mcp", help="MCP server for AI clients: live kit tools in Blender (claude mcp add meshgate -- python3 meshgate.py mcp)")

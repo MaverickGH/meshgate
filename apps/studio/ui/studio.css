@@ -149,7 +149,7 @@ pre#code { margin: 0; color: var(--text); font: 11px/1.5 var(--mono); white-spac
 .card.bad b::after { content: ' ✕'; color: var(--bad); }
 .cards .none { color: var(--muted); font-size: 12px; }
 
-dialog#connect-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 0; border: 1px solid #4b4d52; border-radius: 7px; background: #202226; color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+dialog#connect-dialog, dialog#send-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; padding: 0; border: 1px solid #4b4d52; border-radius: 7px; background: #202226; color: var(--text); box-shadow: 0 24px 60px rgba(0,0,0,.45); }
 dialog::backdrop { background: rgba(0,0,0,.65); }
 .dlg { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px 20px; }
 .dlg header { display: flex; align-items: center; justify-content: space-between; }
@@ -209,3 +209,9 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 .examples-wrap summary { width: fit-content; color: #999b9f; font-size: 11px; font-weight: 400; cursor: pointer; }
 .examples-wrap summary:hover { color: #e9e9e9; }
 .examples-wrap .chips { flex-wrap: wrap; overflow: visible; margin-top: 9px; }
+.parts-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 180px; overflow: auto; }
+.parts-list .part { font: 11.5px var(--mono); padding: 3px 7px; }
+.parts-list .part.on { border-color: var(--accent-2); color: var(--text); }
+.parts-list .part.edited::after { content: " •"; color: var(--accent); }
+.parts-list .part.gone { text-decoration: line-through; opacity: .55; }
+#part-tools .tune-row > span { font-size: 12px; min-width: 48px; }
