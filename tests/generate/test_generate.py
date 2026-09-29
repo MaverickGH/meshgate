@@ -106,6 +106,18 @@ step("prompt has no unfilled placeholders",   # dict literals in the kit docs ar
 fb = generate.feedback_block("def build(mg):\n    pass\n", ["tier pc: boom"], ["detail: more"])
 step("feedback block quotes code and problems", "tier pc: boom" in fb and "def build(mg)" in fb)
 
+# colour fit: relative to the picture's own light, a misplaced region keeps its colour, glow is left alone
+_pal = {"fur": {"index": 0, "rgb": [0.5, 0.5, 0.5], "glow": 0}, "belly": {"index": 1, "rgb": [0.9, 0.85, 0.8], "glow": 0},
+        "eye": {"index": 2, "rgb": [0.8, 1.0, 0.3], "glow": 2.0}}
+_meas = {"0": {"ref": [0.3, 0.3, 0.3], "n": 500}, "1": {"ref": [0.3, 0.3, 0.3], "n": 60}, "2": {"ref": [0.1, 0.1, 0.1], "n": 40}}
+_new = generate.colour_corrections(_pal, _meas, {})
+step("colour fit keeps a region the picture shows in another colour, and glowing colours",
+     "belly" not in _new and "eye" not in _new)
+_meas2 = {"0": {"ref": [0.3, 0.3, 0.3], "n": 500}, "1": {"ref": [0.75, 0.62, 0.5], "n": 60}}
+_new2 = generate.colour_corrections(_pal, _meas2, {})
+step("colour fit follows the picture's relative brightness, not its overall light",
+     abs(_new2.get("fur", [0])[0] - 0.5) < 0.02 and 0.6 < _new2["belly"][0] <= 1.0)
+
 # answer parsing and names
 ans = "Here you go:\n```python\nimport math\n\ndef build(mg):\n    pass\n```\nEnjoy!"
 step("extract_code takes the python block", generate.extract_code(ans).startswith("import math"))

@@ -3,28 +3,29 @@ fur with a cream stripe down the middle and a cream muzzle, big ears with torn p
 slit pupil and one dead milky eye, stitches on the forehead, little fangs, long whiskers; a red bandana, a torn olive
 shirt open over the cream chest, brown suspenders with brass buckles and a belt, torn brown shorts with a patch, cream
 arms and legs with brown stripes, a bandage at the wrist, claws on the hands and feet, a striped tail curling up
-behind, a brown backpack with a skull badge. Stylized: soft blocks, clean colours, no animation."""
+behind, a brown backpack with a skull badge. Colours from the sheet's palette. Stylized: soft blocks, clean colours, no
+animation."""
 import math
 
 import mathutils
 
 
 def build(mg):
-    grey = mg.color("fur_grey", "#7d6e6c", rough=0.85, material="fur")
-    cream = mg.color("fur_cream", "#e4cdb4", rough=0.85, material="fur")
-    stripe = mg.color("fur_stripe", "#8c7266", rough=0.85, material="fur")
+    grey = mg.color("fur_grey", "#786968", rough=0.85, material="fur")
+    cream = mg.color("fur_cream", "#dac2aa", rough=0.85, material="fur")
+    stripe = mg.color("fur_stripe", "#91756a", rough=0.85, material="fur")
     pink = mg.color("ear_pink", "#c95c62", rough=0.6)
-    shirt = mg.color("shirt_olive", "#6d774f", rough=0.9, material="fabric")
-    shorts_c = mg.color("shorts_brown", "#5d4a3f", rough=0.9, material="fabric")
-    leather = mg.color("leather_brown", "#7a4e38", rough=0.7, material="fabric")
-    dark = mg.color("stitch_dark", "#4a3833", rough=0.8, material="fabric")
-    bandana = mg.color("bandana_red", "#8f3a3c", rough=0.85, material="fabric")
+    shirt = mg.color("shirt_olive", "#787e5b", rough=0.9, material="fabric")
+    shorts_c = mg.color("shorts_brown", "#624f45", rough=0.9, material="fabric")
+    leather = mg.color("leather_brown", "#745044", rough=0.7, material="fabric")
+    dark = mg.color("stitch_dark", "#524143", rough=0.8, material="fabric")
+    bandana = mg.color("bandana_red", "#823a3b", rough=0.85, material="fabric")
     brass = mg.color("buckle_brass", "#c9a45a", rough=0.35, metal=1.0)
-    lime = mg.color("eye_lime", "#d7f35a", rough=0.25, glow=2.0)
-    dead = mg.color("eye_dead", "#c9c7b3", rough=0.3)
+    lime = mg.color("eye_lime", "#d9f55f", rough=0.25, glow=2.0)
+    dead = mg.color("eye_dead", "#c1bea7", rough=0.3)
     nose_c = mg.color("nose_pink", "#d4808a", rough=0.4)
     bone = mg.color("fang_white", "#f2eee2", rough=0.4)
-    wound = mg.color("wound_red", "#a8454a", rough=0.6)
+    wound = mg.color("wound_red", "#823a3b", rough=0.6)
     ball = {}
     parts = []
 
@@ -109,8 +110,11 @@ def build(mg):
 
     # ---- the head: a wide soft box, narrower at the top; a cream stripe down the middle and a cream muzzle
     hz = 0.7
-    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.56, 0.37, 0.36), bevel=0.11, subdiv=2, taper=0.78, smooth=True)
-    mg.cast(head, "sphere", 0.25)   # a little rounder: wide cheeks, a softer crown
+    # seen from the front the head is a soft hexagon: a narrow crown between the ears, the widest at the cheeks, a
+    # narrower chin (a box tapered at the top and the bottom), rounded a little
+    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.6, 0.38, 0.36), bevel=0.1, subdiv=2, taper=0.74,
+                   taper_bottom=0.66, smooth=True)
+    mg.cast(head, "sphere", 0.2)
     parts.append(head)
     lo, hi = mg.bounds(head)   # the face and the ears sit on the head as it really is
     face, htop = lo[1], hi[2]

@@ -514,7 +514,8 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
                    collision: str, size: float, preview: bool, seed: int, timeout: int = 600,
                    on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
                    texture: int = 0, topology: str = "tri", params: dict | None = None,
-                   pose: str = "none", outline: bool = False, fit: list | None = None) -> tuple[dict, str]:
+                   pose: str = "none", outline: bool = False, fit: list | None = None,
+                   colour_fit: dict | None = None) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
            "--texture", str(texture), "--topology", topology, "--pose", pose,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
@@ -526,6 +527,8 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
         cmd.append("--outline")
     if fit:
         cmd += ["--fit", json.dumps(fit)]
+    if colour_fit:
+        cmd += ["--colour-fit", json.dumps(colour_fit)]
     if preview:
         cmd.append("--preview")
     return run_blender(cmd, timeout=timeout, on_line=on_line)
@@ -574,8 +577,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--topology", default="tri", choices=["tri", "quad"],
                     help="quad: FBX and .blend keep quads; the mesh engine remeshes to clean quads (GLB is always triangles)")
     ap.add_argument("--fit", default="auto", choices=["auto", "on", "off"],
-                    help="kit: after the build, fit the model's proportions to the reference picture (widths per height "
-                         "band, from their outlines) and keep it when the outlines match better; auto = with a picture")
+                    help="kit: after the build, fit the model to the reference picture — widths per height band from the "
+                         "outlines, and every palette colour to what the picture shows there — and keep it when it "
+                         "matches better; auto = with a picture")
     ap.add_argument("--outline", default="auto", choices=["auto", "on", "off"],
                     help="kit: toon ink line round the silhouette (an inverted hull, mobile-high and PC); auto = on for toon")
     ap.add_argument("--pose", default="none", choices=["none", "a", "t"],
@@ -1279,52 +1283,118 @@ def parse_review(answer: str) -> tuple[float | None, list[str]]:
     return (float(m.group(1)) if m else None), notes[:8]
 
 
+def _lin(c: float) -> float:
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _srgb(c: float) -> float:
+    c = min(1.0, max(0.0, c))
+    return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
+
+
+def colour_corrections(palette: dict, measured: dict, current: dict) -> dict:
+    """Base colours brought to the picture, in the picture's own terms: how much lighter or darker each colour region is
+    than the others (its brightness over the picture's overall light, estimated from every region), and a third of
+    the way toward its hue. The model's own render and lights do not enter it, so a warm or dim picture does not tint
+    the whole model; glowing colours and regions too small to measure keep theirs."""
+    lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    rows = []
+    for name, p in (palette or {}).items():
+        m = measured.get(str(p["index"])) or measured.get(p["index"])
+        if not m or p.get("glow") or m.get("n", 0) < 6:
+            continue
+        base = [_lin(c) for c in (current.get(name) or p["rgb"])]
+        ref = [_lin(c) for c in m["ref"]]
+        if lum(base) > 1e-4 and lum(ref) > 1e-4:
+            rows.append((name, base, ref, m["n"], lum(ref) / lum(base)))
+    out = dict(current)
+    if len(rows) < 2:   # one colour alone says nothing about the picture's light
+        return out
+    ratios = sorted((r[4], r[3]) for r in rows)
+    half, acc, light = sum(n for _, n in ratios) / 2, 0, ratios[-1][0]
+    for r, n in ratios:   # the picture's overall light: the pixel-weighted median ratio
+        acc += n
+        if acc >= half:
+            light = r
+            break
+    scaled = {name: [c * light for c in base] for name, base, *_ in rows}   # each colour as the picture would show it
+
+    def dist(a, b):
+        return sum((x - y) ** 2 for x, y in zip(a, b))
+    for name, base, ref, n, ratio in rows:
+        # under this colour the picture shows another one of ours: the region is off (a stripe drawn elsewhere, a
+        # smaller eye) — measuring it would blend two colours into one, so it keeps its own
+        if any(dist(ref, sc) < dist(ref, scaled[name]) for other, sc in scaled.items() if other != name):
+            continue
+        g = max(0.35, min(2.8, ratio / light))
+        hue = [((rc / lum(ref)) / max(bc / lum(base), 1e-4)) ** 0.3 for rc, bc in zip(ref, base)]
+        out[name] = [round(_srgb(bc * g * h), 4) for bc, h in zip(base, hue)]
+    return out
+
+
+def _match_score(m: dict) -> float:
+    return float(m.get("iou") or 0) - 0.5 * float(m.get("colour_error") or 0)
+
+
 def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str, say, report: dict) -> dict:
-    """Proportions fitted to the reference, the way an artist checks a model against the concept: compare the
-    outlines, widen or narrow each height band by what they measure (the kit moves vertices and joints alike), rebuild,
-    and keep the result only when the outlines match better."""
+    """Fit the model to the reference, the way an artist checks it against the concept: compare the outlines and the
+    colours, widen or narrow each height band by what they measure (the kit moves vertices and joints alike), bring
+    every palette colour to what the picture shows where it lies, rebuild, and keep the result only when it matches
+    better. The colours get a second round (a rendered colour does not follow its base colour in a straight line)."""
     canon = report["tiers"][report["canonical"]]["file"]
     before = out_dir / "fit_before.png"
-    say("[fit] comparing the proportions with the reference…", stage="fit")
+    say("[fit] comparing the proportions and colours with the reference…", stage="fit")
     if not render_views(blender, out_dir / canon, before, reference=image, px=512, samples=8):
         return report
     m = read_match(before) or {}
-    bands = m.get("bands") or []
-    if not bands or all(abs(b[2] - 1) < 0.04 for b in bands):
-        say(f"    proportions already match (outline {m.get('iou', 0):.2f})", stage="fit")
-        return report
-    side = out_dir / "fit"
-    side.mkdir(exist_ok=True)
-    code_path = side / f"{name}.py"
-    shutil.copyfile(out_dir / f"{name}.py", code_path)
-    baking = args.finish_resolved in ("weathered", "clean")
-    tex = TEXTURES[args.texture]
-    limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0)
-    say("[fit] rebuilding with the widths fitted per height…", stage="fit")
-    new_report, _ = run_in_blender(blender, code_path, name=name, out_dir=side, tiers=tiers, timeout=limit,
-                                   targets=args.targets, collision=args.collision, size=args.size, preview=False,
-                                   seed=args.seed, colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
-                                   texture=tex, topology=args.topology, params=args.params_parsed, pose=args.pose,
-                                   outline=wants_outline(args), fit=bands)
-    if not new_report.get("ok"):
-        say("    the fitted build failed — keeping the model as it was", stage="fit")
-        return report
-    after = side / "fit_after.png"
-    if not render_views(blender, side / new_report["tiers"][new_report["canonical"]]["file"], after, reference=image,
-                        px=512, samples=8):
-        return report
-    m2 = read_match(after) or {}
-    if m2.get("iou", 0) <= m.get("iou", 0) + 0.005:
-        say(f"    the fit did not match better ({m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}) — kept as it was", stage="fit")
-        return report
-    for f in side.iterdir():
-        if f.is_file() and f.name.startswith(f"{name}.") and f.suffix != ".py":
-            shutil.copyfile(f, out_dir / f.name)
-    say(f"    proportions fitted: outline match {m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}", stage="fit")
-    for k, v in report.items():   # what the earlier stages found (reviews, advice) stays with the model
-        new_report.setdefault(k, v)
-    new_report["fit"] = {"bands": bands, "before": m.get("iou"), "after": m2.get("iou")}
-    return new_report
+    bands = [b for b in (m.get("bands") or [])]
+    if bands and all(abs(b[2] - 1) < 0.04 for b in bands):
+        bands = []
+    colours: dict = {}
+    first = m
+    for rnd in (1, 2):
+        colours = colour_corrections(report.get("palette") or {}, m.get("colours") or {}, colours)
+        if not bands and not colours:
+            say(f"    already matches (outline {m.get('iou', 0):.2f})", stage="fit")
+            return report
+        side = out_dir / f"fit_{rnd}"
+        side.mkdir(exist_ok=True)
+        code_path = side / f"{name}.py"
+        shutil.copyfile(out_dir / f"{name}.py", code_path)
+        baking = args.finish_resolved in ("weathered", "clean")
+        tex = TEXTURES[args.texture]
+        limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0)
+        say(f"[fit {rnd}] rebuilding with the widths and colours fitted to the reference…", stage="fit")
+        new_report, _ = run_in_blender(blender, code_path, name=name, out_dir=side, tiers=tiers, timeout=limit,
+                                       targets=args.targets, collision=args.collision, size=args.size, preview=False,
+                                       seed=args.seed, colors=args.colors, caps=args.caps_parsed,
+                                       finish=args.finish_resolved, texture=tex, topology=args.topology,
+                                       params=args.params_parsed, pose=args.pose, outline=wants_outline(args),
+                                       fit=bands, colour_fit=colours)
+        if not new_report.get("ok"):
+            say("    the fitted build failed — keeping the model as it was", stage="fit")
+            return report
+        after = side / "fit_after.png"
+        if not render_views(blender, side / new_report["tiers"][new_report["canonical"]]["file"], after,
+                            reference=image, px=512, samples=8):
+            return report
+        m2 = read_match(after) or {}
+        if float(m2.get("iou") or 0) < float(m.get("iou") or 0) - 0.005 or (rnd > 1 and _match_score(m2) <= _match_score(m)):
+            say(f"    round {rnd} did not match better (outline {m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}, colour "
+                f"{m.get('colour_error') or 0:.3f} → {m2.get('colour_error') or 0:.3f}) — kept the previous", stage="fit")
+            break
+        for f in side.iterdir():
+            if f.is_file() and f.name.startswith(f"{name}.") and f.suffix != ".py":
+                shutil.copyfile(f, out_dir / f.name)
+        say(f"    round {rnd}: outline {m.get('iou', 0):.2f} → {m2.get('iou', 0):.2f}, colour difference "
+            f"{m.get('colour_error') or 0:.3f} → {m2.get('colour_error') or 0:.3f}", stage="fit")
+        for k, v in report.items():   # what the earlier stages found (reviews, advice) stays with the model
+            new_report.setdefault(k, v)
+        new_report["fit"] = {"bands": bands, "colours": colours, "before": {"iou": first.get("iou"),
+                             "colour_error": first.get("colour_error")},
+                             "after": {"iou": m2.get("iou"), "colour_error": m2.get("colour_error")}}
+        report, m = new_report, m2
+    return report
 
 
 def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str | None, say, code: str,

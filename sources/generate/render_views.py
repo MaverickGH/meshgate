@@ -136,6 +136,101 @@ def _mask_crop(mask, n=64):
     return out_
 
 
+def _fit_crop(mask, img, n):
+    """_mask_crop for a picture: the pixels of `img` under the same crop and fit as `mask` (n × n × channels)."""
+    import numpy as np
+    ys, xs = np.nonzero(mask)
+    if len(xs) < 8:
+        return None, None
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    m, im = mask[y0:y1, x0:x1], img[y0:y1, x0:x1]
+    h, w = m.shape
+    k = n / max(h, w)
+    hh, ww = max(1, int(h * k)), max(1, int(w * k))
+    yi = (np.arange(hh) / k).astype(int).clip(0, h - 1)
+    xi = (np.arange(ww) / k).astype(int).clip(0, w - 1)
+    oy, ox = (n - hh) // 2, (n - ww) // 2
+    om = np.zeros((n, n), bool)
+    oi = np.zeros((n, n, im.shape[2]))
+    om[oy:oy + hh, ox:ox + ww] = m[yi][:, xi]
+    oi[oy:oy + hh, ox:ox + ww] = im[yi][:, xi]
+    return om, oi
+
+
+def _colour_compare(np, cam_dir, ref_img, ref_main, cells):
+    """At the matched view: the model's own colours as lit (a small render) against the picture's colours at the same
+    places, per palette colour (which colour a pixel is comes from a render of the palette UVs). Returns
+    {cell index: {"model": sRGB, "ref": sRGB, "n": pixels}} and the mean colour difference (0…1)."""
+    size = 128
+    cam.location = centre + cam_dir * dist
+    cam.rotation_euler = (centre - cam.location).to_track_quat("-Z", "Y").to_euler()
+    keep = (sc.render.engine, sc.render.film_transparent, sc.render.resolution_x, sc.render.resolution_y,
+            sc.cycles.samples, sc.cycles.filter_width, sc.view_settings.view_transform, sc.view_settings.look,
+            sc.render.image_settings.file_format)
+    floor.hide_render = True
+    sc.render.engine, sc.render.film_transparent = "CYCLES", True
+    sc.render.resolution_x = sc.render.resolution_y = size
+    sc.cycles.samples = 8
+    sc.render.filepath = f"{tmp}.lit.png"
+    bpy.ops.render.render(write_still=True)
+    li = bpy.data.images.load(sc.render.filepath)
+    lit = np.array(li.pixels[:]).reshape(size, size, 4)
+    bpy.data.images.remove(li)
+    # the palette cell of every pixel: the model drawn with its UVs as colour, unlit, unfiltered, linear
+    idm = bpy.data.materials.new("mg_uv_id")
+    idm.use_nodes = True
+    nt = idm.node_tree
+    for n_ in list(nt.nodes):
+        nt.nodes.remove(n_)
+    uvn, em, out_ = nt.nodes.new("ShaderNodeUVMap"), nt.nodes.new("ShaderNodeEmission"), nt.nodes.new("ShaderNodeOutputMaterial")
+    nt.links.new(uvn.outputs[0], em.inputs["Color"])
+    nt.links.new(em.outputs[0], out_.inputs["Surface"])
+    saved = []
+    for o in sc.objects:
+        if o.type == "MESH":
+            for sl in o.material_slots:
+                saved.append((sl, sl.material))
+                sl.material = idm
+    sc.cycles.samples, sc.cycles.filter_width = 1, 0.01
+    sc.view_settings.view_transform, sc.view_settings.look = "Standard", "None"
+    sc.render.image_settings.file_format = "OPEN_EXR"
+    sc.render.filepath = f"{tmp}.uvid.exr"
+    bpy.ops.render.render(write_still=True)
+    ii = bpy.data.images.load(sc.render.filepath)
+    uvid = np.array(ii.pixels[:]).reshape(size, size, 4)
+    bpy.data.images.remove(ii)
+    for sl, mat in saved:
+        sl.material = mat
+    bpy.data.materials.remove(idm)
+    (sc.render.engine, sc.render.film_transparent, sc.render.resolution_x, sc.render.resolution_y, sc.cycles.samples,
+     sc.cycles.filter_width, sc.view_settings.view_transform, sc.view_settings.look,
+     sc.render.image_settings.file_format) = keep
+    floor.hide_render = False
+    for f_ in (f"{tmp}.lit.png", f"{tmp}.uvid.exr"):
+        if os.path.exists(f_):
+            os.remove(f_)
+    n = 96
+    alpha = lit[..., 3] > 0.5
+    mm, mlit = _fit_crop(alpha, lit[..., :3], n)
+    _, mid = _fit_crop(alpha, uvid[..., :2], n)
+    rm, rimg = _fit_crop(ref_main, ref_img, n)
+    if mm is None or rm is None:
+        return {}, None
+    both = mm & rm
+    u = (mid[..., 0] * cells).astype(int).clip(0, cells - 1)
+    v = (mid[..., 1] * cells).astype(int).clip(0, cells - 1)
+    cell = u + cells * v
+    out = {}
+    for c in np.unique(cell[both]):
+        sel = both & (cell == c)
+        if sel.sum() < 6:
+            continue
+        out[int(c)] = {"model": [round(float(x), 3) for x in np.median(mlit[sel], axis=0)],
+                       "ref": [round(float(x), 3) for x in np.median(rimg[sel], axis=0)], "n": int(sel.sum())}
+    err = float(np.abs(mlit[both] - rimg[both]).mean()) if both.any() else None
+    return out, err
+
+
 def _main_shape(mask):
     """The largest connected shape of a mask with its holes filled (a picture's shadow specks and background noise go)."""
     import numpy as np
@@ -233,6 +328,11 @@ if reference:
             both[ref_sil & ~best[4]] = (0.9, 0.2, 0.2)
             both[best[4] & ~ref_sil] = (0.25, 0.45, 1.0)
             match["_overlay"] = both
+            try:   # the colours at the matched view, per palette colour (what a colour fit corrects)
+                cols, err = _colour_compare(np, best[3], small, _main_shape(ref_mask), 8)
+                match["colours"], match["colour_error"] = cols, (round(err, 4) if err is not None else None)
+            except Exception as exc:  # noqa: BLE001 — the outline match still stands without it
+                print(f"MeshGate views: colour compare skipped ({exc})")
 for i, c in enumerate(closeups):   # the AI's own camera: a point, the direction it looks from, the width to frame
     look = Vector(c.get("from") or (0.6, -1, 0.4)).normalized()
     size = max(float(c.get("size") or radius * 0.5), radius * 0.05)

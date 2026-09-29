@@ -199,7 +199,7 @@ class Kit:
                  colors: str = "texture", max_materials: int | None = None, finish: str = "none",
                  max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
                  max_texture: int | None = None, max_texture_mb: float | None = None, pose: str = "none",
-                 outline: bool = False, fit: list | None = None):
+                 outline: bool = False, fit: list | None = None, colour_fit: dict | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         if pose not in POSES:
@@ -207,6 +207,7 @@ class Kit:
         self._pose = pose                           # the rest pose of rigged characters (mg.rig): none, a or t
         self._outline = bool(outline) and finish in ("none", "faceted")   # toon ink line (baked finishes: one material)
         self._fit = [tuple(float(x) for x in b) for b in (fit or []) if len(b) == 3]   # (from, to, width ratio) bands
+        self._colour_fit = {str(k): v for k, v in (colour_fit or {}).items()}   # colour name → rgb measured on a reference
         self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
         # "texture": one palette material with base colour / roughness-metallic / emission textures (default).
         # "vertex": no textures at all — each part's colour goes into the COLOR_0 vertex attribute, and parts share a
@@ -295,6 +296,8 @@ class Kit:
         if material is not None and material not in MATERIALS:
             raise ModelError(f"material '{material}' — use one of {', '.join(MATERIALS)}")
         guess = next((m for m, rx in _GUESS if re.search(rx, str(name).lower())), "plain")
+        if name in self._colour_fit:   # fitted to the reference picture (a colour fit), over what the code says
+            rgb = tuple(self._colour_fit[name])
         self._colors[name] = {"index": len(self._colors), "rgb": _rgb(rgb), "rough": float(rough),
                               "metal": float(metal), "glow": float(glow), "material": material or guess}
         return name
@@ -321,7 +324,7 @@ class Kit:
 
     def part(self, kind: str, color, loc=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0), *, smooth: bool | None = None,
              subdiv: int = 0, bevel: float = 0.0, taper: float | None = None, exact: bool = False,
-             bevel_segments: int | None = None, **size):
+             bevel_segments: int | None = None, taper_bottom: float | None = None, **size):
         """One primitive piece. kind: "cube" (1 m edge), "sphere" and "ico" (radius 0.5), "cyl" and "cone" (radius 0.5,
         depth 1, along Z), "torus" (major 1, minor 0.25, lies in XY), "plane" (1 m), all centred on `loc` before scaling.
         scale = size along the primitive's OWN axes before rotation: scale=(0.2, 0.2, 1.5) + rot=(0, math.pi/2, 0) is a
@@ -331,7 +334,8 @@ class Kit:
         bevel_segments = its steps (default: the tier's; the low-poly look uses one flat chamfer — 2 rounds a big
         low-poly block, a head or a body, into a few clean facets).
         taper = scale of every vertex above the piece's centre, i.e. the top face (0.5 = top half as wide, 0 = a point):
-        tapered posts, pyramids (cube + taper=0), truncated cones. Extra size keywords pass to Blender:
+        tapered posts, pyramids (cube + taper=0), truncated cones; taper_bottom does the same to the bottom face —
+        with both, a cube becomes a gem or a head seen from the front (narrow crown, wide cheeks, narrower chin). Extra size keywords pass to Blender:
         segments/ring_count (sphere), vertices/radius/depth (cyl), radius1/radius2 (cone), major_radius/minor_radius (torus).
         Counts of 8 and more scale with the tier; exact=True keeps them as given (an octagonal tower stays 8-sided).
         The first vertex of a cyl/cone sits on +X."""
@@ -355,11 +359,12 @@ class Kit:
         except TypeError as exc:
             raise ModelError(f"part('{kind}'): {exc}") from None
         obj = bpy.context.active_object
-        if taper is not None:
+        if taper is not None or taper_bottom is not None:
             for v in obj.data.vertices:
-                if v.co.z > 1e-6:
-                    v.co.x *= taper
-                    v.co.y *= taper
+                k = taper if v.co.z > 1e-6 else (taper_bottom if v.co.z < -1e-6 else None)
+                if k is not None:
+                    v.co.x *= k
+                    v.co.y *= k
         self._place(obj, loc, scale, rot)
         if bevel:
             m = obj.modifiers.new("bevel", "BEVEL")
