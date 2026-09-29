@@ -1879,6 +1879,13 @@ class Kit:
         me.update()
         return obj
 
+    def bounds(self, obj):
+        """The piece's real box in world meters as ((min x, min y, min z), (max x, max y, max z)) — measure instead of
+        guessing: a subdivided or bevelled part ends inside the box you asked for, so put a face's eyes and nose on
+        its measured front (min y), a hat on its measured top. Works on groups too."""
+        lo, hi = self._box(obj)
+        return tuple(round(c, 5) for c in lo), tuple(round(c, 5) for c in hi)
+
     def patch(self, on, color, at, size, *, facing=(0, -1, 0), thickness: float = 0.006, dome: float = 0.0,
               smooth: bool = True):
         """A marking with crisp edges that lies ON a piece's surface and follows its curve — a white belly or chest, a
