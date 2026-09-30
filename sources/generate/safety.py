@@ -46,8 +46,15 @@ def check(code: str) -> list[str]:
     def bad(node, msg):
         problems.append(f"line {getattr(node, 'lineno', '?')}: {msg}")
 
+    def section_block(node) -> bool:
+        """The one `with` build code may use: `with mg.section("head"):` (a part of the model, see Kit.section)."""
+        return isinstance(node, ast.With) and all(
+            isinstance(it.context_expr, ast.Call) and isinstance(it.context_expr.func, ast.Attribute)
+            and it.context_expr.func.attr == "section" and isinstance(it.context_expr.func.value, ast.Name)
+            and (it.optional_vars is None or isinstance(it.optional_vars, ast.Name)) for it in node.items)
+
     for node in ast.walk(tree):
-        if isinstance(node, DENIED_NODES):
+        if isinstance(node, DENIED_NODES) and not section_block(node):
             bad(node, f"'{type(node).__name__}' is not allowed in build code")
         elif isinstance(node, ast.Import):
             for a in node.names:

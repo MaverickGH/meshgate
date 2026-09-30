@@ -145,3 +145,25 @@ def strip(obj) -> None:
     if obj.type == "MESH" and obj.data.shape_keys:
         obj.shape_key_clear()
 
+
+def deform(obj, specs: list) -> int:
+    """Move a mesh's vertices for good by the specs (a fit, not a slider): the full change of each, summed.
+    Returns how many vertices moved."""
+    if obj.type != "MESH" or not specs or not obj.data.vertices or obj.data.shape_keys:
+        return 0
+    mw = obj.matrix_world
+    rot = mw.to_3x3()
+    inv = rot.inverted()
+    moved = 0
+    for v in obj.data.vertices:
+        p = mw @ v.co
+        n = (rot @ v.normal).normalized()
+        d = Vector()
+        for spec in specs:
+            d += _delta(spec, p, n, 1.0, False)
+        if d.length >= 1e-6:
+            v.co = v.co + inv @ d
+            moved += 1
+    if moved:
+        obj.data.update()
+    return moved

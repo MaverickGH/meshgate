@@ -393,6 +393,50 @@ def apply_edits(parts: list, edits: dict, recolour=None) -> list:
     return notes
 
 
+class _Section:
+    """`with mg.section("head"):` — the pieces made inside belong to that part of the model."""
+
+    def __init__(self, kit, name: str, anchor):
+        self.kit, self.name, self.anchor = kit, name, anchor
+
+    def __enter__(self):
+        self.before = set(bpy.context.scene.objects)
+        return self
+
+    def __exit__(self, *exc):
+        if exc[0] is not None:
+            return False
+        made = [o for o in bpy.context.scene.objects if o not in self.before and o.type == "MESH" and o.data.vertices]
+        boxes = []   # one box per cluster of touching pieces: both arms of an "arms" part stay two boxes
+        for o in made:
+            lo, hi = self.kit._box(o)
+            box = [list(lo), list(hi)]
+            for b in boxes:
+                if all(box[0][k] <= b[1][k] + 0.01 and box[1][k] >= b[0][k] - 0.01 for k in range(3)):
+                    b[0] = [min(x, y) for x, y in zip(b[0], box[0])]
+                    b[1] = [max(x, y) for x, y in zip(b[1], box[1])]
+                    break
+            else:
+                boxes.append(box)
+        merged = True
+        while merged:   # clusters that grew into each other
+            merged = False
+            for i in range(len(boxes)):
+                for j in range(i + 1, len(boxes)):
+                    a_, b_ = boxes[i], boxes[j]
+                    if all(a_[0][k] <= b_[1][k] + 0.01 and a_[1][k] >= b_[0][k] - 0.01 for k in range(3)):
+                        boxes[i] = [[min(x, y) for x, y in zip(a_[0], b_[0])], [max(x, y) for x, y in zip(a_[1], b_[1])]]
+                        del boxes[j]
+                        merged = True
+                        break
+                if merged:
+                    break
+        if boxes:
+            self.kit._sections.append({"name": self.name, "boxes": boxes,
+                                       "anchor": [float(c) for c in self.anchor] if self.anchor else None})
+        return False
+
+
 class Kit:
     """The `mg` object passed to build(mg)."""
 
@@ -401,7 +445,8 @@ class Kit:
                  max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
                  max_texture: int | None = None, max_texture_mb: float | None = None, pose: str = "none",
                  outline: bool = False, fit: list | None = None, colour_fit: dict | None = None, split: bool = False,
-                 edits: dict | None = None, look: dict | None = None, max_file_mb: float | None = None):
+                 edits: dict | None = None, look: dict | None = None, max_file_mb: float | None = None,
+                 section_fit: dict | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         if pose not in POSES:
@@ -415,6 +460,10 @@ class Kit:
         self._look = dict(look or {})
         self._colour_fit.update({str(k): _rgb(v) for k, v in (self._look.get("colours") or {}).items()})
         self._morphs = []
+        # the model's named parts (mg.section) and the per-part corrections a fit against the reference measured
+        self._sections = []
+        self._section_fit = dict(section_fit or {})
+        self._shift = Vector()
         self._max_file_mb = float(max_file_mb) if max_file_mb else None
         self._split = bool(split)   # every separate thing its own object (crates, planks, a lid) to move in an engine
         self._edits = dict(edits or {})   # hand changes to those parts (Studio's part editor), by part name
@@ -507,6 +556,16 @@ class Kit:
                              "mirror": bool(mirror), "two_sided": bool(two_sided),
                              "stretch": [float(c) for c in stretch] if stretch else None, "value": value if two_sided else max(0.0, value)})
         return name
+
+    def section(self, name: str, *, anchor=None) -> _Section:
+        """Build the model part by part, the way an artist blocks out a character: `with mg.section("head"): …` —
+        every piece made inside belongs to that part (head, torso, arms, legs, tail, ears, a backpack). MeshGate then
+        compares each part with the reference on its own, in every view of a sheet (how much wider, taller, higher or
+        off-centre the picture shows it), reports it part by part, and fits each part on its own (widths, depth,
+        height, place) — not the whole model at once. anchor = the point the part grows from when it is fitted (a
+        head: its neck; an arm: its shoulder); by default the middle of its base. Name each part once."""
+        name = self._ascii(str(name))
+        return _Section(self, name, anchor)
 
     def focus(self, at, radius: float, strength: float = 1.0) -> None:
         """Spend more polygons where they show: a face, hands, a silhouette edge a player looks at. Faces within `radius`
@@ -3288,6 +3347,9 @@ class Kit:
             else:
                 root.location += shift
         bpy.context.view_layer.update()
+        self._shift = shift.copy()
+        if self._section_fit:   # each part fitted on its own to the reference (widths, depth, height, place)
+            notes += self._apply_section_fit()
         if self._morphs:   # last: after every change of the triangles, in the finished model's own space
             specs = []
             for m in self._morphs:
@@ -3536,6 +3598,46 @@ class Kit:
         if any(abs(r - 1) > 0.01 for _, r in sy_):
             note += f", depths × {min(r for _, r in sy_):.2f}–{max(r for _, r in sy_):.2f}"
         return [note]
+
+    def sections_out(self) -> list:
+        """The parts in the finished model's space (after it was stood on the ground), for the report."""
+        sh = self._shift
+        return [{"name": s["name"], "boxes": [[[a + b for a, b in zip(lo, sh)], [a + b for a, b in zip(hi, sh)]]
+                                            for lo, hi in s["boxes"]]} for s in self._sections]
+
+    def _apply_section_fit(self) -> list:
+        """Move the vertices of each fitted part: scaled round its anchor (widths x, depth y, height z) and moved, with
+        a soft edge a few centimetres round its boxes so what it is attached to bends along instead of tearing. A part
+        in two places (both arms) is scaled round each place's own anchor (mirrored in x)."""
+        done = []
+        out = self.sections_out()
+        size = max([1e-3] + [max(h - l for l, h in zip(lo, hi)) for s in out for lo, hi in s["boxes"]])
+        whole = self._bounds([o for o in bpy.context.scene.objects if o.type == "MESH"])
+        size = max(size, max(whole[1] - whole[0]))
+        for sec, raw in zip(out, self._sections):
+            fit = self._section_fit.get(sec["name"])
+            if not fit:
+                continue
+            scale = [max(0.75, min(1.3, float(c))) for c in (fit.get("scale") or [1, 1, 1])]
+            move = [max(-0.08 * size, min(0.08 * size, float(c))) for c in (fit.get("move") or [0, 0, 0])]
+            specs = []
+            for lo, hi in sec["boxes"]:
+                if raw.get("anchor"):
+                    a_ = [a + b for a, b in zip(raw["anchor"], self._shift)]
+                    if len(sec["boxes"]) > 1 and (lo[0] + hi[0]) * a_[0] < 0:   # the other side's copy of the part
+                        a_[0] = -a_[0]
+                else:
+                    a_ = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]]
+                mv = list(move)
+                if len(sec["boxes"]) > 1 and (lo[0] + hi[0]) < 0:   # a sideways move goes outwards on both sides
+                    mv[0] = -mv[0]
+                specs.append({"name": sec["name"], "at": a_, "scale": scale, "move": mv, "boxes": [[lo, hi]],
+                              "margin": max(0.02, 0.05 * size)})
+            moved = sum(_morphs.deform(o, specs) for o in bpy.context.scene.objects
+                        if o.type == "MESH" and not o.get("meshgate_collision_for") and o.data.users == 1)
+            if moved:
+                done.append(f"{sec['name']} ×{scale[0]:.2f} wide, ×{scale[1]:.2f} deep, ×{scale[2]:.2f} tall")
+        return [f"fitted part by part: {'; '.join(done)}"] if done else []
 
     def _split_parts(self, obj) -> list:
         """Split a kit mesh into its parts (see split_parts), each named by its main palette colour."""

@@ -34,6 +34,10 @@ example: zombie_cats/stylized/zombie_cat.py
 - Check every side against its own view: in the BACK view the character's right is on the image's right, so a tail
   that swings to one side must swing the same way in the back and the 3/4 back views; the arms' A-pose angle is
   measured in the front view (about 45° down is common), not guessed.
+- Build it part by part, each in its own block — `with mg.section("head", anchor=neck_point):` … — head, ears,
+  torso, arms (anchor = the shoulder), legs, tail, clothes and gear: MeshGate then compares every part with the
+  reference on its own (how much wider, deeper, taller, higher it is drawn), fits each part by itself and tells you
+  which part to fix first.
 - Give a character a character creator, as games do: 4–10 `mg.morph` sliders at the end of build, the most wanted
   first — head size and width (`above=` the neck), ear size (`pieces=` the ear, `mirror=True`), eye size, muzzle,
   belly (`inflate=`), leg length (`stretch=(ankle z, hip z, metres)`), tail length. Scale round the point a part grows

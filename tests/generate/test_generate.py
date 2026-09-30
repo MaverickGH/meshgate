@@ -54,6 +54,8 @@ for label, code in DENIED.items():
     step(f"safety rejects {label}", bool(safety.check(code)))
 step("safety allows math/random/mathutils imports",
      not safety.check("import math\nimport random\nfrom mathutils import Vector\n" + OK))
+step("safety allows a part block, and no other with", not safety.check("def build(mg):\n    with mg.section('head'):\n        pass\n")
+     and bool(safety.check("def build(mg):\n    with open('x') as f:\n        pass\n")))
 step("safety allows a bare _ as a throwaway name", not safety.check("def build(mg):\n    for _ in range(3):\n        pass\n"))
 step("finish follows the style: lowpoly → faceted, realistic → weathered, vertex colours → no bake",
      generate.resolve_finish("auto", "lowpoly", "texture") == "faceted"

@@ -118,12 +118,13 @@ tiles = []
 shots = [(name, centre, Vector(d).normalized(), dist) for name, d in views]
 
 
-def _mask_crop(mask, n=64):
-    """A silhouette cropped to its box and fitted, aspect kept, into an n × n square (for comparing outlines)."""
+def _mask_crop(mask, n=64, params=False):
+    """A silhouette cropped to its box and fitted, aspect kept, into an n × n square (for comparing outlines).
+    params=True also returns how a pixel maps into it: (y0, x0, scale, y offset, x offset)."""
     import numpy as np
     ys, xs = np.nonzero(mask)
     if len(xs) < 8:
-        return None
+        return (None, None) if params else None
     m = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     h, w = m.shape
     k = n / max(h, w)
@@ -133,7 +134,52 @@ def _mask_crop(mask, n=64):
     xi = (np.arange(ww) / k).astype(int).clip(0, w - 1)
     oy, ox = (n - hh) // 2, (n - ww) // 2
     out_[oy:oy + hh, ox:ox + ww] = m[yi][:, xi]
-    return out_
+    return (out_, (ys.min(), xs.min(), k, oy, ox)) if params else out_
+
+
+def _fill_holes(mask):
+    """A silhouette without holes: background that does not reach the edge is inside the figure. A picture's dark
+    shorts or a shadowed shirt can match a dark backdrop and drop out of its outline; the gaps between the legs and
+    between an arm and the body stay (they reach the edge)."""
+    import numpy as np
+    if mask is None:
+        return None
+    h, w = mask.shape
+    outside = np.zeros_like(mask)
+    stack = [(y, x) for y in range(h) for x in (0, w - 1)] + [(y, x) for x in range(w) for y in (0, h - 1)]
+    while stack:
+        y, x = stack.pop()
+        if 0 <= y < h and 0 <= x < w and not mask[y, x] and not outside[y, x]:
+            outside[y, x] = True
+            stack += [(y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)]
+    return ~outside
+
+
+def _part_metrics(ref_s, mod_s, rects) -> dict | None:
+    """One part of the model against the same place in the picture: inside its box (a little larger, so a part the
+    picture draws bigger is not cut off) — overlap, the picture's width and height against the model's, and how much
+    higher (top) and further right (dx) the picture has it, in fractions of the figure's size."""
+    import numpy as np
+    rows = []
+    for x0, x1, y0, y1 in rects:
+        gx, gy = max(1, int((x1 - x0) * 0.15)), max(1, int((y1 - y0) * 0.15))
+        x0, x1, y0, y1 = max(0, x0 - gx), min(64, x1 + gx), max(0, y0 - gy), min(64, y1 + gy)
+        if x1 - x0 < 3 or y1 - y0 < 3:
+            continue
+        r, m = ref_s[y0:y1, x0:x1], mod_s[y0:y1, x0:x1]
+        if r.sum() < 6 or m.sum() < 6:
+            continue
+        rw, mw = [int(v) for v in r.sum(1) if v > 0], [int(v) for v in m.sum(1) if v > 0]
+        ry, my = np.nonzero(r.any(1))[0], np.nonzero(m.any(1))[0]
+        # a part in two places (both arms): its sideways shift counts outwards, so both arms too close add up
+        out_sign = (1 if (x0 + x1) / 2 >= 32 else -1) if len(rects) > 1 else 1
+        rows.append({"iou": float((r & m).sum()) / max(1, (r | m).sum()),
+                     "width": float(np.median(rw)) / max(1.0, float(np.median(mw))), "height": len(ry) / max(1, len(my)),
+                     "top": float(ry.max() - my.max()) / 64,
+                     "dx": out_sign * float(np.nonzero(r)[1].mean() - np.nonzero(m)[1].mean()) / 64})
+    if not rows:
+        return None
+    return {k: round(sum(x[k] for x in rows) / len(rows), 3) for k in rows[0]}
 
 
 def _fit_crop(mask, img, n):
@@ -289,10 +335,11 @@ match = None
 # {"image": path, "views": ["front", "3/4front", "left", "back", "right", "3/4back"]} in the sheet's order, left to right
 VIEW_YAW = {"front": 0, "3/4front": 45, "34front": 45, "left": 90, "back": 180, "right": -90, "3/4back": -135,
             "34back": -135, "3/4left": 45, "3/4right": -45}
-sheet_views = None
+sheet_views, parts_in = None, []
 if reference and reference.lstrip().startswith("{"):
     spec = _json.loads(reference)
     reference, sheet_views = spec["image"], [str(v).lower().replace(" ", "") for v in spec.get("views") or []]
+    parts_in = spec.get("sections") or []   # the model's named parts (mg.section), compared one by one
 ref_front = None   # the part of the picture shown on the sheet's left (the front view of a character sheet)
 if reference:
     import numpy as np
@@ -331,7 +378,7 @@ if reference:
     for name, (x0, x1) in zip(names, cuts):
         main = np.zeros_like(ref_mask)
         main[:, x0:x1] = _main_shape(ref_mask[:, x0:x1])
-        sil_ = _mask_crop(main)
+        sil_ = _fill_holes(_mask_crop(main))
         if sil_ is not None:
             refs.append((name, sil_, main, (x0, x1)))
     if refs:
@@ -352,8 +399,24 @@ if reference:
                 sc.render.filepath = f"{tmp}.sil.png"
                 bpy.ops.render.render(write_still=True)
                 si = bpy.data.images.load(sc.render.filepath)
-                cache[(yaw, elev)] = (_mask_crop(np.array(si.pixels[:]).reshape(128, 128, 4)[..., 3] > 0.5), d)
+                crop, prm = _mask_crop(np.array(si.pixels[:]).reshape(128, 128, 4)[..., 3] > 0.5, params=True)
                 bpy.data.images.remove(si)
+                rects = {}   # every named part's box as seen from here, in the cropped outline's pixels
+                if parts_in and crop is not None:
+                    from bpy_extras.object_utils import world_to_camera_view
+                    bpy.context.view_layer.update()
+                    y0_, x0_, k_, oy_, ox_ = prm
+                    for sec in parts_in:
+                        rs = []
+                        for lo_, hi_ in sec["boxes"]:
+                            uv = [world_to_camera_view(sc, cam, Vector((x, y, z))) for x in (lo_[0], hi_[0])
+                                  for y in (lo_[1], hi_[1]) for z in (lo_[2], hi_[2])]
+                            xs_ = [(u.x * 128 - x0_) * k_ + ox_ for u in uv]
+                            ys_ = [(u.y * 128 - y0_) * k_ + oy_ for u in uv]
+                            rs.append((max(0, int(min(xs_))), min(64, int(max(xs_)) + 1),
+                                       max(0, int(min(ys_))), min(64, int(max(ys_)) + 1)))
+                        rects[sec["name"]] = rs
+                cache[(yaw, elev)] = (crop, d, rects)
             return cache[(yaw, elev)]
 
         def widths(ref_s, mod_s):
@@ -374,19 +437,24 @@ if reference:
             best = None
             for elev in (0.1, 0.45):
                 for yaw in yaws:
-                    sil, d = silhouette(((yaw + 180) % 360) - 180, elev)
+                    sil, d, rects = silhouette(((yaw + 180) % 360) - 180, elev)
                     if sil is None:
                         continue
                     iou = float((sil & ref_s).sum()) / max(1, (sil | ref_s).sum())
                     if best is None or iou > best[0]:
-                        best = (iou, ((yaw + 180) % 360) - 180, elev, d, sil)
+                        best = (iou, ((yaw + 180) % 360) - 180, elev, d, sil, rects)
             if best:
                 # widths and depths are measured square to the view (its exact angle on the sheet): at another angle a
                 # width mixes the model's breadth and depth
                 exact = silhouette(nominal, best[2])[0] if nominal is not None else best[4]
+                parts_v = {}
+                for sec_name, rs in best[5].items():
+                    pm = _part_metrics(ref_s, best[4], rs)
+                    if pm:
+                        parts_v[sec_name] = pm
                 views_out.append({"name": name, "iou": round(best[0], 3), "yaw_deg": best[1], "elevation": best[2],
                                   "bands": widths(ref_s, exact if exact is not None else best[4]), "_best": best,
-                                  "_ref": (ref_s, main, cut)})
+                                  "_ref": (ref_s, main, cut), "_parts": parts_v})
         if os.path.exists(f"{tmp}.sil.png"):
             os.remove(f"{tmp}.sil.png")
         sc.render.engine, sc.render.film_transparent = engine, film
@@ -428,6 +496,56 @@ if reference:
                     match["bands"] = mean_bands(across)
                 if sides:
                     match["depth_bands"] = mean_bands(sides)
+            if parts_in:   # every named part on its own, over all the views that show it
+                summary = []
+
+                def avg(rows_, k):
+                    return round(sum(r_[k] for r_ in rows_) / len(rows_), 3) if rows_ else None
+                for sec in parts_in:
+                    per = [(v, v["_parts"][sec["name"]]) for v in views_out if sec["name"] in v["_parts"]]
+                    if not per:
+                        continue
+                    allp = [pm for _, pm in per]
+                    across_ = [pm for v, pm in per if abs(v["yaw_deg"]) < 25 or abs(v["yaw_deg"]) > 155]
+                    sides_ = [pm for v, pm in per if 60 < abs(v["yaw_deg"]) < 120]
+                    front_ = [pm for v, pm in per if abs(v["yaw_deg"]) < 25]
+                    summary.append({"name": sec["name"], "iou": avg(allp, "iou"), "width": avg(across_, "width"),
+                                    "depth": avg(sides_, "width"), "height": avg(allp, "height"), "top": avg(allp, "top"),
+                                    "dx": avg(front_, "dx"), "views": len(per)})
+                match["sections"] = sorted(summary, key=lambda x_: x_["iou"])
+                # every part up close in the front view: its outline over the picture's, one tile each (the order of
+                # match["sections"]) — <sheet>.parts.png, for people and the AI review
+                pv = prim
+                tiles_ = []
+                for sm in match["sections"]:
+                    rs = pv["_best"][5].get(sm["name"]) or []
+                    if not rs:
+                        continue
+                    x0, x1, y0, y1 = rs[0]
+                    gx, gy = max(2, int((x1 - x0) * 0.3)), max(2, int((y1 - y0) * 0.3))
+                    x0, x1, y0, y1 = max(0, x0 - gx), min(64, x1 + gx), max(0, y0 - gy), min(64, y1 + gy)
+                    r_, m_ = pv["_ref"][0][y0:y1, x0:x1], pv["_best"][4][y0:y1, x0:x1]
+                    if r_.size == 0:
+                        continue
+                    tl = np.zeros(r_.shape + (3,))
+                    tl[m_ & r_] = (1, 1, 1)
+                    tl[r_ & ~m_] = (0.9, 0.2, 0.2)
+                    tl[m_ & ~r_] = (0.25, 0.45, 1.0)
+                    kk = 64 / max(tl.shape[:2])
+                    yi = (np.arange(int(tl.shape[0] * kk)) / kk).astype(int).clip(0, tl.shape[0] - 1)
+                    xi = (np.arange(int(tl.shape[1] * kk)) / kk).astype(int).clip(0, tl.shape[1] - 1)
+                    t64 = np.zeros((64, 64, 3))
+                    zz = tl[yi][:, xi]
+                    t64[:zz.shape[0], :zz.shape[1]] = zz
+                    tiles_.append(t64)
+                if tiles_:
+                    pstrip = np.concatenate(tiles_, axis=1)
+                    pbig = np.repeat(np.repeat(pstrip, 3, 0), 3, 1)
+                    pimg = bpy.data.images.new("parts", pbig.shape[1], pbig.shape[0], alpha=False)
+                    pimg.pixels = np.concatenate([pbig, np.ones(pbig.shape[:2] + (1,))], axis=2).ravel().tolist()
+                    pimg.filepath_raw = os.path.splitext(out)[0] + ".parts.png"
+                    pimg.file_format = "PNG"
+                    pimg.save()
             shots.append(("matched", centre, best[3], dist))
             both = np.zeros((64, 64, 3))
             both[best[4] & ref_sil] = (1, 1, 1)

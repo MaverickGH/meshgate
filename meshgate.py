@@ -1112,7 +1112,7 @@ def _check_quad_parts(exe: str, work: Path) -> bool:
 def _check_faceted_patches(exe: str, work: Path) -> bool:
     """The low-poly finish melts markings into what they lie on; a big patch over other patches on a curved head (the
     scout's cream eye patch) once made that boolean fail and lose the whole head. The cat must keep its height — and
-    its character-creator sliders (mg.morph) as morph targets in the GLB."""
+    its character-creator sliders (mg.morph) as morph targets in the GLB, and its nine parts (mg.section)."""
     out = work / "faceted_patches"
     r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
                         str(ROOT / "sources" / "generate" / "examples" / "zombie_cat_scout.py"), "--name", "scout",
@@ -1126,6 +1126,9 @@ def _check_faceted_patches(exe: str, work: Path) -> bool:
         blob = (out / "scout.glb").read_bytes()
         meshes = json.loads(blob[20:20 + int.from_bytes(blob[12:16], "little")])["meshes"]
         names = {n for m in meshes for n in (m.get("extras") or {}).get("targetNames") or []}
+        parts = {x["name"] for x in g["report"].get("sections") or []}
+        if parts != {"legs", "shorts", "torso", "arms", "neck", "head", "ears", "backpack", "tail"}:
+            good, why = False, ["parts (mg.section):", sorted(parts)]
         if not {"head_size", "head_size_neg", "ear_size", "leg_length"} <= names or \
                 any(w for m in meshes for w in m.get("weights") or []):
             good, why = False, ["morphs:", sorted(names), (r.stdout + r.stderr)[-300:]]

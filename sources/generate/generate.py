@@ -527,7 +527,8 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
                    on_line=None, colors: str = "texture", caps: dict | None = None, finish: str = "none",
                    texture: int = 0, topology: str = "tri", params: dict | None = None,
                    pose: str = "none", outline: bool = False, fit: list | None = None,
-                   colour_fit: dict | None = None, split: bool = False) -> tuple[dict, str]:
+                   colour_fit: dict | None = None, split: bool = False,
+                   section_fit: dict | None = None) -> tuple[dict, str]:
     cmd = [blender, "-b", "--factory-startup", "--disable-autoexec", "-P", str(RUNNER), "--", "--finish", finish,
            "--texture", str(texture), "--topology", topology, "--pose", pose,
            "--code", str(code_path), "--name", name, "--out-dir", str(out_dir), "--tiers", ",".join(tiers),
@@ -541,6 +542,8 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
         cmd += ["--fit", json.dumps(fit)]
     if colour_fit:
         cmd += ["--colour-fit", json.dumps(colour_fit)]
+    if section_fit:
+        cmd += ["--section-fit", json.dumps(section_fit)]
     if split:
         cmd.append("--split")
         if (out_dir / "edits.json").is_file():   # hand changes to the parts, kept next to the model
@@ -1270,7 +1273,7 @@ def match_block(match: dict | None) -> str:
             f"({match['yaw_deg']}° round from the front), and below them their outlines laid over each other: white where "
             f"they agree, red where only the reference has shape, blue where only your model has. Silhouette match "
             f"{match['iou']:.2f} (1.0 = the same outline); make the red and blue areas small — they are the proportions "
-            "to fix first." + band_advice(match))
+            "to fix first." + band_advice(match) + section_advice(match))
 
 
 def band_advice(match: dict) -> str:
@@ -1394,10 +1397,65 @@ def _match_score(m: dict) -> float:
     return float(m.get("iou") or 0) - 0.5 * float(m.get("colour_error") or 0)
 
 
-def ref_arg(args, image: str | None) -> str | None:
-    """What render_views compares with: the picture, or a character sheet with its views in order."""
+def ref_arg(args, image: str | None, report: dict | None = None) -> str | None:
+    """What render_views compares with: the picture, or a character sheet with its views in order — and the model's
+    named parts (mg.section) when it has them, so each part is compared on its own."""
+    if report and report.get("sections"):
+        args._sections = report["sections"]
     views = [v.strip() for v in str(getattr(args, "views", "") or "").split(",") if v.strip()]
-    return json.dumps({"image": str(image), "views": views}) if image and views else image
+    sections = getattr(args, "_sections", None)
+    if image and (views or sections):
+        return json.dumps({"image": str(image), "views": views, **({"sections": sections} if sections else {})})
+    return image
+
+
+def section_advice(match: dict) -> str:
+    """The parts of the model that differ most from the reference, part by part, in words (worst first)."""
+    out = []
+    for sm in (match.get("sections") or [])[:4]:
+        said = []
+        for key, more, less in (("width", "wider", "narrower"), ("depth", "deeper", "shallower"), ("height", "taller", "shorter")):
+            r = sm.get(key)
+            if r and abs(r - 1) >= 0.08:
+                said.append(f"{abs(r - 1) * 100:.0f} % {more if r > 1 else less}")
+        if sm.get("top") is not None and abs(sm["top"]) >= 0.02:
+            said.append(f"{abs(sm['top']) * 100:.0f} % of the figure {'higher' if sm['top'] > 0 else 'lower'}")
+        if sm.get("dx") is not None and abs(sm["dx"]) >= 0.02:
+            said.append(f"{abs(sm['dx']) * 100:.0f} % further {'out' if sm['dx'] > 0 else 'in'}")
+        if said or (sm.get("iou") or 1) < 0.7:
+            out.append(f"{sm['name']} (match {sm['iou']:.2f}): the reference shows it " + (", ".join(said) or "shaped differently"))
+    return (" Part by part (worst first): " + "; ".join(out) + ". Work part by part, the way an artist does: this round "
+            "change the first part listed, in its `mg.section` block — its shape, not only its size — and leave the "
+            "parts that already match as they are.") if out else ""
+
+
+def section_corrections(match: dict, report: dict) -> dict:
+    """What a fit changes in each named part: its width (front and back views), depth (the sides) and height scaled
+    by what the reference shows (80 % of it, so it cannot overshoot), and the part moved where the picture has it
+    higher or further out. Parts that already match are left alone."""
+    dims = ((report.get("tiers") or {}).get(report.get("canonical") or "", {}) or {}).get("dims_m") or [1, 1, 1]
+    tall = max(dims)
+    boxes = {s["name"]: s["boxes"] for s in report.get("sections") or []}
+    out = {}
+    for sm in match.get("sections") or []:
+        if sm["name"] not in boxes:
+            continue
+        sec_h = max(b[1][2] - b[0][2] for b in boxes[sm["name"]])
+        scale = [1.0, 1.0, 1.0]
+        for k, key in ((0, "width"), (1, "depth"), (2, "height")):
+            r = sm.get(key)
+            if r and abs(r - 1) >= 0.04:
+                scale[k] = round(1 + 0.8 * (max(0.75, min(1.3, r)) - 1), 3)
+        move = [0.0, 0.0, 0.0]
+        if sm.get("dx") is not None and abs(sm["dx"]) >= 0.015:
+            move[0] = round(0.8 * sm["dx"] * tall, 4)
+        if sm.get("top") is not None:   # what the height change does not already bring up or down
+            dz = sm["top"] * tall - (scale[2] - 1) * sec_h
+            if abs(dz) >= 0.015 * tall:
+                move[2] = round(0.8 * dz, 4)
+        if scale != [1.0, 1.0, 1.0] or any(move):
+            out[sm["name"]] = {"scale": scale, "move": move}
+    return out
 
 
 def fit_bands(m: dict) -> list:
@@ -1408,6 +1466,59 @@ def fit_bands(m: dict) -> list:
     return sorted(rows)
 
 
+def fit_parts(args, name: str, out_dir: Path, blender: str, image: str, say, report: dict, m: dict) -> dict:
+    """Fit a model built part by part (mg.section) the way an artist does: one part at a time, the worst first — its
+    width, depth, height and place from what the reference shows there. A change is kept when that part then matches
+    the reference better and the whole model does not match worse (else half of it is tried, else the part stays as
+    built). Two passes: the second measures again from what the first kept. Each try is a quick PC build and a look
+    against the sheet. Returns the kept corrections {part: {"scale": [x, y, z], "move": [x, y, z]}}."""
+    kept: dict = {}
+    best = float(m.get("iou") or 0)
+    part_iou = {sm["name"]: float(sm.get("iou") or 0) for sm in m.get("sections") or []}
+    canon = report.get("canonical") or "pc"
+    cur_m, n = m, 0
+    for pass_ in (1, 2):
+        todo = section_corrections(cur_m, report)
+        order = [sm["name"] for sm in cur_m.get("sections") or [] if sm["name"] in todo]
+        for part in order:
+            full, old = todo[part], kept.get(part) or {"scale": [1.0, 1.0, 1.0], "move": [0.0, 0.0, 0.0]}
+            for share in (1.0, 0.5):
+                step = {"scale": [round(1 + share * (c - 1), 3) for c in full["scale"]],
+                        "move": [round(share * c, 4) for c in full["move"]]}
+                trial = {"scale": [round(a * b, 3) for a, b in zip(old["scale"], step["scale"])],
+                         "move": [round(a + b, 4) for a, b in zip(old["move"], step["move"])]}
+                n += 1
+                side = out_dir / f"fit_part_{n}"
+                side.mkdir(exist_ok=True)
+                code_path = side / f"{name}.py"
+                shutil.copyfile(out_dir / f"{name}.py", code_path)
+                rep_, _ = run_in_blender(blender, code_path, name=name, out_dir=side, tiers=[canon], timeout=600,
+                                         targets="web", collision="none", size=args.size, preview=False, seed=args.seed,
+                                         colors=args.colors, caps=args.caps_parsed, finish=args.finish_resolved,
+                                         texture=0, topology=args.topology, params=args.params_parsed, pose=args.pose,
+                                         outline=wants_outline(args), split=args.split, section_fit={**kept, part: trial})
+                if not rep_.get("ok"):
+                    continue
+                sheet = side / "part.png"
+                if not render_views(blender, side / rep_["tiers"][rep_["canonical"]]["file"], sheet,
+                                    reference=ref_arg(args, image, rep_), px=256, samples=4):
+                    continue
+                tm = read_match(sheet) or {}
+                iou = float(tm.get("iou") or 0)
+                p_iou = next((float(sm.get("iou") or 0) for sm in tm.get("sections") or [] if sm["name"] == part), 0.0)
+                if p_iou > part_iou.get(part, 0) + 0.01 and iou >= best - 0.002:
+                    say(f"    {part}: {part_iou.get(part, 0):.2f} → {p_iou:.2f} (whole {best:.3f} → {iou:.3f}), "
+                        f"×{trial['scale'][0]:.2f} wide, ×{trial['scale'][1]:.2f} deep, ×{trial['scale'][2]:.2f} tall",
+                        stage="fit")
+                    kept[part], best, cur_m = trial, max(best, iou), tm
+                    part_iou.update({sm["name"]: float(sm.get("iou") or 0) for sm in tm.get("sections") or []})
+                    break
+            else:
+                if pass_ == 1:
+                    say(f"    {part}: no better fitted — left as built", stage="fit")
+    return kept
+
+
 def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, image: str, say, report: dict) -> dict:
     """Fit the model to the reference, the way an artist checks it against the concept: compare the outlines and the
     colours, widen or narrow each height band by what they measure (the kit moves vertices and joints alike), bring
@@ -1416,17 +1527,24 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
     canon = report["tiers"][report["canonical"]]["file"]
     before = out_dir / "fit_before.png"
     say("[fit] comparing the proportions and colours with the reference…", stage="fit")
-    if not render_views(blender, out_dir / canon, before, reference=ref_arg(args, image), px=512, samples=8):
+    if not render_views(blender, out_dir / canon, before, reference=ref_arg(args, image, report), px=512, samples=8):
         return report
     m = read_match(before) or {}
-    bands = fit_bands(m)
+    parts = {}
+    if report.get("sections") and args.finish_resolved not in ("weathered", "clean"):   # quick builds: part by part
+        say(f"[fit] part by part, the worst first ({', '.join(sm['name'] for sm in m.get('sections') or [])})…", stage="fit")
+        parts = fit_parts(args, name, out_dir, blender, image, say, report, m)
+    elif report.get("sections"):   # a baked finish takes minutes a build: every part at once, kept only if better
+        parts = section_corrections(m, report)
+    # a model built part by part is fitted part by part; one without parts by height bands
+    bands = [] if report.get("sections") else fit_bands(m)
     if bands and all(abs(b[2] - 1) < 0.04 and abs(b[3] - 1) < 0.04 for b in bands):
         bands = []
     colours: dict = {}
     first = m
     for rnd in (1, 2):
         colours = colour_corrections(report.get("palette") or {}, m.get("colours") or {}, colours)
-        if not bands and not colours:
+        if not bands and not colours and not parts:
             say(f"    already matches (outline {m.get('iou', 0):.2f})", stage="fit")
             return report
         side = out_dir / f"fit_{rnd}"
@@ -1436,19 +1554,20 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
         baking = args.finish_resolved in ("weathered", "clean")
         tex = TEXTURES[args.texture]
         limit = 600 + (len(tiers) * (900 if tex >= 4096 else 300) if baking else 0)
-        say(f"[fit {rnd}] rebuilding with the widths and colours fitted to the reference…", stage="fit")
+        say(f"[fit {rnd}] rebuilding with " + (f"each part fitted to the reference ({', '.join(parts)})" if parts else
+                                               "the widths") + " and the colours…", stage="fit")
         new_report, _ = run_in_blender(blender, code_path, name=name, out_dir=side, tiers=tiers, timeout=limit,
                                        targets=args.targets, collision=args.collision, size=args.size, preview=False,
                                        seed=args.seed, colors=args.colors, caps=args.caps_parsed,
                                        finish=args.finish_resolved, texture=tex, topology=args.topology,
                                        params=args.params_parsed, pose=args.pose, outline=wants_outline(args),
-                                       fit=bands, colour_fit=colours, split=args.split)
+                                       fit=bands, colour_fit=colours, split=args.split, section_fit=parts)
         if not new_report.get("ok"):
             say("    the fitted build failed — keeping the model as it was", stage="fit")
             return report
         after = side / "fit_after.png"
         if not render_views(blender, side / new_report["tiers"][new_report["canonical"]]["file"], after,
-                            reference=ref_arg(args, image), px=512, samples=8):
+                            reference=ref_arg(args, image, new_report), px=512, samples=8):
             return report
         m2 = read_match(after) or {}
         if float(m2.get("iou") or 0) < float(m.get("iou") or 0) - 0.005 or (rnd > 1 and _match_score(m2) <= _match_score(m)):
@@ -1462,7 +1581,7 @@ def fit_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, imag
             f"{m.get('colour_error') or 0:.3f} → {m2.get('colour_error') or 0:.3f}", stage="fit")
         for k, v in report.items():   # what the earlier stages found (reviews, advice) stays with the model
             new_report.setdefault(k, v)
-        new_report["fit"] = {"bands": bands, "colours": colours, "before": {"iou": first.get("iou"),
+        new_report["fit"] = {"bands": bands, "colours": colours, "parts": parts, "before": {"iou": first.get("iou"),
                              "colour_error": first.get("colour_error")},
                              "after": {"iou": m2.get("iou"), "colour_error": m2.get("colour_error")}}
         report, m = new_report, m2
@@ -1491,7 +1610,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
         meter = getattr(args, "meter", None)
         if meter:
             meter.begin("render")
-        rendered = render_views(blender, out_dir / canon, sheet, reference=ref_arg(args, image), closeups=closeups)
+        rendered = render_views(blender, out_dir / canon, sheet, reference=ref_arg(args, image, report), closeups=closeups)
         if meter:
             meter.end("render")
             meter.begin(f"ask:{args.ai_cmd and 'custom' or args.ai}")
@@ -1577,7 +1696,7 @@ def review_kit(args, name: str, out_dir: Path, tiers: list[str], blender: str, i
     if any(e["accepted"] for e in reviews):
         final = out_dir / "views.png"
         canon_file = out_dir / report["tiers"][report["canonical"]]["file"]
-        if render_views(blender, canon_file, final, reference=ref_arg(args, image)):
+        if render_views(blender, canon_file, final, reference=ref_arg(args, image, report)):
             say(f"    final views: {final.name}", stage="review")
     return report, code, reviews
 
