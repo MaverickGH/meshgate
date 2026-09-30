@@ -544,6 +544,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_outline(exe, work)
     ok &= _check_split(exe, work)
     ok &= _check_quad_parts(exe, work)
+    ok &= _check_faceted_patches(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -1105,6 +1106,24 @@ def _check_quad_parts(exe: str, work: Path) -> bool:
         good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
     if not good:
         print(f"  ✗ quads per piece: {why}")
+    return good
+
+
+def _check_faceted_patches(exe: str, work: Path) -> bool:
+    """The low-poly finish melts markings into what they lie on; a big patch over other patches on a curved head (the
+    scout's cream eye patch) once made that boolean fail and lose the whole head. The cat must keep its height."""
+    out = work / "faceted_patches"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
+                        str(ROOT / "sources" / "generate" / "examples" / "zombie_cat_scout.py"), "--name", "scout",
+                        "--style", "lowpoly", "--size", "1", "--tiers", "pc", "--blender", exe, "--no-preview",
+                        "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        dims = json.load(open(out / "gen.json"))["report"]["tiers"]["pc"]["dims_m"]
+        good, why = max(dims) > 0.95, dims   # the height is its largest size (a lost head leaves ~0.6 m)
+    except Exception as exc:  # noqa: BLE001
+        good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ faceted patches: {why}")
     return good
 
 

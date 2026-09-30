@@ -3,8 +3,10 @@ fur with a cream stripe down the middle and a cream muzzle, fluffy cheeks, big e
 lime eye with a slit pupil and one dead milky eye in dark sockets, stitched scars, little fangs, long whiskers; a red
 bandana, a torn olive shirt open over the cream chest with ragged sleeves and hem, brown suspenders with brass buckles,
 a belt with two pouches, torn brown shorts flaring at the hem with a patch, cream arms and legs with brown stripes, a
-bandage wound round the wrist, toes and claws, a striped tail curling up behind, a brown backpack with a skull badge.
-Colours from the sheet's palette. Stylized: soft blocks, clean colours, no animation."""
+bandage wound round the wrist, toes and claws, a thick grey tail with cream bands swinging low to its right and turning
+up, a brown backpack with a skull badge; the stripe runs over the crown down the back of the head, a cream patch round
+the glowing eye, the shirt worn thin with faded patches and holes. Colours from the sheet's palette. The sheet is drawn
+low-poly: build it with --style lowpoly (the head, a cube with a wide two-step bevel, turns many-sided); no animation."""
 import math
 
 import mathutils
@@ -26,6 +28,7 @@ def build(mg):
     nose_c = mg.color("nose_pink", "#d4808a", rough=0.4)
     bone = mg.color("fang_white", "#f2eee2", rough=0.4)
     wound = mg.color("wound_red", "#823a3b", rough=0.6)
+    faded = mg.color("shirt_faded", "#9ca079", rough=0.9, material="fabric")
     parts = []
 
     def along(a, b):
@@ -71,6 +74,12 @@ def build(mg):
     shirt_body = mg.garment(torso, shirt, above=0.245, below=0.49, open_front=0.075, thickness=0.012, gap=0.004)
     parts += [torso, shirt_body, mg.fringe(shirt_body, shirt, 0.258, depth=0.045, width=0.036, seed=7)]
     parts.append(mg.patch(torso, wound, at=(-0.012, -0.1, 0.33), size=(0.025, 0.018), thickness=0.006))  # a wound
+    # the shirt is worn thin: faded patches, holes with the fur showing through, a few blood stains, front and back
+    for at, size, col, facing in (((-0.12, -0.1, 0.42), (0.07, 0.06), faded, (0, -1, 0)), ((0.12, -0.1, 0.31), (0.06, 0.05), faded, (0, -1, 0)),
+                                  ((-0.1, -0.1, 0.3), (0.035, 0.03), cream, (0, -1, 0)), ((0.1, -0.1, 0.44), (0.025, 0.02), wound, (0, -1, 0)),
+                                  ((0.1, 0.1, 0.44), (0.08, 0.06), faded, (0, 1, 0)), ((-0.11, 0.1, 0.3), (0.05, 0.045), faded, (0, 1, 0)),
+                                  ((-0.16, 0.0, 0.4), (0.05, 0.05), faded, (-1, 0, 0)), ((0.16, 0.0, 0.33), (0.04, 0.035), cream, (1, 0, 0))):
+        parts.append(mg.patch(shirt_body, col, at=at, size=size, facing=facing, thickness=0.004))
     # suspenders: over each shoulder from the belt in front to the belt behind, brass buckles on the chest
     for sx in (-1, 1):
         x = sx * 0.075
@@ -82,7 +91,7 @@ def build(mg):
     # ---- arms in an A-pose: flared, torn olive sleeves; striped cream forearms; a wound bandage; clawed hands
     for sx in (-1, 1):
         sh = (sx * 0.14, 0.0, 0.46)
-        drop = math.radians(55)
+        drop = math.radians(45)
         d = tuple(c / math.hypot(math.cos(drop), 0.15, math.sin(drop)) for c in (sx * math.cos(drop), -0.15, -math.sin(drop)))   # reaching a little forward
         el = tuple(s + k * 0.12 for s, k in zip(sh, d))
         wr = tuple(s + k * 0.22 for s, k in zip(sh, d))
@@ -117,9 +126,10 @@ def build(mg):
     # ---- the head: seen from the front a soft hexagon (a narrow crown between the ears, the widest at the cheeks, a
     # narrower chin), fluffy cheeks; a cream stripe down the middle and a cream muzzle
     hz = 0.7
-    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.6, 0.44, 0.36), bevel=0.1, subdiv=2, taper=0.74,
-                   taper_bottom=0.66, smooth=True)
-    mg.cast(head, "sphere", 0.2)
+    # a wide two-step bevel: in the low-poly finish a many-sided head (as the sheet draws it) with flat front planes
+    head = mg.part("cube", grey, loc=(0, -0.01, hz), scale=(0.6, 0.44, 0.38), bevel=0.13, bevel_segments=2, subdiv=2,
+                   taper=0.82, taper_bottom=0.66, smooth=True)
+    mg.cast(head, "sphere", 0.25)
     parts.append(head)
     lo, hi = mg.bounds(head)   # the face, cheeks and ears sit on the head as it really is
     face, htop, hw = lo[1], hi[2], hi[0]
@@ -129,6 +139,11 @@ def build(mg):
             parts.append(mg.part("cone", grey, loc=(sx * (hw - 0.01), -0.03, hz - 0.05 + dz), scale=(0.042 * sc, 0.04, 0.075 * sc),
                                  rot=(0.15, sx * 1.95, 0), vertices=4))
     parts.append(mg.patch(head, cream, at=(0.0, face, hz + 0.05), size=(0.085, 0.24), thickness=0.004))     # the stripe
+    # …that runs on over the crown and down the back of the head, widening, as the back view shows
+    parts.append(mg.wrap(head, cream, (-0.5, -0.01, hz + 0.02), (0.5, -0.01, hz + 0.02), 0.5, width=0.11, thickness=0.004))
+    parts.append(mg.patch(head, cream, at=(0.0, 0.2, hz + 0.02), size=(0.17, 0.3), facing=(0, 1, 0), thickness=0.004))
+    # a cream patch round the glowing eye, reaching up the forehead and down the cheek
+    parts.append(mg.patch(head, cream, at=(-0.13, face, hz + 0.02), size=(0.19, 0.24), thickness=0.0035))
     parts.append(mg.patch(head, cream, at=(0.0, face, hz - 0.095), size=(0.21, 0.11), thickness=0.005, dome=0.01))   # muzzle
     # ears: big, tilted out, pink inside; the right one torn
     for sx in (-1, 1):
@@ -174,11 +189,13 @@ def build(mg):
         parts.append(mg.part("cube", leather, loc=(sx * 0.105, 0.195, 0.36), scale=(0.02, 0.012, 0.16)))   # side straps
 
     # ---- the striped tail curling up behind
-    pts = [(0, 0.1, 0.2), (0.02, 0.2, 0.14), (0.05, 0.29, 0.13), (0.09, 0.35, 0.19), (0.12, 0.37, 0.3), (0.13, 0.33, 0.4)]
-    tail = mg.skin(pts, [0.035, 0.034, 0.033, 0.031, 0.029, 0.026], cream)   # back, down, then up, as the side view shows
-    for z0, z1 in ((0.13, 0.15), (0.2, 0.24), (0.3, 0.34)):
-        mg.paint(tail, stripe, above=z0, below=z1)
-    mg.paint(tail, stripe, at=pts[-1], radius=0.04)
+    # low behind the cat, towards its right side, the tip turned up — as the back and side views show
+    pts = [(0, 0.1, 0.2), (-0.03, 0.2, 0.12), (-0.08, 0.3, 0.08), (-0.14, 0.37, 0.12), (-0.18, 0.39, 0.22), (-0.19, 0.36, 0.32)]
+    # thick and blocky, grey with cream bands (as the side and back views show)
+    tail = mg.skin(pts, [0.05, 0.05, 0.048, 0.045, 0.042, 0.038], grey)   # back, down, then up, as the side view shows
+    for z0, z1 in ((0.1, 0.13), (0.17, 0.21), (0.26, 0.3)):
+        mg.paint(tail, cream, above=z0, below=z1)
+    mg.paint(tail, cream, at=pts[-1], radius=0.05)
     parts.append(tail)
 
     mg.join("zombie_cat_scout", parts)

@@ -1110,12 +1110,32 @@ class Kit:
         if self._faceted or self.level == 0:
             # big faces bend by their corners: a patch lying on them as a piece of its own slides into them when a
             # rigged body moves; as part of the same skin it bends with it exactly
+            def box(o):
+                pts = [o.matrix_world @ Vector(c) for c in o.bound_box]
+                return [max(q[k] for q in pts) - min(q[k] for q in pts) for k in range(3)]
             for patch in [p for p in parts if p.get("meshgate_patch_on")]:
                 host = next((p for p in parts if p is not patch and p.name == patch["meshgate_patch_on"]), None)
                 if host is not None:
                     del patch["meshgate_patch_on"]
+                    # a boolean on surfaces that nearly coincide (a big patch over other patches on a curved head) can
+                    # fail and lose the host: keep both as they were, and the patch as a piece of its own, if it does
+                    keep_mesh, keep_patch, box0 = host.data.copy(), patch.copy(), box(host)
+                    keep_patch.data = patch.data.copy()
                     self.union([host, patch])
                     parts = [p for p in parts if p is not patch]
+                    box1 = box(host)
+                    if not host.data.polygons or any(b1 < b0 * 0.97 for b0, b1 in zip(box0, box1)):
+                        broken = host.data
+                        host.data = keep_mesh
+                        bpy.data.meshes.remove(broken)
+                        for col in host.users_collection:
+                            col.objects.link(keep_patch)
+                        parts.append(keep_patch)
+                    else:
+                        spare = keep_patch.data
+                        bpy.data.objects.remove(keep_patch)
+                        bpy.data.meshes.remove(spare)
+                        bpy.data.meshes.remove(keep_mesh)
         cards = [p for p in parts if p.get("meshgate_cards")]   # fur keeps its own cutout material: a child, not merged
         parts = [p for p in parts if not p.get("meshgate_cards")]
         if not parts:
@@ -3911,6 +3931,10 @@ class Kit:
             cos = [v.co.copy() for v in verts]
             vol = sum(cos[p[0]].dot(cos[p[k]].cross(cos[p[k + 1]])) for p in polys for k in range(1, len(p) - 1))
             if abs(vol) < 1e-12:
+                continue
+            # a thin shell — a patch, a label, a stitch lying on the surface — hides nothing: a big one on a strongly
+            # curved head can make the ray test believe the whole head is inside it (volume / area ≈ its half-thickness)
+            if abs(vol) / 6 / max(sum(f.calc_area() for f in faces), 1e-12) < 0.0025:
                 continue
             lo = Vector([min(c[k] for c in cos) for k in range(3)])
             hi = Vector([max(c[k] for c in cos) for k in range(3)])

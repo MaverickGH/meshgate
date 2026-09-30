@@ -23,6 +23,17 @@ example: zombie_cats/stylized/zombie_cat.py
   raised stripes with `mg.wrap` round the limb (`slant=` for a bandage), scars and seams with `mg.stitch`, pouches,
   buckles, straps, toes and claws as small pieces, tufts that break the outline (cheeks, elbows). Measure the piece
   first with `mg.bounds` and put the details on its real surface.
+- Read the finish of the sheet, not only its shapes: flat facets everywhere (a low-poly render, hard shading steps
+  on the head) mean the low-poly style. Build such a head as a cube with a wide two-step bevel (`bevel` about a
+  quarter of its depth, `bevel_segments=2`, a taper for the crown and the chin) — a many-sided head with flat front
+  planes that carry the face; an icosphere head is faceted too, but its markings and sockets smear across the facets.
+- Markings go on round the form the way the other views show them: a stripe down the face runs on over the crown and
+  down the back of the head (`mg.wrap` round the head's left-right axis plus a `facing=(0, 1, 0)` patch behind); a
+  patch round one eye reaches the forehead and the cheek. Worn clothes get faded patches, holes with the fur showing
+  and stains — small `mg.patch`es on the garment, on its front, back and sides.
+- Check every side against its own view: in the BACK view the character's right is on the image's right, so a tail
+  that swings to one side must swing the same way in the back and the 3/4 back views; the arms' A-pose angle is
+  measured in the front view (about 45° down is common), not guessed.
 - Proportions first, detail later: for a cartoon or chibi look the head is 30–40 % of the height; for a real animal
   measure against the real one (a house cat: body 0.45 m, shoulder 0.25 m, head 0.1 m).
 - A pose sells the character, but model the arms relaxed at the sides: the clips move them (a zombie walk holds them
