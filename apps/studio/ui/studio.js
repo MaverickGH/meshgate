@@ -60,6 +60,11 @@ const STRINGS = {
     parts_keys: "W move · E turn · R scale · ⌘/Ctrl+D duplicate · Delete remove · ⌘/Ctrl+Z undo",
     paint: { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", teal: "Teal", blue: "Blue", purple: "Purple", pink: "Pink",
       brown: "Brown", tan: "Tan", white: "White", grey: "Grey", black: "Black" },
+    look: "Appearance", look_shape: "Shape", look_colours: "Colours", look_random: "Random", look_reset: "As built",
+    look_save: "Save the look",
+    look_hint: "Sliders from the model's morph targets: they change it at once, as a game's character creator does, and stay in the GLB and FBX for your game to move. Save rebuilds every tier with this look.",
+    look_none: "This model has no sliders. Kit code declares them with mg.morph — ask for a character creator in words on the Refine tab.",
+    look_missing: "not on this tier (its file budget)", look_baked: "Colours of a baked texture change when you save.",
     parts: "Parts", parts_title: "Parts of the model", parts_split: "Split this model into parts",
     parts_hint: "Click a part in the view or the list, then drag the handles, repaint, duplicate or remove it. Save rebuilds every tier with your changes; they stay with the model and come back on every rebuild.",
     parts_none: "This model is one piece. Split it to move, turn, scale, repaint or remove its parts one by one.",
@@ -144,6 +149,11 @@ const STRINGS = {
     parts_keys: "W двигать · E повернуть · R масштаб · ⌘/Ctrl+D дублировать · Delete удалить · ⌘/Ctrl+Z отменить",
     paint: { red: "Красный", orange: "Оранжевый", yellow: "Жёлтый", green: "Зелёный", teal: "Бирюзовый", blue: "Синий", purple: "Фиолетовый",
       pink: "Розовый", brown: "Коричневый", tan: "Светло-коричневый", white: "Белый", grey: "Серый", black: "Чёрный" },
+    look: "Внешность", look_shape: "Форма", look_colours: "Цвета", look_random: "Случайно", look_reset: "Как было",
+    look_save: "Сохранить внешность",
+    look_hint: "Ползунки из морфов модели: меняют её сразу, как редактор персонажа в игре, и остаются в GLB и FBX — их может двигать и твоя игра. «Сохранить» пересоберёт все уровни с этой внешностью.",
+    look_none: "У этой модели нет ползунков. Код kit объявляет их через mg.morph — попроси редактор персонажа словами на вкладке «Доработка».",
+    look_missing: "нет на этом уровне (бюджет файла)", look_baked: "Цвета запечённой текстуры поменяются при сохранении.",
     parts: "Части", parts_title: "Части модели", parts_split: "Разделить эту модель на части",
     parts_hint: "Нажми на часть в окне или в списке и тяни за ручки, перекрашивай, дублируй или удаляй. «Сохранить» пересоберёт все уровни с твоими правками; они остаются с моделью и повторяются при каждой пересборке.",
     parts_none: "Эта модель — один кусок. Раздели её, чтобы двигать, поворачивать, масштабировать, перекрашивать или удалять части по отдельности.",
@@ -533,7 +543,7 @@ async function show(item, tier) {
     $("still").src = fileUrl(item.name, item.preview); $("still").classList.remove("hidden");
   }
   if (!job) showHistory(item);
-  collectParts(); renderClips(item); renderTune(item); renderParts(); renderDock();
+  collectParts(); collectLook(); renderClips(item); renderTune(item); renderParts(); renderDock(); renderLook();
   const clips = item.clips?.length ? ` · ${t("clips")}: ${item.clips.join(", ")}` : "";
   const how = item.engine === "mesh" ? `${t("engine_opts").mesh}${item.provider ? " · " + item.provider : ""}` : t("engine_opts").kit;
   const text = `${item.description || item.name}${clips} · ${how} · ${item.attempts} ${plural(item.attempts, t("attempts_forms"))}, ${item.seconds ?? "?"} ${t("seconds")}`;
@@ -746,6 +756,8 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
     $("pane-code").classList.toggle("hidden", b.dataset.pane !== "code");
     $("pane-tune").classList.toggle("hidden", b.dataset.pane !== "tune");
     $("pane-parts").classList.toggle("hidden", b.dataset.pane !== "parts");
+    $("pane-look").classList.toggle("hidden", b.dataset.pane !== "look");
+    if (b.dataset.pane === "look") renderLook();
     if (b.dataset.pane === "parts") renderParts(); else viewer?.setGizmo(null);
   };
 });
@@ -928,6 +940,105 @@ const rebuildParts = (extra) => { if (!current) return; $("log").replaceChildren
 $("parts-save").onclick = () => rebuildParts({ parts: partEdits() });
 $("parts-clear").onclick = () => rebuildParts({ parts: {} });
 $("parts-split").onclick = () => rebuildParts({ split: true });
+
+// ---------------------------------------------------------------- appearance: the model's morph targets as sliders and
+// its palette as colours, both live in the view (like a game's character creator); saved as look.json and rebuilt
+let lookMeshes = [], lookValues = {}, lookColours = {}, paletteTex = new Map();
+function collectLook() {
+  lookMeshes = [];
+  viewer?.model?.traverse((o) => { if (o.isMesh && o.morphTargetDictionary) lookMeshes.push(o); });
+  lookValues = { ...(current?.look?.morphs || {}) };
+  lookColours = { ...(current?.look?.colours || {}) };
+  paletteTex = new Map();
+}
+const hasMorph = (name) => lookMeshes.some((m) => name in m.morphTargetDictionary);
+function setMorph(name, v) {
+  lookValues[name] = v;
+  for (const m of lookMeshes) {
+    const d = m.morphTargetDictionary;
+    if (name in d) m.morphTargetInfluences[d[name]] = Math.max(0, v);
+    if (name + "_neg" in d) m.morphTargetInfluences[d[name + "_neg"]] = Math.max(0, -v);
+  }
+}
+function paintPalette() {
+  // kit models colour through one palette texture (a grid of cells): repaint the cells in a copy of it, live
+  const grid = current?.palette_grid, cells = (current?.palette || []).filter((c) => lookColours[c.name]);
+  if (!grid || !viewer?.model) return;
+  viewer.model.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
+      const src = mat?.userData.mgPalette || mat?.map;
+      if (!src?.image) continue;
+      mat.userData.mgPalette = src;
+      let tex = paletteTex.get(src.uuid);
+      if (!tex) {
+        const c = document.createElement("canvas"); c.width = src.image.width; c.height = src.image.height;
+        tex = new viewer.THREE.CanvasTexture(c);
+        Object.assign(tex, { flipY: src.flipY, colorSpace: src.colorSpace, wrapS: src.wrapS, wrapT: src.wrapT,
+          magFilter: src.magFilter, minFilter: src.minFilter, generateMipmaps: src.generateMipmaps, channel: src.channel });
+        paletteTex.set(src.uuid, tex);
+      }
+      const c = tex.image, g = c.getContext("2d"), px = c.width / grid;
+      g.drawImage(src.image, 0, 0);
+      for (const cell of cells) {   // Blender counts palette rows from the bottom, the image from the top
+        g.fillStyle = lookColours[cell.name];
+        g.fillRect((cell.index % grid) * px, (grid - 1 - Math.floor(cell.index / grid)) * px, px, px);
+      }
+      tex.needsUpdate = true;
+      if (mat.map !== tex) { mat.map = tex; mat.needsUpdate = true; }
+    }
+  });
+}
+function renderLook() {
+  const item = current;
+  const morphs = (item?.morphs || []);
+  $("look-hint").textContent = !item ? "" : morphs.length ? t("look_hint") : t("look_none");
+  $("look-morphs").replaceChildren(...morphs.map((m) => {
+    const row = document.createElement("label"); row.className = "param";
+    const lo = m.two_sided === false ? 0 : -1, on = hasMorph(m.name);
+    row.innerHTML = `<span></span><output></output><input type="range" min="${lo}" max="1" step="0.01">`;
+    row.querySelector("span").textContent = m.label || m.name;
+    const r = row.querySelector("input"), o = row.querySelector("output");
+    r.value = lookValues[m.name] ?? 0; r.disabled = !on;
+    o.textContent = on ? (+r.value).toFixed(2) : t("look_missing");
+    r.oninput = () => { setMorph(m.name, +r.value); o.textContent = (+r.value).toFixed(2); };
+    if (on) setMorph(m.name, +r.value);
+    return row;
+  }));
+  const baked = item && !item.palette_grid;
+  $("look-colours").replaceChildren(...(item?.palette || []).map((c) => {
+    const row = document.createElement("label"); row.className = "look-colour";
+    const inp = document.createElement("input"); inp.type = "color"; inp.value = lookColours[c.name] || c.hex;
+    const name = document.createElement("span"); name.textContent = c.name.replace(/_/g, " ");
+    inp.oninput = () => { lookColours[c.name] = inp.value; paintPalette(); };
+    row.append(inp, name);
+    return row;
+  }));
+  if (baked && item.palette?.length) { const n = document.createElement("small"); n.className = "hint"; n.textContent = t("look_baked"); $("look-colours").append(n); }
+  paintPalette();
+  const can = !!item?.rebuildable && item.engine !== "mesh" && !job;
+  $("look-save").disabled = !can || (!morphs.length && !item?.palette?.length);
+  $("look-random").disabled = !morphs.length;
+  $("look-reset").disabled = !item;
+}
+$("look-random").onclick = () => {
+  for (const m of current?.morphs || []) if (hasMorph(m.name)) lookValues[m.name] = +((Math.random() * 2 - 1) * (m.two_sided === false ? 0.5 : 0.8) + (m.two_sided === false ? 0.5 : 0)).toFixed(2);
+  renderLook();
+};
+$("look-reset").onclick = () => {
+  for (const m of current?.morphs || []) lookValues[m.name] = 0;
+  lookColours = {};
+  viewer?.model?.traverse((o) => { if (o.isMesh) for (const mat of Array.isArray(o.material) ? o.material : [o.material]) if (mat?.userData.mgPalette) { mat.map = mat.userData.mgPalette; mat.needsUpdate = true; } });
+  paletteTex = new Map();
+  renderLook();
+};
+$("look-save").onclick = () => {
+  if (!current) return;
+  const morphs = Object.fromEntries(Object.entries(lookValues).filter(([, v]) => Math.abs(v) > 1e-3));
+  const colours = { ...lookColours };   // every colour set here (the palette already shows the ones saved before)
+  $("log").replaceChildren();
+  refine({ look: { morphs, colours } }).then(() => document.querySelector('[data-pane="look"]').click());
+};
 
 // ---------------------------------------------------------------- send to an engine project or Blender
 let sendTool = null;

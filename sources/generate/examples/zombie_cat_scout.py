@@ -155,6 +155,8 @@ def build(mg):
             for dz in (0.0, 0.05):   # notches bitten out of the torn ear
                 mg.cut(ear, mg.part("cube", grey, loc=(0.29, 0.0, htop + 0.04 + dz), scale=(0.05, 0.12, 0.025), rot=(0, 0.6, 0)))
         parts += [ear, inner]
+        if sx > 0:
+            ear_r = [ear, inner]
     # eyes: a glowing lime one with a slit pupil (the cat's right) and a dead milky one, both in dark square sockets
     for sx in (-1, 1):
         parts.append(mg.patch(head, dark, at=(sx * 0.105, face, hz - 0.01), size=(0.125, 0.11), thickness=0.003))
@@ -197,5 +199,17 @@ def build(mg):
         mg.paint(tail, cream, above=z0, below=z1)
     mg.paint(tail, cream, at=pts[-1], radius=0.05)
     parts.append(tail)
+
+    # ---- the character creator: sliders kept in the file as morph targets (Studio moves them live, a game can too)
+    neck = 0.52
+    mg.morph("head_size", "Head size", at=(0, -0.01, hz - 0.12), scale=1.15, above=neck, blend=0.05)
+    mg.morph("head_width", "Head width", at=(0, -0.01, hz), scale=(1.2, 1.0, 1.0), above=neck, blend=0.05)
+    mg.morph("ear_size", "Ear size", at=(0.17, 0.0, htop - 0.02), radius=0.3, scale=1.35, pieces=ear_r, mirror=True)
+    mg.morph("eye_size", "Eye size", at=(0.105, face + 0.02, hz - 0.01), radius=0.1, scale=1.3, mirror=True)
+    mg.morph("muzzle", "Muzzle", at=(0, face, hz - 0.1), radius=0.12, scale=(1.2, 1.4, 1.15))
+    mg.morph("belly", "Belly", at=(0, -0.02, 0.33), radius=0.24, inflate=0.035, below=neck - 0.03)
+    mg.morph("leg_length", "Leg length", at=(0, 0, 0), stretch=(0.06, 0.2, 0.07))
+    mg.morph("tail_length", "Tail length", at=(0, 0.1, 0.2), radius=0.45, scale=1.3,
+             pieces=[tail])
 
     mg.join("zombie_cat_scout", parts)

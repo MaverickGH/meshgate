@@ -34,6 +34,10 @@ example: zombie_cats/stylized/zombie_cat.py
 - Check every side against its own view: in the BACK view the character's right is on the image's right, so a tail
   that swings to one side must swing the same way in the back and the 3/4 back views; the arms' A-pose angle is
   measured in the front view (about 45° down is common), not guessed.
+- Give a character a character creator, as games do: 4–10 `mg.morph` sliders at the end of build, the most wanted
+  first — head size and width (`above=` the neck), ear size (`pieces=` the ear, `mirror=True`), eye size, muzzle,
+  belly (`inflate=`), leg length (`stretch=(ankle z, hip z, metres)`), tail length. Scale round the point a part grows
+  from (an ear's base, the hip), so it stays attached.
 - Proportions first, detail later: for a cartoon or chibi look the head is 30–40 % of the height; for a real animal
   measure against the real one (a house cat: body 0.45 m, shoulder 0.25 m, head 0.1 m).
 - A pose sells the character, but model the arms relaxed at the sides: the clips move them (a zombie walk holds them

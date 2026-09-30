@@ -545,6 +545,8 @@ def run_in_blender(blender: str, code_path: Path, *, name: str, out_dir: Path, t
         cmd.append("--split")
         if (out_dir / "edits.json").is_file():   # hand changes to the parts, kept next to the model
             cmd += ["--edits", str(out_dir / "edits.json")]
+    if (out_dir / "look.json").is_file():   # the look chosen in Studio: morph values and colours
+        cmd += ["--look", str(out_dir / "look.json")]
     if preview:
         cmd.append("--preview")
     return run_blender(cmd, timeout=timeout, on_line=on_line)

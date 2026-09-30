@@ -269,6 +269,7 @@ class Studio:
         if not kit and (change or params or version or not raw or not raw.is_file()):
             raise ValueError("only models built from kit code can be tuned — a mesh can be split and its parts edited")
         edits = parse_part_edits(req["parts"]) if "parts" in req else None
+        look = parse_look(req["look"]) if "look" in req else None
         # new output settings from the toolbar under the model (remesh, texture): over what the model was built with
         st = req.get("settings") if isinstance(req.get("settings"), dict) else {}
         if st:
@@ -303,15 +304,21 @@ class Studio:
         n = max([int(d.name) for d in versions.iterdir() if d.is_dir() and d.name.isdigit()] or [0]) + 1
         snap = versions / f"{n:03d}"
         snap.mkdir()
-        for f in (g.get("code"), "gen.json", "edits.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
+        for f in (g.get("code"), "gen.json", "edits.json", "look.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
             if f and (item / f).is_file():
                 shutil.copyfile(item / f, snap / f)
-        if version:   # the parts as they were edited then
-            old = item / "versions" / version / "edits.json"
-            if old.is_file():
-                shutil.copyfile(old, item / "edits.json")
+        if version:   # the parts as they were edited then, and the look chosen then
+            for f in ("edits.json", "look.json"):
+                old = item / "versions" / version / f
+                if old.is_file():
+                    shutil.copyfile(old, item / f)
+                else:
+                    (item / f).unlink(missing_ok=True)
+        if look is not None:   # the Appearance tab's sliders and colours, applied on every rebuild
+            if look.get("morphs") or look.get("colours"):
+                (item / "look.json").write_text(json.dumps(look, indent=1), encoding="utf-8")
             else:
-                (item / "edits.json").unlink(missing_ok=True)
+                (item / "look.json").unlink(missing_ok=True)
         if edits is not None:
             if edits:
                 (item / "edits.json").write_text(json.dumps(edits, indent=1), encoding="utf-8")
@@ -395,8 +402,10 @@ class Studio:
                                        "pbr": bool(g.get("pbr")), "colors": g.get("colors") or "texture",
                                        "tris": max((g.get("caps") or {}).values(), default=None)},
                           "files": sorted(f.name for f in gen_json.parent.iterdir() if f.suffix in {".glb", ".fbx", ".blend"}),
+                          "morphs": rep.get("morphs") or [], "look": _read_json(gen_json.parent / "look.json"),
+                          "palette_grid": rep.get("palette_grid"),
                           "split": bool(g.get("split")), "part_edits": _read_json(gen_json.parent / "edits.json"),
-                          "palette": [{"name": k, "hex": "#" + "".join(f"{round(max(0, min(1, c)) * 255):02x}" for c in (v.get("rgb") or [0.5] * 3)[:3])}
+                          "palette": [{"name": k, "index": v.get("index", 0), "hex": "#" + "".join(f"{round(max(0, min(1, c)) * 255):02x}" for c in (v.get("rgb") or [0.5] * 3)[:3])}
                                       for k, v in sorted((rep.get("palette") or {}).items(), key=lambda kv: kv[1].get("index", 0))],
                           "rebuildable": bool(g.get("code") or g.get("raw")),
                           "code": g.get("code"), "clips": (rep.get("tiers") or {}).get(rep.get("canonical") or "", {}).get("clips", []),
@@ -660,6 +669,26 @@ def _part_change(nm: str, e: dict, copies: bool = True) -> dict:
             raise ValueError(f"{nm}: copies is a list of up to 50 placements")
         o["copies"] = [{k: v for k, v in _part_change(nm, x, copies=False).items() if k != "delete"} for x in cs]
     return o
+
+
+def parse_look(raw) -> dict:
+    """The look chosen in the Appearance tab, checked: {"morphs": {name: -1…1}, "colours": {palette name: "#rrggbb"}}."""
+    if not isinstance(raw, dict):
+        raise ValueError("the look is an object with morphs and colours")
+    morphs, colours = raw.get("morphs") or {}, raw.get("colours") or {}
+    if not isinstance(morphs, dict) or not isinstance(colours, dict) or len(morphs) > 64 or len(colours) > 64:
+        raise ValueError("the look has morphs and colours by name")
+    out = {"morphs": {}, "colours": {}}
+    for k, v in morphs.items():
+        if not re.fullmatch(r"[a-z0-9_]{1,40}", str(k)) or not isinstance(v, (int, float)) or not -1 <= v <= 1:
+            raise ValueError(f"morph {str(k)[:40]!r} is a value from -1 to 1")
+        if abs(v) > 1e-3:
+            out["morphs"][str(k)] = round(float(v), 3)
+    for k, v in colours.items():
+        if not re.fullmatch(r"[a-z0-9_]{1,40}", str(k)) or not re.fullmatch(r"#[0-9a-fA-F]{6}", str(v)):
+            raise ValueError(f"colour {str(k)[:40]!r} is #rrggbb")
+        out["colours"][str(k)] = str(v).lower()
+    return {k: v for k, v in out.items() if v}
 
 
 def parse_part_edits(raw) -> dict:

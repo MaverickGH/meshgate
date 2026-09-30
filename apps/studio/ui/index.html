@@ -215,6 +215,7 @@
       <button data-pane="code" data-i18n="code">Code</button>
       <button data-pane="tune" data-i18n="tune">Refine</button>
       <button data-pane="parts" data-i18n="parts">Parts</button>
+      <button data-pane="look" data-i18n="look">Appearance</button>
     </div>
     <div class="pane" id="pane-log"><ol id="log"></ol></div>
     <div class="pane hidden" id="pane-code"><pre id="code"></pre></div>
@@ -237,6 +238,24 @@
         <div class="tune-row"><select id="versions"></select><button type="button" class="ghost" id="restore" data-i18n="tune_restore">Restore</button></div>
       </div>
       <small class="hint" id="tune-hint"></small>
+    </div>
+    <div class="pane hidden" id="pane-look">
+      <div class="tune-block">
+        <strong data-i18n="look_shape">Shape</strong>
+        <small class="hint" id="look-hint"></small>
+        <div id="look-morphs"></div>
+      </div>
+      <div class="tune-block">
+        <strong data-i18n="look_colours">Colours</strong>
+        <div class="look-colours" id="look-colours"></div>
+      </div>
+      <div class="tune-row">
+        <button type="button" class="ghost" id="look-random" data-i18n="look_random">Random</button>
+        <button type="button" class="ghost" id="look-reset" data-i18n="look_reset">As built</button>
+      </div>
+      <div class="tune-row">
+        <button type="button" class="primary" id="look-save" data-i18n="look_save">Save the look</button>
+      </div>
     </div>
     <div class="pane hidden" id="pane-parts">
       <div class="tune-block">

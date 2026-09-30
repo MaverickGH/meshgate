@@ -26,6 +26,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 from . import compat
+from . import morphs as _morphs
 
 TIERS = ("mobile-low", "mobile-mid", "mobile-high", "pc")
 # Level of detail per quality tier: the budget is a target, not only a ceiling. seg = factor for round segment
@@ -400,7 +401,7 @@ class Kit:
                  max_influences: int = 4, params: dict | None = None, max_tris: int | None = None,
                  max_texture: int | None = None, max_texture_mb: float | None = None, pose: str = "none",
                  outline: bool = False, fit: list | None = None, colour_fit: dict | None = None, split: bool = False,
-                 edits: dict | None = None):
+                 edits: dict | None = None, look: dict | None = None, max_file_mb: float | None = None):
         if tier not in DETAILS:
             raise ModelError(f"unknown tier {tier}")
         if pose not in POSES:
@@ -410,6 +411,11 @@ class Kit:
         # (from, to, width ratio[, depth ratio]) bands measured on a reference
         self._fit = [tuple(float(x) for x in b) + ((1.0,) if len(b) == 3 else ()) for b in (fit or []) if len(b) in (3, 4)]
         self._colour_fit = {str(k): v for k, v in (colour_fit or {}).items()}   # colour name → rgb measured on a reference
+        # the look chosen in Studio's Appearance tab: morph values (-1…1) and colours over the code's and the fit's
+        self._look = dict(look or {})
+        self._colour_fit.update({str(k): _rgb(v) for k, v in (self._look.get("colours") or {}).items()})
+        self._morphs = []
+        self._max_file_mb = float(max_file_mb) if max_file_mb else None
         self._split = bool(split)   # every separate thing its own object (crates, planks, a lid) to move in an engine
         self._edits = dict(edits or {})   # hand changes to those parts (Studio's part editor), by part name
         self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
@@ -468,6 +474,39 @@ class Kit:
             self._params.append({"name": name, "label": label or name.replace("_", " "), "default": float(default),
                                  "min": lo, "max": hi, "step": float(step) if step else None, "value": value})
         return int(value) if step and float(step).is_integer() else value
+
+    def morph(self, name: str, label: str | None = None, *, at, radius: float | None = None, scale=1.0, move=(0, 0, 0),
+              inflate: float = 0.0, above: float | None = None, below: float | None = None, blend: float = 0.04,
+              pieces=None, mirror: bool = False, two_sided: bool = True, stretch=None) -> str:
+        """A slider on the finished model, the way a game's character creator has them — head width, ear size, eye
+        size, belly, leg length, muzzle — kept in the file as a morph target (a blend shape in Unity and Godot, a morph
+        target in Unreal): Studio moves it live, a game can move it at run time. At full strength every vertex in the
+        region moves to at + scale·(p − at) + move (scale a number or (x, y, z)), plus `inflate` metres away from `at`;
+        the region is a ball of `radius` round `at` (full strength inside half of it), cut by `above=` / `below=` heights
+        (softened over `blend`), and limited to the boxes of `pieces` (the ears, the head) when given. mirror=True does
+        the same on the other side (x → −x): both ears, both eyes. two_sided gives the slider a negative half too (the
+        opposite change): −1 … +1. Examples: `mg.morph("head_width", at=head_centre, radius=0.35, scale=(1.25, 1, 1),
+        pieces=[head])`, `mg.morph("ear_size", at=ear_base, radius=0.2, scale=1.35, pieces=[ear], mirror=True)`,
+        `mg.morph("leg_length", at=(0, 0, 0), stretch=(0.05, hip_z, 0.06))` — stretch=(from z, to z, metres): the part
+        between the two heights grows by that much and everything above rises with it (longer legs, a taller neck), the
+        feet stay on the ground. 4–10 sliders make a character creator. A rigged character's bones do not follow: keep
+        its morphs to shapes (a head, ears, a belly) rather than long limbs. Call it after the pieces are made."""
+        name = self._ascii(str(name))
+        if any(m["name"] == name for m in self._morphs):
+            raise ModelError(f"morph '{name}' is declared twice")
+        boxes = []
+        for p in pieces or []:
+            lo, hi = self._box(p)
+            boxes.append([list(lo), list(hi)])
+        s = [float(scale)] * 3 if isinstance(scale, (int, float)) else [float(c) for c in scale][:3]
+        value = max(-1.0, min(1.0, float((self._look.get("morphs") or {}).get(name, 0.0))))
+        self._morphs.append({"name": name, "label": label or name.replace("_", " "), "at": [float(c) for c in at],
+                             "radius": float(radius) if radius else None, "scale": s, "move": [float(c) for c in move],
+                             "inflate": float(inflate), "above": above, "below": below, "blend": float(blend),
+                             "boxes": boxes, "margin": max(0.02, (float(radius) if radius else 0.1) * 0.3),
+                             "mirror": bool(mirror), "two_sided": bool(two_sided),
+                             "stretch": [float(c) for c in stretch] if stretch else None, "value": value if two_sided else max(0.0, value)})
+        return name
 
     def focus(self, at, radius: float, strength: float = 1.0) -> None:
         """Spend more polygons where they show: a face, hands, a silhouette edge a player looks at. Faces within `radius`
@@ -3249,6 +3288,26 @@ class Kit:
             else:
                 root.location += shift
         bpy.context.view_layer.update()
+        if self._morphs:   # last: after every change of the triangles, in the finished model's own space
+            specs = []
+            for m in self._morphs:
+                m = dict(m, at=[a + b for a, b in zip(m["at"], shift)],
+                         boxes=[[[a + b for a, b in zip(lo, shift)], [a + b for a, b in zip(hi, shift)]] for lo, hi in m["boxes"]])
+                for k in ("above", "below"):
+                    if m[k] is not None:
+                        m[k] = float(m[k]) + shift.z
+                if m.get("stretch"):
+                    m["stretch"] = [m["stretch"][0] + shift.z, m["stretch"][1] + shift.z, m["stretch"][2]]
+                specs.append(m)
+            # within the tier's file budget: a share of it for the sliders, the first declared first
+            spend = {"left": (self._max_file_mb or 25) * 2 ** 20 * 0.4, "sparse": bpy.app.version >= (3, 6, 0),
+                     "dropped": set()}
+            targets = [o for o in bpy.context.scene.objects if o.type == "MESH" and not o.get("meshgate_collision_for")]
+            keys = sum(_morphs.apply(o, [m], spend) for m in specs for o in targets)
+            kept = [m["name"] for m in specs if m["name"] not in spend["dropped"]]
+            notes.append(f"morphs: {len(kept)} slider{'s' if len(kept) != 1 else ''} ({', '.join(kept)}) as {keys} shape keys"
+                         + (f"; left out on this tier for its file budget: {', '.join(sorted(spend['dropped']))}"
+                            if spend["dropped"] else ""))
         return notes
 
     def _apply_tiles(self) -> list[str]:

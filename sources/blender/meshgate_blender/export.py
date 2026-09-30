@@ -95,6 +95,8 @@ def _gltf(path: str, *, selection: bool, animations: bool, draco: bool, draco_le
         export_animations=animations, export_nla_strips=True, export_optimize_animation_size=True,
         export_merge_animation="NLA_TRACK",   # 4.x+/5.x: one clip per NLA track name across objects (older: implied)
         export_texcoords=True, export_normals=True, export_skins=True, export_morph=True, export_extras=True,
+        # morphs (character-creator sliders) touch a region each: sparse, without normals, they cost kilobytes
+        export_morph_normal=False, export_try_sparse_sk=True, export_try_omit_sparse_sk=True,
         use_selection=selection, use_renderable=True, use_visible=False,
         export_draco_mesh_compression_enable=draco, export_draco_mesh_compression_level=draco_level,
         export_influence_nb=influences,

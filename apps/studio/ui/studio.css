@@ -254,3 +254,8 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 .dock-pop .pop-note { margin: 0; color: var(--muted); font-size: 11.5px; text-align: center; }
 @media (max-width: 560px) { .dock-btn span { display: none; } .dock-btn { padding: 0 10px; } }
 .dock-pop .pop-warn { margin: 0; padding: 9px 11px; border: 1px solid #6b5230; border-radius: 9px; background: #2e271d; color: #e7b77a; font-size: 11.5px; }
+.look-colours { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.look-colour { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #c9cbce; min-width: 0; }
+.look-colour span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-colour input[type=color] { flex: none; width: 26px; height: 22px; padding: 0; border: 1px solid #45474c; border-radius: 4px; background: none; cursor: pointer; }
+.param input[type=range]:disabled { opacity: .35; }

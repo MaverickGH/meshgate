@@ -174,6 +174,24 @@ def main():
     bpy.ops.meshgate.make_lods()
     step("collision proxy and LODs created", bpy.data.objects.get("COL_korobka_test") is not None and bpy.data.objects.get("korobka_test_LOD2") is not None)
 
+    # character-creator sliders (morph targets) survive the LOD button: each LOD gets the same morphs back
+    morphs = sys.modules[mod.__name__ + ".morphs"]
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.3, location=(3, 0, 0.3))
+    ball = bpy.context.active_object
+    ball.name = "morph_ball"
+    morphs.apply(ball, [{"name": "bulge", "at": [3, 0, 0.3], "radius": 0.5, "scale": [1.3, 1.3, 1.3]}])
+    for o in bpy.context.view_layer.objects:
+        o.select_set(o == ball)
+    bpy.context.view_layer.objects.active = ball
+    bpy.ops.meshgate.make_lods()
+    lod = bpy.data.objects.get("morph_ball_LOD1")
+    keys = [k.name for k in lod.data.shape_keys.key_blocks] if lod and lod.data.shape_keys else []
+    step("LODs keep the morph targets", keys == ["Basis", "bulge", "bulge_neg"] and len(lod.data.polygons) < len(ball.data.polygons),
+         f"{keys}, {len(lod.data.polygons) if lod else 0} vs {len(ball.data.polygons)} faces")
+    for o in (ball, lod, bpy.data.objects.get("morph_ball_LOD2")):
+        if o:
+            bpy.data.objects.remove(o, do_unlink=True)
+
     s.target_web = s.target_unity = s.target_godot = s.target_unreal = True
     s.fbx = True; s.web_draco = True
     s.out_dir = OUT + os.sep; s.asset_name = "fixture"

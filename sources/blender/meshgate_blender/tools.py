@@ -76,10 +76,15 @@ def make_lods(context, targets, ratios=(0.5, 0.25)) -> list[bpy.types.Object]:
                 coll.objects.link(lod)
             lod.parent = src.parent
             lod.matrix_world = src.matrix_world.copy()
+            if lod.data.shape_keys:   # a decimation cannot apply over shape keys: the morphs come back after it
+                lod.shape_key_clear()
             dec = lod.modifiers.new("meshgate_lod", "DECIMATE")
             dec.ratio = ratio
             with context.temp_override(object=lod, active_object=lod, selected_objects=[lod]) if hasattr(context, "temp_override") else _legacy_override(context, lod):
                 bpy.ops.object.modifier_apply(modifier=dec.name)
+            if lod.get("meshgate_morphs"):   # spatial morphs fit the lighter copy as they fit the tier
+                from . import morphs
+                morphs.reapply(lod)
             lod["meshgate_lod_of"] = src.name
             lod["meshgate_lod_level"] = level
             lod.hide_render = True

@@ -1111,15 +1111,24 @@ def _check_quad_parts(exe: str, work: Path) -> bool:
 
 def _check_faceted_patches(exe: str, work: Path) -> bool:
     """The low-poly finish melts markings into what they lie on; a big patch over other patches on a curved head (the
-    scout's cream eye patch) once made that boolean fail and lose the whole head. The cat must keep its height."""
+    scout's cream eye patch) once made that boolean fail and lose the whole head. The cat must keep its height — and
+    its character-creator sliders (mg.morph) as morph targets in the GLB."""
     out = work / "faceted_patches"
     r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
                         str(ROOT / "sources" / "generate" / "examples" / "zombie_cat_scout.py"), "--name", "scout",
-                        "--style", "lowpoly", "--size", "1", "--tiers", "pc", "--blender", exe, "--no-preview",
-                        "--out-dir", str(out)], capture_output=True, text=True)
+                        "--style", "lowpoly", "--size", "1", "--tiers", "pc", "--targets", "web,unity", "--blender", exe,
+                        "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
     try:
-        dims = json.load(open(out / "gen.json"))["report"]["tiers"]["pc"]["dims_m"]
-        good, why = max(dims) > 0.95, dims   # the height is its largest size (a lost head leaves ~0.6 m)
+        g = json.load(open(out / "gen.json"))
+        dims = g["report"]["tiers"]["pc"]["dims_m"]
+        good, why = g["ok"] and max(dims) > 0.95, dims   # the height is its largest size (a lost head leaves ~0.6 m)
+        # its character-creator sliders: morph targets in the GLB, both halves, at rest (LODs: tests/blender/test_addon.py)
+        blob = (out / "scout.glb").read_bytes()
+        meshes = json.loads(blob[20:20 + int.from_bytes(blob[12:16], "little")])["meshes"]
+        names = {n for m in meshes for n in (m.get("extras") or {}).get("targetNames") or []}
+        if not {"head_size", "head_size_neg", "ear_size", "leg_length"} <= names or \
+                any(w for m in meshes for w in m.get("weights") or []):
+            good, why = False, ["morphs:", sorted(names), (r.stdout + r.stderr)[-300:]]
     except Exception as exc:  # noqa: BLE001
         good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
     if not good:

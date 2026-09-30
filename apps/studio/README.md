@@ -78,7 +78,11 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
     UV grid on the model, or unwrap and bake again), **Parts**, the plug to send it to an engine, and **Download**
     (every GLB, the FBX and the .blend). Each change rebuilds every tier and keeps the previous state as a version.
     The notes on the settings live in the ⓘ next to their names.
-11. **Send to…** Unity, Godot, Unreal or Blender (the plug in the dock): the files go into your project —
+11. **Appearance** — the character creator: every `mg.morph` slider of the model (head size, ears, eyes, belly, leg
+    length…) and every palette colour change the model in the view at once, as in a game; **Random** rolls a new
+    face, **As built** goes back. **Save the look** rebuilds every tier with it (`look.json` next to the model); the
+    sliders stay in the GLB and FBX as morph targets, so your game can move them too.
+12. **Send to…** Unity, Godot, Unreal or Blender (the plug in the dock): the files go into your project —
     `Assets/MeshGate/<model>/` (the GLB of every tier and the FBX), `res://meshgate/<model>/`, or
     `Content/MeshGate/<model>/` (the FBX) — and are replaced in place the next time, so the engine re-imports them.
     Blender opens the model's `.blend`. The project folder is asked once and remembered (`~/.meshgate/bridge.json`).

@@ -152,6 +152,25 @@ caps = jb.cmd[jb.cmd.index("--tris") + 1] if "--tris" in jb.cmd else ""
 step("remesh from the dock rebuilds a mesh from its source with the target on every tier (capped by its budget) and quads",
      "--mesh" in jb.cmd and "mobile-low=8000" in caps and "pc=10000" in caps and jb.cmd[jb.cmd.index("--topology") + 1] == "quad"
      and jb.cmd[jb.cmd.index("--texture") + 1] == "2k" and "--pbr" in jb.cmd and wild)
+# the Appearance tab: a look is checked, saved as look.json and rebuilt with
+try:
+    server.parse_look({"morphs": {"head_size": 3}})
+    wild_look = False
+except ValueError:
+    wild_look = True
+kitem = lib / "kit_cat"
+kitem.mkdir(exist_ok=True)
+(kitem / "cat.py").write_text("def build(mg):\n    pass\n")
+(kitem / "gen.json").write_text(json.dumps({"name": "kit_cat", "engine": "kit", "code": "cat.py", "tiers": ["pc"], "report": {}}))
+_Job = server.Job
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+try:
+    studio.refine({"name": "kit_cat", "look": {"morphs": {"ear_size": 0.5, "belly": 0}, "colours": {"fur_grey": "#C28A4A"}}})
+finally:
+    server.Job = _Job
+saved = json.loads((kitem / "look.json").read_text())
+step("a look is checked and saved next to the model (no-op sliders dropped, colours lower-case)",
+     wild_look and saved == {"morphs": {"ear_size": 0.5}, "colours": {"fur_grey": "#c28a4a"}})
 # send to an engine: the files land in the project, a folder that is not a project is refused
 item = lib / "crate_pile"
 item.mkdir(exist_ok=True)
