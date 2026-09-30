@@ -543,6 +543,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_shapes(exe, work)
     ok &= _check_outline(exe, work)
     ok &= _check_split(exe, work)
+    ok &= _check_quad_parts(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -1050,8 +1051,25 @@ def _check_split(exe: str, work: Path) -> bool:
         names = sorted(nodes[i]["name"] for i in roots[0]["children"]) if roots else []
         good = g["ok"] and len(roots) == 1 and all(any(c in x for x in names) for c in ("wood", "dark_wood", "red"))
         why = names or [x.get("name") for x in nodes]
+        # the same part has the same name on every tier (hand edits go by name): the stylized barricade, PC vs phone
+        bout = work / "split_tiers"
+        subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
+                        str(ROOT / "sources" / "generate" / "examples" / "zombie_cats" / "stylized" / "cardboard_barricade.py"),
+                        "--name", "zcb", "--tiers", "pc,mobile-low", "--split", "--blender", exe, "--no-preview",
+                        "--out-dir", str(bout)], capture_output=True, text=True)
+
+        def places(f):
+            blob_ = f.read_bytes()
+            ns = json.loads(blob_[20:20 + int.from_bytes(blob_[12:16], "little")])["nodes"]
+            return {x["name"]: x.get("translation", [0, 0, 0]) for x in ns if "mesh" in x}
+        hi, lo = places(bout / "zcb.glb"), places(bout / "zcb.mobile-low.glb")
+        if len(hi) < 5 or set(hi) != set(lo) or any(max(abs(a_ - b_) for a_, b_ in zip(hi[k], lo[k])) > 0.05 for k in hi):
+            good, why = False, ["part names differ between tiers:", hi, lo]
         # a model of your own: the same, on the imported mesh (the cardboard barricade is seven pieces)
         mout = work / "split_mesh"
+        mout.mkdir(parents=True, exist_ok=True)   # hand edits: a box repainted, a knob copied at 1.5× (scale goes into the mesh)
+        (mout / "edits.json").write_text(json.dumps({"tan_2": {"colour": "#3f6fb8"},
+                                                     "tan_6": {"copies": [{"move": [0.9, 0, 0], "scale": 1.5}]}}))
         r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--mesh",
                             str(ROOT / "samples" / "packs" / "zombie_cats" / "zc_cardboard_barricade.glb"), "--name", "barricade",
                             "--tiers", "mobile-low", "--split", "--blender", exe, "--no-preview", "--out-dir", str(mout)],
@@ -1060,12 +1078,33 @@ def _check_split(exe: str, work: Path) -> bool:
         blob = (mout / g["report"]["tiers"]["mobile-low"]["file"]).read_bytes()
         mnodes = json.loads(blob[20:20 + int.from_bytes(blob[12:16], "little")])["nodes"]
         root = [x for x in mnodes if x.get("name") == "barricade"]
-        if not (g["ok"] and root and len(root[0].get("children", [])) >= 3):
-            good, why = False, ["imported mesh:", *[x.get("name") for x in mnodes]]
+        names_m = [x.get("name") for x in mnodes]
+        if not (g["ok"] and root and len(root[0].get("children", [])) >= 3 and "tan_6_copy1" in names_m and "tan_2" in names_m):
+            good, why = False, ["imported mesh:", *names_m, *(g.get("problems") or [])]
     except Exception as exc:  # noqa: BLE001
         good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
     if not good:
         print(f"  ✗ split into parts: {why}")
+    return good
+
+
+def _check_quad_parts(exe: str, work: Path) -> bool:
+    """Quads at a low target on a mesh of separate pieces (the cardboard barricade at 3K): every piece is remeshed on its
+    own, so the model keeps its size (a torn-off lid would make it taller) and the triangle target."""
+    out = work / "quad_parts"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--mesh",
+                        str(ROOT / "samples" / "packs" / "zombie_cats" / "zc_cardboard_barricade.glb"), "--name", "quad_parts",
+                        "--tiers", "pc", "--tris", "3000", "--topology", "quad", "--blender", exe, "--no-preview",
+                        "--out-dir", str(out)], capture_output=True, text=True)
+    try:
+        t = json.load(open(out / "gen.json"))["report"]["tiers"]["pc"]
+        dims = t["dims_m"]
+        good = t["tris"] <= 3150 and all(abs(a_ - b_) <= .03 * b_ for a_, b_ in zip(dims, (1.81, 1.33, 0.66)))   # glTF axes: width, height, depth
+        why = [t["tris"], dims]
+    except Exception as exc:  # noqa: BLE001
+        good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ quads per piece: {why}")
     return good
 
 

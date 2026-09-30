@@ -192,11 +192,39 @@ POSES = ("none", "a", "t")
 ARM_DROP = {"a": 45.0, "t": 0.0}   # degrees below horizontal
 
 
-def split_parts(obj, name_of_cell=None) -> list:
+def colour_word(rgb) -> str:
+    """A plain name for an sRGB colour (0…1), to name the parts of a model by what they look like: brown, green, grey…"""
+    import colorsys
+    r, g, b = (min(1.0, max(0.0, float(c))) for c in rgb[:3])
+    h, l_, s_ = colorsys.rgb_to_hls(r, g, b)
+    h *= 360
+    if l_ < .1:
+        return "black"
+    if s_ < .15 or l_ > .92:
+        return "white" if l_ > .8 else "grey" if l_ > .25 else "dark_grey"
+    if h < 15 or h >= 345:
+        return "red" if l_ > .3 else "dark_red"
+    if h < 45:
+        return "brown" if l_ < .45 else "orange" if s_ > .5 else "tan"
+    if h < 70:
+        return "olive" if l_ < .35 else "yellow"
+    if h < 160:
+        return "green" if l_ > .25 else "dark_green"
+    if h < 200:
+        return "teal"
+    if h < 255:
+        return "blue"
+    if h < 290:
+        return "purple"
+    return "pink" if l_ > .5 else "plum"
+
+
+def split_parts(obj, name_of_cell=None, name_of=None) -> list:
     """Cut a mesh into the separate things it is made of, the way a level artist wants them to move them one by one:
     its loose pieces, each small piece that sits on or in a bigger one kept with it (the tape and the flaps of a box, a
     label, a handle), the big ones apart even where they touch (a box on a box). Each part is named by its main palette
-    colour (name_of_cell(palette cell) → name, else the mesh's own name), numbered, with its origin at the middle of its
+    colour (name_of_cell(palette cell) → name, else name_of(part mesh) → name, else the mesh's own name), numbered by place (bottom row first, then left
+    to right — the same numbers on every tier, so hand edits find the same part), with its origin at the middle of its
     base, under the original's parent. Returns the new objects ([] = it stays one piece; the caller removes the
     original when there are parts)."""
     import bmesh
@@ -253,7 +281,13 @@ def split_parts(obj, name_of_cell=None) -> list:
     uv = me.uv_layers.active.data if me.uv_layers else None
     counts: dict = {}
     parts = []
-    for vs in sorted(groups.values(), key=lambda v: -len(v)):
+    def place(vs):   # bottom row first, then left to right, front to back: the same numbers on every tier
+        pts = [mw @ me.vertices[i].co for i in vs]
+        lo_z = min(p.z for p in pts)   # rows 10 cm apart; within a row by the middle of the box (not of the vertices,
+        cx = (min(p.x for p in pts) + max(p.x for p in pts)) / 2   # which a lighter tier has fewer of)
+        cy = (min(p.y for p in pts) + max(p.y for p in pts)) / 2
+        return (round(lo_z / 0.1), round(cx, 2), round(cy, 2))
+    for vs in sorted(groups.values(), key=place):
         keep = set(vs)
         bm = bmesh.new()
         bm.from_mesh(me)
@@ -273,6 +307,8 @@ def split_parts(obj, name_of_cell=None) -> list:
                 tally[cell] = tally.get(cell, 0) + p.area
             if tally:
                 label = name_of_cell(max(tally, key=tally.get))
+        if label is None and name_of is not None:   # e.g. by the colour baked into its texture
+            label = name_of(part_me)
         label = label or obj.name
         counts[label] = counts.get(label, 0) + 1
         part = bpy.data.objects.new(f"{label}_{counts[label]}", part_me)
@@ -296,35 +332,61 @@ def split_parts(obj, name_of_cell=None) -> list:
 def apply_edits(parts: list, edits: dict, recolour=None) -> list:
     """Changes made to the parts of a split model by hand (Studio's part editor), applied by part name before export:
     {"crate_2": {"move": [x, y, z] metres, "turn": degrees round the vertical, "scale": factor, "delete": true,
-    "colour": palette name}}. Turning and scaling happen round the part's origin (the middle of its base), so a crate
-    turns where it stands. recolour(part, colour) repaints a part (kit models); returns notes for the report."""
+    "colour": palette name or "#rrggbb", "copies": [{"move", "turn", "scale", "colour"}, …]}}. Turning and scaling happen
+    round the part's origin (the middle of its base), so a crate turns where it stands. Copies are placed from the part
+    as it was built and named <part>_copy1, _copy2…; they share its mesh unless repainted. recolour(part, colour)
+    repaints a part; returns notes for the report."""
     import math as _m
     by_name = {p.name: p for p in parts}
-    moved, gone, missing = 0, 0, []
+    moved, gone, copied, missing = 0, 0, 0, []
+
+    def place(o, mw, e):
+        """Moved and turned round its origin; a scale goes into the mesh itself (engines want scale 1), which then
+        becomes the part's own."""
+        at = mw.translation.copy()
+        k = min(20.0, max(0.05, float(e.get("scale") or 1.0)))
+        turn = _m.radians(float(e.get("turn") or 0.0))
+        move = Vector([float(x) for x in (e.get("move") or (0, 0, 0))][:3])
+        o.matrix_world = Matrix.Translation(at + move) @ Matrix.Rotation(turn, 4, "Z") @ Matrix.Translation(-at) @ mw
+        if abs(k - 1) > 1e-4:
+            if o.data.users > 1:
+                o.data = o.data.copy()
+            o.data.transform(Matrix.Scale(k, 4))
+            o.data.update()
     for nm, e in (edits or {}).items():
         o = by_name.get(nm)
         if o is None or not isinstance(e, dict):
             missing.append(nm)
             continue
+        mw = o.matrix_world.copy()
+        for i, c in enumerate(e.get("copies") or []):   # from the part as built, before its own changes
+            if not isinstance(c, dict):
+                continue
+            dup = o.copy()
+            if c.get("colour"):
+                dup.data = o.data.copy()
+            for col in o.users_collection:
+                col.objects.link(dup)
+            dup.name = f"{nm}_copy{i + 1}"
+            place(dup, mw, c)
+            if c.get("colour") and recolour:
+                recolour(dup, str(c["colour"]))
+            parts.append(dup)
+            copied += 1
         if e.get("delete"):
             bpy.data.objects.remove(o, do_unlink=True)
             parts.remove(o)
             gone += 1
             continue
-        mw = o.matrix_world.copy()
-        at = mw.translation.copy()
-        k = float(e.get("scale") or 1.0)
-        k = min(20.0, max(0.05, k))
-        turn = _m.radians(float(e.get("turn") or 0.0))
-        move = Vector([float(x) for x in (e.get("move") or (0, 0, 0))][:3])
-        o.matrix_world = (Matrix.Translation(at + move) @ Matrix.Rotation(turn, 4, "Z") @ Matrix.Scale(k, 4)
-                          @ Matrix.Translation(-at) @ mw)
+        place(o, mw, e)
         if e.get("colour") and recolour:
+            if any(p is not o and p.data is o.data for p in parts):   # a shared mesh: repaint this one only
+                o.data = o.data.copy()
             recolour(o, str(e["colour"]))
         moved += 1
     notes = []
-    if moved or gone:
-        notes.append(f"part edits: {moved} changed, {gone} removed")
+    if moved or gone or copied:
+        notes.append(f"part edits: {moved} changed, {gone} removed" + (f", {copied} copies" if copied else ""))
     if missing:
         notes.append(f"part edits for parts this tier does not have: {', '.join(sorted(missing)[:8])}")
     return notes

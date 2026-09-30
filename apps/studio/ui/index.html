@@ -166,7 +166,7 @@
           <div class="pop-field"><span data-i18n="topology">Topology</span>
             <small data-i18n="dock_topo_hint">Quads: a neural or your own mesh is remeshed into clean quads, and FBX and .blend keep them. Triangles are what engines draw — GLB is always triangles.</small>
             <div class="seg two" id="remesh-topo"></div></div>
-          <p class="pop-warn hidden" id="remesh-warn" data-i18n="dock_quad_warn">Quads below about 8K triangles can tear thin parts (flaps, ears, leaves) — pick more triangles, or Triangles, which reduce more gently.</p>
+          <p class="pop-warn hidden" id="remesh-warn" data-i18n="dock_quad_warn">Below about 8K triangles thin or open pieces (flaps, open boxes, leaves) cannot keep clean quads: they stay as triangles paired into quads, so the quad share drops. Each separate piece is remeshed on its own, so nothing tears.</p>
           <p class="pop-note" id="remesh-note"></p>
           <button type="button" class="primary" id="remesh-go"><svg viewBox="0 0 20 20"><path d="M10 2 17 6v8l-7 4-7-4V6z"/><path d="M3 6l7 4 7-4M10 10v8"/></svg><span data-i18n="dock_remesh">Remesh</span></button>
         </div>
@@ -244,6 +244,7 @@
         <small class="hint" id="parts-hint"></small>
         <button type="button" class="ghost hidden" id="parts-split" data-i18n="parts_split">Split this model into parts</button>
         <div class="parts-list" id="parts-list"></div>
+        <small class="hint hidden" id="parts-keys" data-i18n="parts_keys">W move · E turn · R scale · ⌘/Ctrl+D duplicate · Delete remove · ⌘/Ctrl+Z undo</small>
       </div>
       <div class="tune-block hidden" id="part-tools">
         <strong id="part-name"></strong>
@@ -254,11 +255,15 @@
         </div>
         <label class="tune-row"><span data-i18n="part_colour">Colour</span><select id="part-colour"></select></label>
         <div class="tune-row">
+          <button type="button" class="ghost" id="part-copy" data-i18n="part_copy">Duplicate</button>
           <button type="button" class="ghost" id="part-delete" data-i18n="part_delete">Remove</button>
+        </div>
+        <div class="tune-row">
           <button type="button" class="ghost" id="part-reset" data-i18n="part_reset">Undo its changes</button>
         </div>
       </div>
       <div class="tune-row">
+        <button type="button" class="ghost" id="parts-undo" data-i18n="part_undo">Undo</button>
         <button type="button" class="primary" id="parts-save" data-i18n="parts_save">Save and rebuild</button>
         <button type="button" class="ghost" id="parts-clear" data-i18n="parts_clear">Back to as built</button>
       </div>

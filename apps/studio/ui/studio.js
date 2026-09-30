@@ -50,18 +50,22 @@ const STRINGS = {
     dock_tex_hint: "The largest texture of the PC file; the phone tiers keep their own limits. 8K also writes a master file.",
     dock_pbr: "Full PBR maps", dock_apply: "Apply and rebuild", dock_now: "Now: {tris} triangles on {tier}.",
     dock_no_source: "This model has no source to rebuild from.",
-    dock_quad_warn: "Quads below about 8K triangles can tear thin parts (flaps, ears, leaves) — pick more triangles, or Triangles, which reduce more gently.",
+    dock_quad_warn: "Below about 8K triangles thin or open pieces (flaps, open boxes, leaves) cannot keep clean quads: they stay as triangles paired into quads, so the quad share drops. Each separate piece is remeshed on its own, so nothing tears.",
     send_to: "Send to…", send_project: "Project folder", send_go: "Send",
     send_title: "Send to {tool}", send_done: "{files} → {folder}", send_opened: "Opened {file} in Blender",
     send_where: { unity: "The GLB of every tier (glTFast) and the FBX go to Assets/MeshGate/<model>/. Send again after a change and Unity re-imports them.",
       godot: "The GLB of every tier goes to res://meshgate/<model>/; Godot imports it when it gets focus. Send again after a change to update it.",
       unreal: "The FBX goes to Content/MeshGate/<model>/; the editor offers to import new files. Send again after a change to re-import." },
+    part_copy: "Duplicate", part_undo: "Undo",
+    parts_keys: "W move · E turn · R scale · ⌘/Ctrl+D duplicate · Delete remove · ⌘/Ctrl+Z undo",
+    paint: { red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", teal: "Teal", blue: "Blue", purple: "Purple", pink: "Pink",
+      brown: "Brown", tan: "Tan", white: "White", grey: "Grey", black: "Black" },
     parts: "Parts", parts_title: "Parts of the model", parts_split: "Split this model into parts",
-    parts_hint: "Click a part in the view or the list, then drag the handles. Save rebuilds every tier with your changes; they stay with the model and come back on every rebuild.",
+    parts_hint: "Click a part in the view or the list, then drag the handles, repaint, duplicate or remove it. Save rebuilds every tier with your changes; they stay with the model and come back on every rebuild.",
     parts_none: "This model is one piece. Split it to move, turn, scale, repaint or remove its parts one by one.",
     parts_cannot: "This model has no source to rebuild from.", part_move: "Move", part_turn: "Turn", part_scale: "Scale",
     part_colour: "Colour", part_as_built: "as built", part_delete: "Remove", part_restore: "Keep", part_reset: "Undo its changes",
-    parts_save: "Save and rebuild", parts_clear: "Back to as built", part_colour_mesh: "Repainting works on kit models",
+    parts_save: "Save and rebuild", parts_clear: "Back to as built", part_colour_mesh: "A copy of a baked part keeps its look (it shares the texture); repaint the part itself",
     split: "Split into parts — every separate thing its own object",
     split_hint: "A pile of crates becomes one object per crate, each named by its colour with its origin at its base, so it can be moved, swapped or reworked on its own in Unity, Godot, Unreal or Blender.", remove: "Remove",
     engine: "How to build", engine_opts: { auto: "Auto", kit: "Kit code", mesh: "Neural mesh" },
@@ -130,18 +134,22 @@ const STRINGS = {
     dock_tex_hint: "Самая большая текстура файла PC; уровни для телефонов держат свои лимиты. 8K ещё пишет мастер-файл.",
     dock_pbr: "Полный набор PBR", dock_apply: "Применить и пересобрать", dock_now: "Сейчас: {tris} треугольников на {tier}.",
     dock_no_source: "У этой модели нет исходника для пересборки.",
-    dock_quad_warn: "Квады меньше ~8K треугольников могут порвать тонкие части (клапаны, уши, листья) — возьми больше треугольников или «Треугольники», они упрощают бережнее.",
+    dock_quad_warn: "Меньше ~8K треугольников тонкие и открытые куски (клапаны, открытые коробки, листья) не удержат чистые квады: они останутся треугольниками, спаренными в квады, и доля квадов упадёт. Каждый отдельный кусок перестраивается сам по себе, так что ничего не рвётся.",
     send_to: "Отправить в…", send_project: "Папка проекта", send_go: "Отправить",
     send_title: "Отправить в {tool}", send_done: "{files} → {folder}", send_opened: "{file} открыт в Blender",
     send_where: { unity: "GLB каждого уровня (glTFast) и FBX лягут в Assets/MeshGate/<модель>/. Отправь снова после правки — Unity переимпортирует их.",
       godot: "GLB каждого уровня ляжет в res://meshgate/<модель>/; Godot импортирует его, когда окно получит фокус. Отправь снова после правки, чтобы обновить.",
       unreal: "FBX ляжет в Content/MeshGate/<модель>/; редактор предложит импортировать новые файлы. Отправь снова после правки — он переимпортирует." },
+    part_copy: "Дублировать", part_undo: "Отменить",
+    parts_keys: "W двигать · E повернуть · R масштаб · ⌘/Ctrl+D дублировать · Delete удалить · ⌘/Ctrl+Z отменить",
+    paint: { red: "Красный", orange: "Оранжевый", yellow: "Жёлтый", green: "Зелёный", teal: "Бирюзовый", blue: "Синий", purple: "Фиолетовый",
+      pink: "Розовый", brown: "Коричневый", tan: "Светло-коричневый", white: "Белый", grey: "Серый", black: "Чёрный" },
     parts: "Части", parts_title: "Части модели", parts_split: "Разделить эту модель на части",
-    parts_hint: "Нажми на часть в окне или в списке и тяни за ручки. «Сохранить» пересоберёт все уровни с твоими правками; они остаются с моделью и повторяются при каждой пересборке.",
+    parts_hint: "Нажми на часть в окне или в списке и тяни за ручки, перекрашивай, дублируй или удаляй. «Сохранить» пересоберёт все уровни с твоими правками; они остаются с моделью и повторяются при каждой пересборке.",
     parts_none: "Эта модель — один кусок. Раздели её, чтобы двигать, поворачивать, масштабировать, перекрашивать или удалять части по отдельности.",
     parts_cannot: "У этой модели нет исходника для пересборки.", part_move: "Двигать", part_turn: "Повернуть", part_scale: "Масштаб",
     part_colour: "Цвет", part_as_built: "как было", part_delete: "Удалить", part_restore: "Оставить", part_reset: "Отменить её правки",
-    parts_save: "Сохранить и пересобрать", parts_clear: "Вернуть как было", part_colour_mesh: "Перекраска работает для моделей kit",
+    parts_save: "Сохранить и пересобрать", parts_clear: "Вернуть как было", part_colour_mesh: "Копия запечённой части выглядит как она (у них общая текстура); перекрась саму часть",
     split: "Разделить на части — каждая отдельная вещь своим объектом",
     split_hint: "Куча ящиков станет отдельным объектом на каждый ящик: имя по цвету, точка опоры внизу — их можно двигать, менять и переделывать по отдельности в Unity, Godot, Unreal или Blender.", remove: "Убрать",
     engine: "Как строить", engine_opts: { auto: "Авто", kit: "Код набора", mesh: "Нейросетка" },
@@ -743,18 +751,28 @@ document.querySelectorAll(".tabs.small button").forEach((b) => {
 });
 
 
-// ---------------------------------------------------------------- parts: move, turn, scale, repaint or remove the
-// pieces of a split model by hand; saved as edits.json next to the model and rebuilt into every tier
+// ---------------------------------------------------------------- parts: move, turn, scale, repaint, copy or remove
+// the pieces of a split model by hand; saved as edits.json next to the model and rebuilt into every tier
 let parts = [], partSel = null, partMode = "translate", partBase = new Map(), partDraft = {}, partsHooked = false;
+let partMeta = new Map(), partHistory = [], newCopies = 0;
+const PAINT = { red: "#b8423a", orange: "#d9822b", yellow: "#e3c34a", green: "#5f9a4a", teal: "#3f9a90", blue: "#3f6fb8",
+  purple: "#7a4fa8", pink: "#d77fa1", brown: "#8a5a35", tan: "#c49a6c", white: "#e8e4dc", grey: "#8d8f93", black: "#2a2a2c" };
 const yawOf = (o) => { const v = new viewer.THREE.Vector3(1, 0, 0).applyQuaternion(o.quaternion); return Math.atan2(-v.z, v.x); };
+const isKit = () => current && current.engine !== "mesh" && current.palette?.length;
 function collectParts() {
   const root = viewer?.model && current ? viewer.model.getObjectByName(current.name) : null;
   parts = root && root.children.length > 1 ? root.children.filter((o) => o.name) : [];
   partBase = new Map(parts.map((o) => [o.name, { p: o.position.clone(), yaw: yawOf(o), s: o.scale.x }]));
-  partDraft = {}; partSel = null; viewer?.setGizmo(null);
+  partMeta = new Map();
+  for (const o of parts) {   // copies saved earlier come back as <part>_copyN: their changes go to that copy's entry
+    const m = /^(.+)_copy(\d+)$/.exec(o.name);
+    if (m && current.part_edits?.[m[1]]?.copies?.[+m[2] - 1]) partMeta.set(o, { source: m[1], copy: +m[2] });
+  }
+  partDraft = {}; partSel = null; partHistory = []; viewer?.setGizmo(null);
   if (viewer && !partsHooked) {
     partsHooked = true;
     viewer.on("transform", () => renderParts());
+    viewer.on("transform-start", () => snapshot());
     viewer.on("select", ({ object }) => {
       if ($("pane-parts").classList.contains("hidden")) return;
       let o = object;
@@ -765,11 +783,28 @@ function collectParts() {
     });
   }
 }
+function snapshot() {
+  partHistory.push({ items: parts.map((o) => ({ o, p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone(), v: o.visible })),
+    draft: JSON.stringify(partDraft), sel: partSel });
+  if (partHistory.length > 100) partHistory.shift();
+}
+function undoPart() {
+  const h = partHistory.pop();
+  if (!h) return;
+  const keep = new Set(h.items.map((i) => i.o));
+  for (const o of parts) if (!keep.has(o)) { o.parent?.remove(o); partMeta.delete(o); partBase.delete(o.name); }   // copies made since
+  for (const i of h.items) { i.o.position.copy(i.p); i.o.quaternion.copy(i.q); i.o.scale.copy(i.s); i.o.visible = i.v; }
+  parts = h.items.map((i) => i.o); partDraft = JSON.parse(h.draft);
+  partSel = h.sel && parts.includes(h.sel) ? h.sel : null;
+  viewer.select(partSel);
+  if (!partSel) { viewer.setGizmo(null); renderParts(); }
+}
 function renderParts() {
   const item = current, can = !!item?.rebuildable, busyNow = !!job;
   $("parts-split").classList.toggle("hidden", !can || parts.length > 0);
   $("parts-split").disabled = busyNow;
   $("parts-hint").textContent = !item ? "" : !can ? t("parts_cannot") : parts.length ? t("parts_hint") : t("parts_none");
+  $("parts-keys").classList.toggle("hidden", !parts.length);
   $("parts-list").replaceChildren(...parts.map((o) => {
     const b = document.createElement("button"); b.type = "button"; b.textContent = o.name;
     b.className = "ghost small part" + (o === partSel ? " on" : "") + (partDraft[o.name]?.delete ? " gone" : "")
@@ -779,65 +814,116 @@ function renderParts() {
   }));
   $("part-tools").classList.toggle("hidden", !partSel);
   if (partSel) {
-    const d = partDraft[partSel.name] || {};
+    const d = partDraft[partSel.name] || {}, meta = partMeta.get(partSel), kit = isKit();
     $("part-name").textContent = partSel.name;
-    const kit = item.engine !== "mesh" && item.palette?.length;
-    $("part-colour").replaceChildren(...[{ name: "", hex: "" }, ...(kit ? item.palette : [])].map((c) => {
-      const o = document.createElement("option"); o.value = c.name; o.textContent = c.name || t("part_as_built");
-      if (c.hex) o.style.background = c.hex;
+    // kit: the model's own palette; a baked model: paint colours over its texture (not on copies, which share it)
+    const choices = kit ? item.palette.map((c) => [c.name, c.name, c.hex]) : meta ? [] : Object.entries(PAINT).map(([n, hex]) => [hex, t("paint")[n] || n, hex]);
+    $("part-colour").replaceChildren(...[["", t("part_as_built"), ""], ...choices].map(([v, label, hex]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = label;
+      if (hex) o.style.background = hex;
       return o;
     }));
-    $("part-colour").value = d.colour || item.part_edits?.[partSel.name]?.colour || "";
-    $("part-colour").disabled = !kit; $("part-colour").title = kit ? "" : t("part_colour_mesh");
+    const saved = meta?.copy ? item.part_edits?.[meta.source]?.copies?.[meta.copy - 1] : item.part_edits?.[partSel.name];
+    $("part-colour").value = d.colour || saved?.colour || "";
+    $("part-colour").disabled = !choices.length; $("part-colour").title = choices.length ? "" : t("part_colour_mesh");
     $("part-delete").textContent = t(d.delete ? "part_restore" : "part_delete");
   }
   document.querySelectorAll("#part-mode button").forEach((b) => b.classList.toggle("on", b.dataset.mode === partMode));
   const dirty = parts.some((o) => partChanged(o));
   $("parts-save").disabled = !can || busyNow || !dirty;
+  $("parts-undo").disabled = !partHistory.length;
   $("parts-clear").disabled = !can || busyNow || !Object.keys(item?.part_edits || {}).length;
 }
 function partChanged(o) {
-  const b = partBase.get(o.name), d = partDraft[o.name] || {};
+  const meta = partMeta.get(o), d = partDraft[o.name] || {};
+  if (meta?.fresh) return !d.delete;
+  const b = partBase.get(o.name);
   if (!b) return false;
   return o.position.distanceTo(b.p) > 1e-5 || Math.abs(yawOf(o) - b.yaw) > 1e-4 || Math.abs(o.scale.x / b.s - 1) > 1e-4 || !!d.delete || !!d.colour;
 }
+function addDelta(e, o, b) {
+  // moves add up, turns add, scales multiply; the view is Y-up, the model file Z-up: (x, y, z) here is (x, -z, y) there
+  const dp = o.position.clone().sub(b.p), mv = e.move || [0, 0, 0];
+  let turn = ((yawOf(o) - b.yaw) * 180) / Math.PI;
+  turn = ((turn + 540) % 360) - 180;
+  e.move = [mv[0] + dp.x, mv[1] - dp.z, mv[2] + dp.y];
+  e.turn = (e.turn || 0) + turn; e.scale = (e.scale || 1) * (o.scale.x / b.s);
+  return e;
+}
 function partEdits() {
-  // this session's changes on top of the loaded file, added to the saved ones (moves add up, turns add, scales multiply);
-  // the view is Y-up, the model file Z-up: (x, y, z) here is (x, -z, y) there
-  const out = JSON.parse(JSON.stringify(current.part_edits || {}));
+  const saved = current.part_edits || {}, out = JSON.parse(JSON.stringify(saved));
   for (const o of parts) {
     if (!partChanged(o)) continue;
-    const b = partBase.get(o.name), d = partDraft[o.name] || {}, e = out[o.name] || {};
-    const dp = o.position.clone().sub(b.p), mv = e.move || [0, 0, 0];
-    let turn = ((yawOf(o) - b.yaw) * 180) / Math.PI;
-    turn = ((turn + 540) % 360) - 180;
-    e.move = [mv[0] + dp.x, mv[1] - dp.z, mv[2] + dp.y];
-    e.turn = (e.turn || 0) + turn; e.scale = (e.scale || 1) * (o.scale.x / b.s);
-    if (d.delete) e.delete = true;
-    if (d.colour) e.colour = d.colour;
-    out[o.name] = e;
+    const meta = partMeta.get(o), d = partDraft[o.name] || {};
+    if (meta?.fresh) {   // a new copy: placed from its part as built — the part's saved change plus where it is now
+      const s0 = saved[meta.source] || {};
+      const e = addDelta({ move: [...(s0.move || [0, 0, 0])], turn: s0.turn || 0, scale: s0.scale || 1 }, o, partBase.get(meta.source));
+      if (d.colour) e.colour = d.colour;
+      ((out[meta.source] ||= {}).copies ||= []).push(e);
+    } else if (meta?.copy) {   // a saved copy: its own entry
+      const list = out[meta.source].copies;
+      if (d.delete) list[meta.copy - 1] = null;
+      else { addDelta(list[meta.copy - 1], o, partBase.get(o.name)); if (d.colour) list[meta.copy - 1].colour = d.colour; }
+    } else {
+      const e = addDelta(out[o.name] || {}, o, partBase.get(o.name));
+      if (d.delete) e.delete = true;
+      if (d.colour) e.colour = d.colour;
+      out[o.name] = e;
+    }
   }
+  for (const e of Object.values(out)) if (e.copies) e.copies = e.copies.filter(Boolean);
   return out;
 }
-document.querySelectorAll("#part-mode button").forEach((b) => (b.onclick = () => {
-  partMode = b.dataset.mode;
+function duplicatePart() {
+  if (!partSel || partDraft[partSel.name]?.delete) return;
+  snapshot();
+  const source = partMeta.get(partSel)?.source || partSel.name;
+  const c = partSel.clone();
+  const size = new viewer.THREE.Box3().setFromObject(partSel).getSize(new viewer.THREE.Vector3());
+  c.position.x += size.x * 1.1;   // next to it, so both show
+  c.name = `${source}_new${++newCopies}`;
+  partSel.parent.add(c);
+  parts.push(c); partMeta.set(c, { source, fresh: true });
+  viewer.select(c);
+}
+function setPartMode(mode) {
+  partMode = mode;
   if (partSel && !partDraft[partSel.name]?.delete) viewer.setGizmo(partSel, partMode);
   renderParts();
-}));
-$("part-colour").onchange = () => { if (partSel) { (partDraft[partSel.name] ||= {}).colour = $("part-colour").value; renderParts(); } };
-$("part-delete").onclick = () => {
+}
+function togglePartDelete() {
   if (!partSel) return;
+  snapshot();
   const d = (partDraft[partSel.name] ||= {});
   d.delete = !d.delete; partSel.visible = !d.delete;
   viewer.setGizmo(d.delete ? null : partSel, partMode); renderParts();
-};
+}
+document.querySelectorAll("#part-mode button").forEach((b) => (b.onclick = () => setPartMode(b.dataset.mode)));
+$("part-colour").onchange = () => { if (partSel) { snapshot(); (partDraft[partSel.name] ||= {}).colour = $("part-colour").value; renderParts(); } };
+$("part-delete").onclick = togglePartDelete;
+$("part-copy").onclick = duplicatePart;
+$("parts-undo").onclick = undoPart;
 $("part-reset").onclick = () => {
   if (!partSel) return;
+  snapshot();
+  const meta = partMeta.get(partSel);
+  if (meta?.fresh) { partSel.parent.remove(partSel); parts = parts.filter((o) => o !== partSel); partSel = null; viewer.select(null); return; }
   const b = partBase.get(partSel.name);
   partSel.position.copy(b.p); partSel.scale.setScalar(b.s);
   partSel.quaternion.setFromAxisAngle(new viewer.THREE.Vector3(0, 1, 0), b.yaw);
   delete partDraft[partSel.name]; partSel.visible = true; viewer.select(partSel);
 };
+document.addEventListener("keydown", (e) => {   // W / E / R, ⌘/Ctrl+D, Delete, ⌘/Ctrl+Z — while the Parts tab is open
+  if ($("pane-parts").classList.contains("hidden") || !parts.length || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  if (mod && k === "z") { e.preventDefault(); undoPart(); }
+  else if (mod && k === "d") { e.preventDefault(); duplicatePart(); }
+  else if (mod) return;
+  else if (k === "w") setPartMode("translate");
+  else if (k === "e") setPartMode("rotate");
+  else if (k === "r") setPartMode("scale");
+  else if (k === "delete" || k === "backspace") { e.preventDefault(); togglePartDelete(); }
+});
 const rebuildParts = (extra) => { if (!current) return; $("log").replaceChildren(); viewer?.setGizmo(null); return refine(extra).then(() => document.querySelector('[data-pane="parts"]').click()); };
 $("parts-save").onclick = () => rebuildParts({ parts: partEdits() });
 $("parts-clear").onclick = () => rebuildParts({ parts: {} });

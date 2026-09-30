@@ -66,10 +66,13 @@ Generated assets go to `~/Documents/MeshGate Assets`; with `meshgate.py studio` 
    the library, cleaned, re-topologised and baked for every tier and checked like a generated one.
 9. **Parts.** Tick **Split into parts** (Output settings) before Generate, or press **Split this model into parts** on
    the **Parts** tab: every separate thing becomes its own object — a pile of crates gives one object per crate, named
-   by its colour, its origin at its base. On **Parts** click a piece in the view or the list and drag the handles
-   (**Move**, **Turn** round the vertical, **Scale**), pick another palette **Colour** (kit models) or **Remove** it;
-   **Save and rebuild** builds every tier with the changes. They are kept as `edits.json` next to the model and come
-   back on every rebuild; **Back to as built** drops them.
+   by its colour (palette colours for kit models, the colour baked into the texture for your own), numbered by place
+   — bottom row first, left to right — so a part has the same name on every tier. On **Parts** click a piece in the
+   view or the list and drag the handles (**Move**, **Turn** round the vertical, **Scale**), pick another **Colour**
+   (the palette of a kit model; for a baked model the texture under the part is repainted and keeps its light and
+   detail), **Duplicate** or **Remove** it. Keys: W / E / R, ⌘/Ctrl+D, Delete, ⌘/Ctrl+Z to undo. **Save and rebuild**
+   builds every tier with the changes. They are kept as `edits.json` next to the model and come back on every
+   rebuild; **Back to as built** drops them.
 10. **The dock under the model** works on the model in view: **Texture** (size, textures or vertex colours, full
     PBR), **Remesh** (one target polycount — Default, 3K, 10K, 30K, 100K — and quads or triangles), **Unwrap UV** (the
     UV grid on the model, or unwrap and bake again), **Parts**, the plug to send it to an engine, and **Download**

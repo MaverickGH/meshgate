@@ -374,6 +374,119 @@ def pack(img, tmp: str):
     img.filepath_raw = f"//textures/{img.name}.png"
 
 
+def _base_colour(me):
+    """(image, pixels H×W×4 as numpy) of the texture in Base Color, or (None, None) — vertex colours or none."""
+    import numpy as np
+    for mat in me.materials:
+        if not mat or not mat.use_nodes:
+            continue
+        b = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if b and b.inputs["Base Color"].is_linked:
+            node = b.inputs["Base Color"].links[0].from_node
+            if node.type == "TEX_IMAGE" and node.image and node.image.size[0]:
+                img = node.image
+                px = np.empty(img.size[0] * img.size[1] * 4, dtype=np.float32)
+                img.pixels.foreach_get(px)
+                return img, px.reshape(img.size[1], img.size[0], 4)
+    return None, None
+
+
+def _uv_triangles(me):
+    """Every face of the mesh as UV triangles (n × 3 × 2, numpy)."""
+    import numpy as np
+    uv = me.uv_layers.active.data if me.uv_layers else None
+    tris = []
+    if uv is None:
+        return np.zeros((0, 3, 2))
+    for p in me.polygons:
+        li = list(p.loop_indices)
+        for k in range(1, len(li) - 1):
+            tris.append([uv[li[0]].uv[:], uv[li[k]].uv[:], uv[li[k + 1]].uv[:]])
+    return np.array(tris, dtype=np.float64).reshape(-1, 3, 2)
+
+
+def _uv_mask(me, w: int, h: int, grow: int = 2):
+    """Which texture pixels the mesh's UV triangles cover (grown by a few pixels over the bake margin)."""
+    import numpy as np
+    mask = np.zeros((h, w), dtype=bool)
+    for t in _uv_triangles(me):
+        pts = t * (w, h)
+        x0, y0 = np.floor(pts.min(0)).astype(int) - 1
+        x1, y1 = np.ceil(pts.max(0)).astype(int) + 1
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        xs, ys = np.meshgrid(np.arange(x0, x1) + .5, np.arange(y0, y1) + .5)
+        (ax, ay), (bx, by), (cx, cy) = pts
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-12:
+            continue
+        l1 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / d
+        l2 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / d
+        inside = (l1 >= -.02) & (l2 >= -.02) & (1 - l1 - l2 >= -.02)
+        mask[y0:y1, x0:x1] |= inside
+    for _ in range(grow):
+        g = mask.copy()
+        g[1:] |= mask[:-1]; g[:-1] |= mask[1:]; g[:, 1:] |= mask[:, :-1]; g[:, :-1] |= mask[:, 1:]
+        mask = g
+    return mask
+
+
+def part_colour_name(me):
+    """A part named by the colour it shows most: sampled from its baked texture at its faces (or its vertex colours)."""
+    import numpy as np
+    img, px = _base_colour(me)
+    samples, weights = [], []
+    if img is not None:
+        h, w = px.shape[:2]
+        for t, p in zip(_uv_triangles(me), (q for q in me.polygons for _ in range(len(q.vertices) - 2))):
+            u, v = t.mean(0)
+            samples.append(px[min(h - 1, max(0, int(v * h))), min(w - 1, max(0, int(u * w))), :3])
+            weights.append(p.area)
+    elif getattr(me, "color_attributes", None) and len(me.color_attributes):
+        data = me.color_attributes[0].data
+        for p in me.polygons:
+            samples.append(np.mean([data[i].color[:3] for i in p.loop_indices], axis=0) ** (1 / 2.2))
+            weights.append(p.area)
+    if not samples:
+        return None
+    rgb = np.average(np.array(samples), axis=0, weights=np.array(weights) + 1e-9)
+    return modeling.colour_word(rgb)
+
+
+def recolour_baked(obj, colour: str, tmp: str):
+    """Repaint a part of a baked model: the texture under its faces takes the new colour and keeps its own light and
+    detail (each pixel keeps its brightness against the part's average); vertex colours likewise. colour = "#rrggbb"."""
+    import numpy as np
+    if not (isinstance(colour, str) and len(colour) == 7 and colour.startswith("#")):
+        return
+    rgb = np.array([int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)])
+    lum_w = np.array([.2126, .7152, .0722])
+    me = obj.data
+    img, px = _base_colour(me)
+    if img is not None:
+        h, w = px.shape[:2]
+        mask = _uv_mask(me, w, h)
+        region = px[mask][:, :3]
+        if not len(region):
+            return
+        lum = region @ lum_w
+        px[mask, :3] = np.clip(rgb[None, :] * (lum / max(float(lum.mean()), 1e-4))[:, None], 0, 1)
+        img.pixels.foreach_set(px.ravel())
+        img.update()
+        name = img.filepath_raw
+        pack(img, tmp)          # saved and packed again, so the exporter writes the new pixels
+        img.filepath_raw = name
+    elif getattr(me, "color_attributes", None) and len(me.color_attributes):
+        data = me.color_attributes[0].data
+        cols = np.array([d.color[:] for d in data])
+        lum = cols[:, :3] @ lum_w
+        lin = rgb ** 2.2
+        cols[:, :3] = np.clip(lin[None, :] * (lum / max(float(lum.mean()), 1e-4))[:, None], 0, 1)
+        for d, c in zip(data, cols):
+            d.color = c
+
+
 def bake(kind: str, src, low, node, size: float, to_vertices: bool = False):
     if node is not None:
         nodes = low.data.materials[0].node_tree.nodes
@@ -405,6 +518,100 @@ def quad_remesh(obj, target_tris: int) -> bool:
     polys = obj.data.polygons
     quads = sum(1 for p in polys if len(p.vertices) == 4)
     return "FINISHED" in res and len(polys) != before and quads >= .9 * len(polys)   # it really remeshed
+
+
+def _islands(me) -> list:
+    """Vertex indices of each loose piece of a mesh."""
+    parent = list(range(len(me.vertices)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for e in me.edges:
+        a_, b_ = find(e.vertices[0]), find(e.vertices[1])
+        if a_ != b_:
+            parent[a_] = b_
+    out: dict = {}
+    for v in me.vertices:
+        out.setdefault(find(v.index), []).append(v.index)
+    return list(out.values())
+
+
+def _box(me) -> tuple:
+    if not me.vertices:
+        return (0.0, 0.0, 0.0)
+    return tuple(max(v.co[c] for v in me.vertices) - min(v.co[c] for v in me.vertices) for c in range(3))
+
+
+def quad_remesh_parts(obj, target_tris: int):
+    """Quads for a mesh made of separate pieces (a pile of crates, a lid and its flaps, eyes and buttons): QuadriFlow on
+    each piece with its share of the triangles — as many as it has now, scaled to the target, so small detailed pieces
+    (eyes, knobs) keep their detail and nothing can fuse neighbours or starve thin flaps. A piece QuadriFlow would deform
+    (its size changes by more than 12 % or its surface by more than 20 %) keeps decimated triangles paired into quads.
+    Returns the share of quads, or None for a single piece (or too many to do one by one)."""
+    me = obj.data
+    groups = _islands(me)
+    if not 2 <= len(groups) <= 150:
+        return None
+    tris_of = {}
+    vert_group = {}
+    for gi, vs in enumerate(groups):
+        for i in vs:
+            vert_group[i] = gi
+    for p in me.polygons:
+        gi = vert_group[p.vertices[0]]
+        tris_of[gi] = tris_of.get(gi, 0) + len(p.vertices) - 2
+    total = sum(tris_of.values())
+    small = sum(1 for t_ in tris_of.values() if t_ * target_tris / max(1, total) < 24)   # pieces held at 24 triangles
+    ratio = min(1.0, max(0.0, target_tris - 24 * small) / max(1, total) * (.92 if target_tris < total else 1))   # QuadriFlow overshoots a little
+    pieces = []
+    for gi, vs in enumerate(groups):
+        keep = set(vs)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.index not in keep], context="VERTS")
+        pm = bpy.data.meshes.new(f"{obj.name}_piece")
+        bm.to_mesh(pm)
+        bm.free()
+        for mat in me.materials:
+            pm.materials.append(mat)
+        po = bpy.data.objects.new(pm.name, pm)
+        bpy.context.collection.objects.link(po)
+        po.matrix_world = obj.matrix_world.copy()
+        tris0 = sum(len(p.vertices) - 2 for p in pm.polygons)
+        share = max(24, int(tris0 * ratio))
+        box0, area0, backup = _box(pm), sum(p.area for p in pm.polygons), pm.copy()
+        ok = quad_remesh(po, share)
+        if ok:
+            box1, area1 = _box(po.data), sum(p.area for p in po.data.polygons)
+            ok = all(abs(a_ - b_) <= .12 * max(box0) for a_, b_ in zip(box0, box1)) and abs(area1 - area0) <= .2 * area0
+        if not ok:   # decimate gently, then pair triangles into quads where the shape allows
+            old = po.data
+            po.data = backup
+            bpy.data.meshes.remove(old)
+            if tris0 > share:
+                mod = po.modifiers.new("decimate", "DECIMATE")
+                mod.decimate_type, mod.ratio, mod.use_collapse_triangulate = "COLLAPSE", share / tris0, True
+                with bpy.context.temp_override(object=po, active_object=po, selected_objects=[po]):
+                    bpy.ops.object.modifier_apply(modifier=mod.name)
+            pair_quads(po)
+        else:
+            bpy.data.meshes.remove(backup)
+        pieces.append(po)
+    bm = bmesh.new()
+    for po in pieces:   # from_mesh adds to what is there: the pieces back into one mesh
+        bm.from_mesh(po.data)
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    for po in pieces:
+        pm = po.data
+        bpy.data.objects.remove(po, do_unlink=True)
+        bpy.data.meshes.remove(pm)
+    polys = me.polygons
+    return sum(1 for p in polys if len(p.vertices) == 4) / max(len(polys), 1)
 
 
 def voxel_quads(obj, target_tris: int) -> float:
@@ -449,8 +656,9 @@ def build_tier(src, name: str, tier: str, budget: dict, detail: float, tmp: str,
     bpy.context.collection.objects.link(low)
     low.name = low.data.name = name
     low.hide_render = False
-    quad = topology == "quad" and quad_remesh(low, target)
-    quad_share = 1.0 if quad else 0.0
+    parts_share = quad_remesh_parts(low, target) if topology == "quad" else None
+    quad = parts_share is not None or (topology == "quad" and quad_remesh(low, target))
+    quad_share = parts_share if parts_share is not None else 1.0 if quad else 0.0
     if topology == "quad" and not quad:   # QuadriFlow declined (it refuses many scanned or generated meshes)
         quad_share = voxel_quads(low, target)
         quad = quad_share > .9
@@ -594,7 +802,7 @@ def main() -> int:
                 return done(1)
             low = info["low"]
             src.hide_render = True    # …and the exporter skips objects hidden from render
-            parts = modeling.split_parts(low) if args.split else []
+            parts = modeling.split_parts(low, name_of=part_colour_name) if args.split else []
             if parts:   # the separate things as objects of their own under one root, to move in an engine
                 bpy.data.objects.remove(low, do_unlink=True)   # first, so the root takes the asset's name
                 root = bpy.data.objects.new(name, None)
@@ -607,7 +815,7 @@ def main() -> int:
                 if tier == canonical:
                     notes.append(f"split into parts: {len(parts)} objects, each with its origin at its base")
                 if edits:
-                    got = modeling.apply_edits(parts, edits)
+                    got = modeling.apply_edits(parts, edits, lambda o, c: recolour_baked(o, c, tmp))
                     if tier == canonical:
                         notes += got
             select_only([low, *parts])

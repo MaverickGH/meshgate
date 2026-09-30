@@ -56,6 +56,7 @@ The first run resolves packages from the Unity registry (about a minute). The un
 | `MeshGateTierShowcase` | Every asset of a pack at every tier side by side with its triangle count — the sample scene `GeneratedTiers.unity` uses it on the generated pack. |
 | Menu **MeshGate → Validate Selected GLB** | Runs `core/validate_glb.py` from the repository and shows the report. |
 | Menu **MeshGate → Set Up Humanoid (Selected FBX)** | Extracts the textures of a MeshGate character FBX and sets its avatar to Humanoid, so clips retarget between characters. |
+| Menu **MeshGate → Parts of Selected Model** | For a model split into parts (`gen --split`, Studio **Split into parts**): lists each part with its place and size and checks that its origin sits at its base, so every crate or plank can be moved on its own. Batch: `-executeMethod MeshGate.Editor.MeshGateParts.ReportFolder -meshgateFolder Assets/MeshGate/<model>`. Studio's **Send to → Unity** puts the files in `Assets/MeshGate/<model>/`. |
 
 API details — in [com.meshgate.unity/README.md](com.meshgate.unity/README.md).
 

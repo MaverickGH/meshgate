@@ -632,36 +632,47 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
+def _part_change(nm: str, e: dict, copies: bool = True) -> dict:
+    o = {}
+    if e.get("delete") is True:
+        o["delete"] = True
+    mv = e.get("move")
+    if mv is not None:
+        if not (isinstance(mv, list) and len(mv) == 3 and all(isinstance(v, (int, float)) and abs(v) <= 1000 for v in mv)):
+            raise ValueError(f"{nm}: move is [x, y, z] in metres")
+        if any(abs(v) > 1e-5 for v in mv):
+            o["move"] = [round(float(v), 5) for v in mv]
+    for k, lo, hi, idle in (("turn", -36000, 36000, 0.0), ("scale", 0.05, 20.0, 1.0)):
+        v = e.get(k)
+        if v is not None:
+            if not isinstance(v, (int, float)) or not lo <= v <= hi:
+                raise ValueError(f"{nm}: {k} is out of range")
+            if abs(v - idle) > 1e-4:
+                o[k] = round(float(v), 4)
+    c = e.get("colour")
+    if c:
+        if not re.fullmatch(r"[a-z0-9_]{1,40}|#[0-9a-fA-F]{6}", str(c)):
+            raise ValueError(f"{nm}: unknown colour")
+        o["colour"] = str(c).lower()
+    if copies and e.get("copies"):
+        cs = e["copies"]
+        if not isinstance(cs, list) or len(cs) > 50 or not all(isinstance(x, dict) for x in cs):
+            raise ValueError(f"{nm}: copies is a list of up to 50 placements")
+        o["copies"] = [{k: v for k, v in _part_change(nm, x, copies=False).items() if k != "delete"} for x in cs]
+    return o
+
+
 def parse_part_edits(raw) -> dict:
     """Hand changes to a split model's parts from the part editor, checked: {part name: {"move": [x, y, z] m (Blender
-    axes, Z up), "turn": degrees round the vertical, "scale": factor, "delete": bool, "colour": palette name}}."""
+    axes, Z up), "turn": degrees round the vertical, "scale": factor, "delete": bool, "colour": palette name or
+    "#rrggbb", "copies": [{"move", "turn", "scale", "colour"}, …]}}."""
     if not isinstance(raw, dict) or len(raw) > 2000:
         raise ValueError("part edits must be an object of part names")
     out = {}
     for nm, e in raw.items():
         if not re.fullmatch(r"[A-Za-z0-9_.\-]{1,80}", str(nm)) or not isinstance(e, dict):
             raise ValueError(f"bad part name {str(nm)[:40]!r}")
-        o = {}
-        if e.get("delete") is True:
-            o["delete"] = True
-        mv = e.get("move")
-        if mv is not None:
-            if not (isinstance(mv, list) and len(mv) == 3 and all(isinstance(v, (int, float)) and abs(v) <= 1000 for v in mv)):
-                raise ValueError(f"{nm}: move is [x, y, z] in metres")
-            if any(abs(v) > 1e-5 for v in mv):
-                o["move"] = [round(float(v), 5) for v in mv]
-        for k, lo, hi, idle in (("turn", -36000, 36000, 0.0), ("scale", 0.05, 20.0, 1.0)):
-            v = e.get(k)
-            if v is not None:
-                if not isinstance(v, (int, float)) or not lo <= v <= hi:
-                    raise ValueError(f"{nm}: {k} is out of range")
-                if abs(v - idle) > 1e-4:
-                    o[k] = round(float(v), 4)
-        c = e.get("colour")
-        if c:
-            if not re.fullmatch(r"[a-z0-9_]{1,40}", str(c)):
-                raise ValueError(f"{nm}: unknown colour")
-            o["colour"] = str(c)
+        o = _part_change(str(nm), e)
         if o:
             out[str(nm)] = o
     return out

@@ -466,7 +466,7 @@ export function createViewer(container, options = {}) {
       gizmo = new TransformControls(camera, renderer.domElement);
       gizmo.addEventListener("dragging-changed", (e) => {
         controls.enabled = !e.value;
-        if (e.value) gizmoScale = gizmo.object?.scale.x || 1;
+        if (e.value) { gizmoScale = gizmo.object?.scale.x || 1; emit("transform-start", { object: gizmo.object }); }
         else emit("transform-end", { object: gizmo.object });
       });
       gizmo.addEventListener("objectChange", () => {

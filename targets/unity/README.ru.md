@@ -56,6 +56,7 @@ open $P/TestResults/meshgate_unity.png
 | `MeshGateTierShowcase` | Каждый ассет пака на каждом уровне рядом, с числом треугольников — сцена примера `GeneratedTiers.unity` показывает так пак генерации. |
 | Меню **MeshGate → Validate Selected GLB** | Запускает `core/validate_glb.py` из репозитория и показывает отчёт. |
 | Меню **MeshGate → Set Up Humanoid (Selected FBX)** | Вынимает текстуры FBX-персонажа MeshGate и ставит его аватар в Humanoid, чтобы клипы переносились между персонажами. |
+| Меню **MeshGate → Parts of Selected Model** | Для модели из частей (`gen --split`, в Studio **«Разделить на части»**): перечисляет части с местом и размером и проверяет, что точка опоры стоит у основания — каждый ящик или доску можно двигать отдельно. В batch-режиме: `-executeMethod MeshGate.Editor.MeshGateParts.ReportFolder -meshgateFolder Assets/MeshGate/<модель>`. **«Отправить в → Unity»** из Studio кладёт файлы в `Assets/MeshGate/<модель>/`. |
 
 Подробности API — в [com.meshgate.unity/README.md](com.meshgate.unity/README.ru.md).
 
