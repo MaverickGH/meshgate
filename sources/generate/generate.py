@@ -1498,12 +1498,14 @@ def fit_parts(args, name: str, out_dir: Path, blender: str, image: str, say, rep
                                          texture=0, topology=args.topology, params=args.params_parsed, pose=args.pose,
                                          outline=wants_outline(args), split=args.split, section_fit={**kept, part: trial})
                 if not rep_.get("ok"):
+                    shutil.rmtree(side, ignore_errors=True)
                     continue
                 sheet = side / "part.png"
                 if not render_views(blender, side / rep_["tiers"][rep_["canonical"]]["file"], sheet,
                                     reference=ref_arg(args, image, rep_), px=256, samples=4):
                     continue
                 tm = read_match(sheet) or {}
+                shutil.rmtree(side, ignore_errors=True)   # a try is measured, not kept
                 iou = float(tm.get("iou") or 0)
                 p_iou = next((float(sm.get("iou") or 0) for sm in tm.get("sections") or [] if sm["name"] == part), 0.0)
                 if p_iou > part_iou.get(part, 0) + 0.01 and iou >= best - 0.002:
