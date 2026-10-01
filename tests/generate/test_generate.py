@@ -97,9 +97,14 @@ step("prompt lists every public kit method", all(f"mg.{m}(" in prompt for m in (
     "part", "lathe", "tube", "extrude", "mirror_x", "copy", "join", "pivot", "attach", "group", "animate", "color",
     "seg", "at_least", "blob", "skin", "cut", "bend", "twist", "sculpt"))) and "mg._" not in prompt
 step("recipes picked by the description (en and ru)",
-     [r["name"] for r in generate.recipes_for("a zombie cat standing like a person")] == ["creature"]
+     [r["name"] for r in generate.recipes_for("a zombie cat standing like a person")] == ["creature", "cat_scout"]
      and [r["name"] for r in generate.recipes_for("старый дуб с корнями")] == ["plant"]
      and generate.recipes_for("plain thing") == [])
+_scout_smooth = generate.build_prompt("кот разведчик", name="scout", style="stylized", size=1, tiers=["pc"])
+_scout_faceted = generate.build_prompt("кот разведчик", name="scout", style="lowpoly", size=1, tiers=["pc"])
+step("cat scout example follows the selected finish",
+     "Smooth variant:" in _scout_smooth.split("# Example")[1]
+     and "Build with lowpoly" in _scout_faceted.split("# Example")[1])
 _cat = generate.build_prompt("a zombie cat", name="zc", style="realistic", size=1.0, tiers=["pc"])
 step("creature prompt carries the recipe and the character example",   # soft blocks with a skeleton, not clay
      "How an artist builds this" in _cat and "bevel=" in _cat.split("# Example")[1] and "mg.rig(" in _cat.split("# Example")[1])

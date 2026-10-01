@@ -58,8 +58,9 @@ def _linear(c: float) -> float:
 
 
 UNFIGHT = 0.0008   # how far a face lying flat on another piece's face is moved out (meters)
+PRESERVE_ATTR = "mg_preserve_surface"  # face-level protection survives joins and copies
 SRC_ATTR = "mg_src"   # which line of build code made each vertex (geometry facts; never exported)
-_PUBLIC = {"part", "lathe", "tube", "curve", "extrude", "blob", "skin", "model", "eye", "copy", "mirror_x", "scatter"}
+_PUBLIC = {"part", "lathe", "tube", "loft_path", "curve", "extrude", "blob", "skin", "model", "eye", "copy", "mirror_x", "scatter"}
 
 
 def _seg_distance(p, a, b) -> float:
@@ -610,14 +611,14 @@ class Kit:
         cover at a readable scale. pattern: "bricks" (4 × 12 per repeat, running bond), "planks" (5 boards),
         "tiles" (4 × 4), "cobble" (irregular stones), "shingles" (roof rows), "plates" (2 × 2 riveted metal),
         "plaster" or "ground" (soft variation; rgb2 = patches of moss, dirt or dry grass). size = meters one repeat
-        covers (bricks at size=1 are 25 × 8 cm); rgb2 = joint colour (mortar, grout, gaps). Use the name like a colour:
+        covers (bricks at size=1 are 25 × 8 cm); "fabric" is a subtle 32-thread weave per repeat, "leather" fine pores; rgb2 = joint colour (mortar, grout, gaps). Use the name like a colour:
         mg.part("cube", wall, ...). It is laid by world position, so neighbouring pieces continue the pattern. Tiers
         with too few materials and the low-poly look show its plain colour instead. Returns the name."""
         from . import tiles
         if pattern not in tiles.PATTERNS:
             raise ModelError(f"tile pattern '{pattern}' — use one of {', '.join(tiles.PATTERNS)}")
         guess = {"bricks": "stone", "cobble": "stone", "tiles": "stone", "shingles": "stone", "planks": "wood",
-                 "plates": "metal", "ground": "ground", "plaster": "plain"}[pattern]
+                 "plates": "metal", "ground": "ground", "plaster": "plain", "fabric": "fabric", "leather": "plain"}[pattern]
         self.color(name, rgb, rough=rough, metal=metal, material=material or guess)
         self._tiles[name] = {"pattern": pattern, "rgb": _rgb(rgb), "rgb2": _rgb(rgb2) if rgb2 is not None else None,
                              "size": max(float(size), 0.05), "rough": float(rough), "metal": float(metal),
@@ -686,6 +687,240 @@ class Kit:
         self._apply_modifiers(obj)
         self._finish_piece(obj, color, kind in {"sphere", "ico", "cyl", "cone", "torus"} if smooth is None else smooth)
         return obj
+
+    def triangulate_polygon(self, vertices):
+        """Triangle vertex indices for a simple concave polygon boundary in 3D.
+        vertices is an ordered loop of at least three distinct finite (x,y,z) positions,
+        approximately planar, without self-intersections. Winding follows the boundary.
+        Use for notched ear floors or garment outlines instead of a centre fan, which
+        can overlap outside concave corners. Indices refer to the supplied vertex list.
+        """
+        from mathutils.geometry import tessellate_polygon
+        rows = [tuple(float(v) for v in p) for p in vertices]
+        if len(rows) < 3 or any(len(p) != 3 or not all(math.isfinite(v) for v in p) for p in rows):
+            raise ModelError("triangulate_polygon(): need three finite (x,y,z) positions")
+        if len(set(rows)) != len(rows):
+            raise ModelError("triangulate_polygon(): boundary positions must be distinct")
+        points = [Vector(p) for p in rows]
+        normal = sum((a.cross(b) for a,b in zip(points,points[1:]+points[:1])), Vector())
+        if normal.length < 1e-12:
+            raise ModelError("triangulate_polygon(): boundary must have nonzero area")
+        indices = {tuple(p): i for i,p in enumerate(points)}
+        faces = []
+        for triangle in tessellate_polygon([points]):
+            face = tuple(p if isinstance(p, int) else indices[tuple(p)] for p in triangle)
+            a,b,c = (points[i] for i in face)
+            if (b-a).cross(c-a).dot(normal) < 0:
+                face = tuple(reversed(face))
+            faces.append(face)
+        if len(faces) != len(points)-2:
+            raise ModelError("triangulate_polygon(): boundary could not be triangulated")
+        return faces
+
+    def mesh(self, vertices, faces, color, *, name: str = "mesh", face_colors=None, smooth: bool = False):
+        """An explicitly designed polygon surface, in world meters. Use for character silhouettes that primitives
+        cannot match: cheek planes, tapered clothing panels, ears. vertices = [(x,y,z), ...], faces = lists of
+        vertex indices. face_colors optionally gives one palette colour per face: markings share the surface
+        without raised patches or boolean seams. Keep faces planar, ordered around their boundary.
+        Open surfaces use outward winding: counterclockwise in XZ faces the front (-Y)."""
+        verts = [tuple(float(c) for c in v) for v in vertices]
+        polys = [tuple(f) for f in faces]
+        if not verts or any(len(v) != 3 or not all(math.isfinite(c) for c in v) for v in verts):
+            raise ModelError("mesh(): vertices must be finite (x, y, z) points")
+        if not polys or any(len(f) < 3 or len(set(f)) != len(f) or
+                            any(not isinstance(i, int) or not 0 <= i < len(verts) for i in f) for f in polys):
+            raise ModelError("mesh(): faces need at least three distinct valid vertex indices")
+        for f in polys:
+            origin = Vector(verts[f[0]])
+            area = sum(((Vector(verts[f[i]]) - origin).cross(Vector(verts[f[i + 1]]) - origin)
+                        for i in range(1, len(f) - 1)), Vector())
+            if area.length < 1e-12:
+                raise ModelError("mesh(): faces must have nonzero area and ordered boundaries")
+        names = [self._color_name(c) for c in face_colors] if face_colors is not None else None
+        if names is not None and len(names) != len(polys):
+            raise ModelError("mesh(): face_colors must have one colour per face")
+        obj = self._mesh(self._ascii(name), verts, polys)
+        # Explicit winding also defines open surfaces; recalc can reverse a one-sided decal.
+        self._finish_piece(obj, color, smooth)
+        if names is not None:
+            me = obj.data
+            for p, cname in zip(me.polygons, names):
+                uv = self._cell_uv(cname)
+                for i in p.loop_indices:
+                    me.uv_layers.active.data[i].uv = uv
+                if self._vertex:
+                    mat = self._group_material(cname)
+                    if mat.name not in me.materials:
+                        me.materials.append(mat)
+                    p.material_index = me.materials.find(mat.name)
+                    rgba = [_linear(c) for c in self._colors[cname]["rgb"]] + [1.0]
+                    for i in p.loop_indices:
+                        me.color_attributes["Col"].data[i].color = rgba
+        return obj
+
+    def loft(self, rings, outline, color, *, name="loft", bands=None, smooth=False, subdiv=0, support=0.0):
+        """Closed character surface controlled by horizontal sections, in metres.
+        rings = [(centre_x, centre_y, z, half_width, half_depth), ...], bottom to top.
+        outline = [(x,y), ...], a simple counterclockwise contour (usually within -1..1).
+        bands optionally assigns one colour per contour edge. support adds close end rings
+        before subdivision to preserve a garment's hem. Use subdiv=0 for planned facets,
+        subdiv=1 or 2 for rounded cheeks and clothing; inspect the resulting silhouette.
+        """
+        rows = [tuple(float(v) for v in r) for r in rings]
+        contour = [tuple(float(v) for v in p) for p in outline]
+        if len(rows) < 2 or any(len(r) != 5 or not all(math.isfinite(v) for v in r) or
+                                r[3] <= 0 or r[4] <= 0 for r in rows):
+            raise ModelError("loft(): at least two finite (cx, cy, z, half_width, half_depth) rings with positive sizes")
+        if any(b[2] <= a[2] for a, b in zip(rows, rows[1:])):
+            raise ModelError("loft(): rings must have strictly increasing heights")
+        if len(contour) < 3 or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in contour):
+            raise ModelError("loft(): outline needs at least three finite (x, y) points")
+        area = sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(contour, contour[1:]+contour[:1]))
+        if area <= 1e-12:
+            raise ModelError("loft(): outline must be counterclockwise with positive area")
+        if not isinstance(subdiv, int) or not 0 <= subdiv <= 3:
+            raise ModelError("loft(): subdiv must be an integer from 0 to 3")
+        support = float(support)
+        if not math.isfinite(support) or support < 0:
+            raise ModelError("loft(): support must be finite and nonnegative")
+        names = list(bands) if bands is not None else [color]*len(contour)
+        if len(names) != len(contour):
+            raise ModelError("loft(): bands needs one colour per outline edge")
+        if support:
+            first, last = rows[0], rows[-1]
+            gap = min(support, (rows[1][2]-first[2])*.25, (last[2]-rows[-2][2])*.25)
+            rows = [first, (first[0],first[1],first[2]+gap,first[3],first[4]),
+                    *rows[1:-1], (last[0],last[1],last[2]-gap,last[3],last[4]), last]
+        n = len(contour)
+        vertices = [(cx+x*w,cy+y*d,z) for cx,cy,z,w,d in rows for x,y in contour]
+        faces = [tuple(reversed(range(n)))]
+        colors = [color]
+        for j in range(len(rows)-1):
+            for i in range(n):
+                faces.append((j*n+i,j*n+(i+1)%n,(j+1)*n+(i+1)%n,(j+1)*n+i))
+                colors.append(names[i])
+        faces.append(tuple((len(rows)-1)*n+i for i in range(n)))
+        colors.append(color)
+        obj = self.mesh(vertices, faces, color, name=name, face_colors=colors, smooth=smooth)
+        if subdiv:
+            self.modify(obj, "subdivide", levels=subdiv)
+        return obj
+
+    def loft_path(self, sections, color, *, outline=None, sides=12, axis=(1, 0, 0),
+                  name="loft_path", bands=None, cap=True, smooth=True, subdiv=0):
+        """Tapered elliptical or custom-contour surface along an arbitrary 3D path.
+        sections = [(cx, cy, cz, half_width, half_depth), ...] in metres, in path order.
+        axis specifies the first ring's width direction (projected perpendicular to the path).
+        Subsequent frames rotate with the path without accidental twisting. outline is a
+        counterclockwise [(x,y), ...] contour; omitted means an ellipse with exactly sides vertices.
+        bands assigns a colour per contour edge. cap=False gives open garment ends.
+        Use subdiv=0 and smooth=False for deliberate facets, subdiv=1 for organic limbs.
+        Add closely spaced sections yourself to preserve cuffs or joints during subdivision.
+        """
+        rows = [tuple(float(v) for v in row) for row in sections]
+        if len(rows) < 2 or any(len(r) != 5 or not all(math.isfinite(v) for v in r)
+                                or r[3] <= 0 or r[4] <= 0 for r in rows):
+            raise ModelError("loft_path(): need two finite (cx,cy,cz,half_width,half_depth) sections with positive sizes")
+        points = [Vector(r[:3]) for r in rows]
+        segments = [b-a for a, b in zip(points, points[1:])]
+        if any(segment.length < 1e-9 for segment in segments):
+            raise ModelError("loft_path(): consecutive section centres must differ")
+        directions = [segment.normalized() for segment in segments]
+        if any(a.dot(b) < -0.999 for a, b in zip(directions, directions[1:])):
+            raise ModelError("loft_path(): path cannot reverse direction at a section")
+        tangents = [directions[0]] + [(a+b).normalized() for a,b in zip(directions,directions[1:])] + [directions[-1]]
+        if not isinstance(sides, int) or sides < 3:
+            raise ModelError("loft_path(): sides must be an integer >= 3")
+        contour = ([tuple(float(v) for v in p) for p in outline] if outline is not None else
+                   [(math.cos(2*math.pi*i/sides), math.sin(2*math.pi*i/sides)) for i in range(sides)])
+        if len(contour) < 3 or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in contour):
+            raise ModelError("loft_path(): outline needs three finite (x,y) points")
+        if sum(a[0]*b[1]-b[0]*a[1] for a,b in zip(contour,contour[1:]+contour[:1])) <= 1e-12:
+            raise ModelError("loft_path(): outline must be counterclockwise with positive area")
+        width = Vector(axis)
+        if len(width) != 3 or not all(math.isfinite(v) for v in width) or width.length < 1e-9:
+            raise ModelError("loft_path(): axis needs three finite values and nonzero length")
+        width -= tangents[0]*width.dot(tangents[0])
+        if width.length < 1e-9:
+            raise ModelError("loft_path(): axis must not be parallel to the first path segment")
+        width.normalize()
+        if not isinstance(subdiv, int) or not 0 <= subdiv <= 3:
+            raise ModelError("loft_path(): subdiv must be an integer from 0 to 3")
+        names = list(bands) if bands is not None else [color]*len(contour)
+        if len(names) != len(contour):
+            raise ModelError("loft_path(): bands needs one colour per contour edge")
+        vertices, faces, colors = [], [], []
+        n = len(contour)
+        for i, (point, tangent, row) in enumerate(zip(points, tangents, rows)):
+            if i:
+                width = tangents[i-1].rotation_difference(tangent) @ width
+            depth = tangent.cross(width).normalized()
+            vertices.extend(tuple(point+width*x*row[3]+depth*y*row[4]) for x,y in contour)
+        for j in range(len(rows)-1):
+            for i in range(n):
+                faces.append((j*n+i,j*n+(i+1)%n,(j+1)*n+(i+1)%n,(j+1)*n+i))
+                colors.append(names[i])
+        if cap:
+            faces.extend([tuple(reversed(range(n))), tuple((len(rows)-1)*n+i for i in range(n))])
+            colors.extend([color,color])
+        obj = self.mesh(vertices, faces, color, name=name, face_colors=colors, smooth=smooth)
+        if subdiv:
+            self.modify(obj, "subdivide", levels=subdiv)
+        return obj
+
+    def preserve_surface(self, obj):
+        """Keep this mesh's faces during hidden-face cleanup, even beneath clothing.
+        Call after anatomy-changing unions and before joining accessories: deletion of
+        covered anatomical faces can open holes or split a continuous body into islands.
+        Protection is stored per face and survives join/copy. Other final cleanup remains
+        active; unmarked accessory faces may still be removed. Returns the piece.
+        """
+        if getattr(obj, "type", None) != "MESH":
+            raise ModelError("preserve_surface(): a mesh piece is required")
+        if obj.data.users > 1:
+            obj.data = obj.data.copy()
+        self._bake(obj)
+        layer = obj.data.attributes.get(PRESERVE_ATTR)
+        if layer is None:
+            layer = obj.data.attributes.new(PRESERVE_ATTR, "INT", "FACE")
+        for item in layer.data:
+            item.value = 1
+        return obj
+
+    def shade(self, obj, mode="smooth"):
+        """Choose surface normals explicitly: smooth for organic skin, flat for facets,
+        weighted for bevelled hard surfaces. Smooth clears sharp edges and prevents the
+        final hard-surface weighted-normal pass from distorting curved meshes.
+        Apply after join when the whole final mesh uses this shading mode.
+        """
+        if mode not in {"smooth", "flat", "weighted"}:
+            raise ModelError("shade(): mode must be smooth, flat or weighted")
+        self._bake(obj)
+        for polygon in obj.data.polygons:
+            polygon.use_smooth = mode != "flat"
+        if mode == "smooth":
+            for edge in obj.data.edges:
+                edge.use_edge_sharp = False
+            if obj.data.has_custom_normals:
+                with bpy.context.temp_override(object=obj, active_object=obj, selected_objects=[obj]):
+                    bpy.ops.mesh.customdata_custom_splitnormals_clear()
+        obj["meshgate_shading"] = mode
+        return obj
+
+    def surface_point(self, obj, origin, direction):
+        """First hit on a piece along a world-space ray. Returns (position, outward_normal).
+        Use to seat eyes, buttons or accessories on measured surfaces instead of guessing
+        depth from a bounding box. Raises ModelError when the ray misses the piece.
+        """
+        start, ray = Vector(origin), Vector(direction)
+        if not all(math.isfinite(v) for v in (*start, *ray)) or ray.length < 1e-12:
+            raise ModelError("surface_point(): finite origin and nonzero direction required")
+        self._bake(obj)
+        inverse = obj.matrix_world.inverted()
+        hit, point, normal, _ = obj.ray_cast(inverse @ start, (inverse.to_3x3() @ ray).normalized())
+        if not hit:
+            raise ModelError("surface_point(): ray missed the piece")
+        return tuple(obj.matrix_world @ point), tuple((inverse.transposed().to_3x3() @ normal).normalized())
 
     def lathe(self, profile, color, loc=(0, 0, 0), *, segments: int = 24, smooth: bool = True, cap: bool = True,
               exact: bool = False):
@@ -922,7 +1157,8 @@ class Kit:
 
     def modify(self, obj, kind: str, **opts):
         """Apply one Blender modifier to a piece, the way an artist stacks them:
-          "solidify"  thickness= — give an open shell or a plane thickness (leaves, fins, cloth, paper, ears)
+          "solidify"  thickness=, offset=0 — thicken an open shell, with closed rims and even thickness;
+                      offset=1 grows outward from the authored surface, -1 inward (cloth, leaves, ears)
           "array"     count=, offset=(x, y, z) meters — repeat in a row (vertebrae, chain links, planks, stairs)
           "displace"  strength= meters, scale= size of the bumps in meters — noisy relief (terrain, rock, bark)
           "smooth"    factor=, repeat= — relax lumps and hard edges
@@ -945,8 +1181,9 @@ class Kit:
             raise ModelError(f"modify: unknown '{kind}' — use {', '.join(mods)}")
         m = obj.modifiers.new(kind, mods[kind])
         if kind == "solidify":
-            m.thickness, m.offset = float(opts.get("thickness", 0.01)), 0.0
-            m.use_even_offset = True
+            m.thickness = float(opts.get("thickness", 0.01))
+            m.offset = max(-1.0, min(1.0, float(opts.get("offset", 0.0))))
+            m.use_even_offset, m.use_rim = True, True
         elif kind == "array":
             m.count = max(1, int(opts.get("count", 2)))
             m.use_relative_offset, m.use_constant_offset = False, True
@@ -1137,6 +1374,10 @@ class Kit:
         if name:
             c.name = name
         return c
+
+    def discard(self, obj):
+        """Remove a replaced modeling piece and its mesh from the generated scene."""
+        self._forget(obj)
 
     def copy(self, obj, loc=None, rot=None, scale=None):
         """A copy of a piece (shares nothing) — repeat planks, bolts, blades. loc sets the copy's origin (absolute, meters);
@@ -2069,6 +2310,184 @@ class Kit:
 
     # ------------------------------------------------------------------ ready-made models and painting
 
+    def load_base(self, path: str, *, ratio: float = 1.0, morphs: bool = False):
+        """Reuse a finalized static MeshGate .blend as the actual editable base, retaining its baked textures,
+        materials, UVs and painted details. path is the saved base file (absolute, or relative to the MeshGate folder:
+        "samples/bases/cat_scout_v15_editable.blend"); ratio optionally reduces geometry BEFORE
+        new morphs are declared. Call mg.morph afterwards: no procedural parts are rebuilt. Existing shape keys
+        are discarded so each rebuild starts from the saved base geometry, not a previously chosen look.
+        morphs=True restores saved control definitions after geometry processing; default False leaves the base editable.
+        The generation pipeline keeps this base's materials instead of baking a new palette/PBR set.
+        Returns one mesh in its saved world coordinates. Animated/rigged bases are not supported here."""
+        path = os.path.expanduser(str(path))
+        if not os.path.isabs(path) and not os.path.isfile(path):   # relative to the MeshGate folder, wherever it runs from
+            here = os.path.dirname(os.path.abspath(__file__))
+            for root in (os.path.dirname(os.path.dirname(os.path.dirname(here))), os.environ.get("MESHGATE_ROOT", "")):
+                if root and os.path.isfile(os.path.join(root, path)):
+                    path = os.path.join(root, path)
+                    break
+        path = os.path.abspath(path)
+        ratio = float(ratio)
+        if not os.path.isfile(path) or not path.lower().endswith(".blend"):
+            raise ModelError("load_base(): path must be an existing finalized .blend file")
+        if not math.isfinite(ratio) or not 0 < ratio <= 1:
+            raise ModelError("load_base(): ratio must be greater than zero and at most one")
+        with bpy.data.libraries.load(path, link=False) as (source, target):
+            target.objects = list(source.objects)
+        loaded = [o for o in target.objects if o is not None]
+        meshes = [o for o in loaded if o.type == "MESH" and not o.get("meshgate_collision_for")]
+        if not meshes or any(o.type == "ARMATURE" for o in loaded) or any(
+                o.animation_data or any(m.type == "ARMATURE" for m in o.modifiers) for o in meshes):
+            for o in loaded:
+                bpy.data.objects.remove(o, do_unlink=True)
+            raise ModelError("load_base(): a static mesh base without animation or armature is required")
+        # Resolve the saved hierarchy before removing cameras/lights/empties from the appended scene.
+        for o in loaded:
+            bpy.context.collection.objects.link(o)
+        bpy.context.view_layer.update()
+        world = {o: o.matrix_world.copy() for o in meshes}
+        for o in meshes:
+            o.parent = None
+            o.matrix_world = world[o]
+            saved_morphs = o.get("meshgate_morphs") or o.get("meshgate_base_morphs")
+            if saved_morphs:
+                o["meshgate_base_morphs"] = saved_morphs
+                if morphs:
+                    for spec in json.loads(saved_morphs):
+                        if spec["name"] not in {m["name"] for m in self._morphs}:
+                            spec["value"] = float((self._look.get("morphs") or {}).get(spec["name"], 0.0))
+                            self._morphs.append(spec)
+            if o.data.shape_keys:
+                basis = [point.co.copy() for point in o.data.shape_keys.key_blocks[0].data]
+                o.shape_key_clear()
+                for vertex, point in zip(o.data.vertices, basis):
+                    vertex.co = point
+            if "meshgate_morphs" in o:
+                del o["meshgate_morphs"]
+            self._apply_modifiers(o)
+            self._bake(o)
+        for o in loaded:
+            if o not in meshes:
+                bpy.data.objects.remove(o, do_unlink=True)
+        # Appended relative image paths refer to the base file, not the generator's temporary scene.
+        images = {n.image for o in meshes for material in o.data.materials if material and material.use_nodes
+                  for n in material.node_tree.nodes if n.type == "TEX_IMAGE" and n.image}
+        for image in images:
+            if not image.packed_file:
+                if image.filepath.startswith("//"):
+                    image.filepath = os.path.join(os.path.dirname(path), image.filepath[2:])
+                if image.source == "FILE":
+                    if not os.path.isfile(bpy.path.abspath(image.filepath)):
+                        raise ModelError("load_base(): a referenced texture is missing: " + image.filepath)
+                    image.reload()
+                image.pack()
+        # Internal paint is already baked. glTF treats a leftover active colour layer
+        # as COLOR_0 and multiplies textures by it (unpainted tile vertices are black).
+        for o in meshes:
+            paint = o.data.color_attributes.get("mg_paint")
+            referenced = any(n.type == "ATTRIBUTE" and n.attribute_name == "mg_paint"
+                             for mat in o.data.materials if mat and mat.use_nodes
+                             for n in mat.node_tree.nodes)
+            if paint is not None and not referenced:
+                o.data.color_attributes.remove(paint)
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in meshes:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = meshes[0]
+        if len(meshes) > 1:
+            bpy.ops.object.join()
+        obj = meshes[0]
+        obj.name = self._name + "_base"
+        if ratio < 1:
+            import bmesh
+            # Remember which islands were closed before collapse; leave intentional openings alone.
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(obj.data)
+                closed = bm.verts.layers.int.new("mg_closed_before_collapse")
+                unseen = set(bm.verts)
+                while unseen:
+                    group, stack = set(), [unseen.pop()]
+                    while stack:
+                        v = stack.pop()
+                        group.add(v)
+                        for e in v.link_edges:
+                            other = e.other_vert(v)
+                            if other in unseen:
+                                unseen.remove(other)
+                                stack.append(other)
+                    intact = bool(group) and all(v.link_edges and all(e.is_manifold for e in v.link_edges) for v in group)
+                    for v in group:
+                        v[closed] = int(intact)
+                bm.to_mesh(obj.data)
+            finally:
+                bm.free()
+            dec = obj.modifiers.new("base_geometry", "DECIMATE")
+            dec.ratio = ratio
+            dec.delimit = {"UV", "MATERIAL", "SEAM"}
+            self._apply_modifiers(obj)
+            # Collapse can leave nearly coincident endpoints joined by a microscopic edge.
+            # Resolve that edge before export welding or shape keys; deleting its face would open a hole.
+            import bmesh
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(obj.data)
+                tiny = [e for e in bm.edges if e.calc_length() < 1e-7
+                        and any(f.calc_area() <= 1e-12 for f in e.link_faces)]
+                if tiny:
+                    bmesh.ops.dissolve_degenerate(bm, dist=1e-7, edges=tiny)
+                # Native collapse may also attach a microscopic triangular fin to a closed edge.
+                # Its two free edges and one triple-used edge distinguish it from a real cloth opening.
+                fins = [f for f in bm.faces if len(f.verts) == 3 and f.calc_area() <= 2e-6
+                        and sum(e.is_boundary for e in f.edges) == 2
+                        and sum(len(e.link_faces) == 3 for e in f.edges) == 1
+                        and max(e.calc_length() for e in f.edges) < .003]
+                if fins:
+                    vertices = {v for f in fins for v in f.verts}
+                    bmesh.ops.delete(bm, geom=fins, context="FACES")
+                    loose = [v for v in vertices if v.is_valid and not v.link_edges]
+                    if loose:
+                        bmesh.ops.delete(bm, geom=loose, context="VERTS")
+                closed = bm.verts.layers.int.get("mg_closed_before_collapse")
+                by_vertices = {}
+                for face in bm.faces:
+                    by_vertices.setdefault(frozenset(face.verts), []).append(face)
+                duplicate_remnants = [face for group in by_vertices.values() if len(group) > 1
+                                      and all(v[closed] for v in group[0].verts)
+                                      and all(f in group for face in group for e in face.edges for f in e.link_faces)
+                                      for face in group]
+                if duplicate_remnants:
+                    bmesh.ops.delete(bm, geom=duplicate_remnants, context="FACES")
+                # A closed island collapsed to one flat triangle has no volume left;
+                # capping it would duplicate the same face, which exporters rightly remove.
+                flat_remnants = [f for f in bm.faces if len(f.verts) == 3
+                                 and all(e.is_boundary for e in f.edges)
+                                 and all(v[closed] for v in f.verts)]
+                if flat_remnants:
+                    bmesh.ops.delete(bm, geom=flat_remnants, context="FACES")
+                edges = [e for e in bm.edges if e.is_boundary and e.calc_length() < .01
+                         and all(v[closed] for v in e.verts)]
+                repaired = bmesh.ops.holes_fill(bm, edges=edges, sides=3)["faces"] if edges else []
+                for face in repaired:
+                    neighbour = next(f for e in face.edges for f in e.link_faces if f != face)
+                    face.copy_from(neighbour)
+                    for loop in face.loops:
+                        donor = next((l for l in neighbour.loops if l.vert == loop.vert), None)
+                        if donor is None:
+                            donor = next(l for f in loop.vert.link_faces if f != face for l in f.loops if l.vert == loop.vert)
+                        loop.copy_from(donor)
+                bm.verts.layers.int.remove(closed)
+                bm.normal_update()
+                bm.to_mesh(obj.data)
+                obj.data.update()
+            finally:
+                bm.free()
+        self.preserve_surface(obj)
+        obj["meshgate_base_source"] = path
+        bpy.context.scene["mg_base_materials"] = True
+        self._label(obj)
+        return obj
+
     def model(self, uid: str, color, *, size: float, loc=(0, 0, 0), turn: float = 0.0, axis: str = "longest",
               smooth: bool = True, keep=None, drop=None, detail: float = 1.0):
         """A free model from the MeshGate library as one piece to rework — take a good base and make it yours: repaint
@@ -2231,13 +2650,18 @@ class Kit:
         return pts, nrm
 
     def garment(self, body, color, *, above: float | None = None, below: float | None = None, along=None,
-                span=(0.0, 1.0), thickness: float = 0.01, gap: float = 0.004, open_front: float = 0.0):
+                span=(0.0, 1.0), thickness: float = 0.01, gap: float = 0.004, open_front: float = 0.0, regions=None, refine: int = 0):
         """Clothes the way a character artist makes them: a layer cut from the body's own surface and given thickness —
         a shirt, a vest, shorts, a skirt, a sleeve, a hood — so it follows the body (and a fringe, a patch or a stitch
         on it tears, mends or seams it). Which part of the body it covers: above / below = heights (a shirt from the
         belt to the neck), or along = (a, b) a limb's axis and span = (t0, t1) the stretch of it (a sleeve from the
         shoulder to the elbow). open_front = the width in meters of an opening down the front (an open shirt shows the
-        chest); gap = how far it stands off the skin, thickness = the cloth's. Put it in the parts list."""
+        chest); gap = how far it stands off the skin, thickness = the cloth's.
+        refine = 0, 1 or 2 subdivides the cloth before fitting at concave joints.
+        regions optionally selects a union of world-space (min, max) boxes, by face centre;
+        use it to include the torso and upper sleeves while excluding hands or a tail. Put it in the parts list."""
+        if refine not in (0, 1, 2):
+            raise ModelError("garment: refine must be 0, 1 or 2")
         self._bake(body)
         me = body.data
         mw = body.matrix_world
@@ -2248,43 +2672,85 @@ class Kit:
         if along is not None:
             a_, b_ = Vector(along[0]), Vector(along[1])
             seg = (a_, b_ - a_, max((b_ - a_).length_squared, 1e-9))
+        boxes = []
+        if regions is not None:
+            for lo, hi in regions:
+                if len(lo) != 3 or len(hi) != 3 or not all(math.isfinite(float(v)) for v in (*lo, *hi)) or any(a > b for a, b in zip(lo, hi)):
+                    raise ModelError("garment: regions need finite ordered (min, max) 3D boxes")
+                boxes.append((Vector(lo), Vector(hi)))
+            if not boxes:
+                raise ModelError("garment: regions must not be empty")
         chosen = []
         for p in me.polygons:
             c = sum((pos[i] for i in p.vertices), Vector()) / len(p.vertices)
+            if boxes and not any(all(lo[k] <= c[k] <= hi[k] for k in range(3)) for lo, hi in boxes):
+                continue
             if above is not None and c.z < above or below is not None and c.z > below:
                 continue
             if seg is not None:
                 t = (c - seg[0]).dot(seg[1]) / seg[2]
                 if not span[0] <= t <= span[1]:
                     continue
-            if open_front and abs(c.x) < open_front / 2 and (mw.to_3x3() @ p.normal).y < -0.3:
-                continue
             chosen.append(p)
         if not chosen:
             raise ModelError("garment: no part of the body there — check above / below or along / span")
         used = sorted({i for p in chosen for i in p.vertices})
         idx = {i: k for k, i in enumerate(used)}
-        inner = [tuple(pos[i] + nrm[i] * gap) for i in used]
-        outer = [tuple(pos[i] + nrm[i] * (gap + thickness)) for i in used]
-        m = len(used)
-        faces = [tuple(idx[i] + m for i in p.vertices) for p in chosen] + [tuple(idx[i] for i in reversed(p.vertices)) for p in chosen]
-        edges: dict = {}
-        for p in chosen:   # the rim: edges used by one chosen face only
-            vs = list(p.vertices)
+        patch = self._mesh("garment_fit", [tuple(pos[i]) for i in used],
+                           [tuple(idx[i] for i in p.vertices) for p in chosen])
+        try:
+            import bmesh
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(patch.data)
+                if open_front:
+                    for x in (-open_front / 2, open_front / 2):
+                        bmesh.ops.bisect_plane(bm, geom=list(bm.verts)+list(bm.edges)+list(bm.faces),
+                                              dist=1e-6, plane_co=(x, 0, 0), plane_no=(1, 0, 0))
+                    bm.normal_update()
+                    remove = [f for f in bm.faces if abs(f.calc_center_median().x) < open_front / 2 - 1e-6 and f.normal.y < -0.3]
+                    bmesh.ops.delete(bm, geom=remove, context="FACES")
+                if refine:
+                    bmesh.ops.subdivide_edges(bm, edges=list(bm.edges), cuts=2**refine-1, use_grid_fill=True)
+                bm.to_mesh(patch.data)
+            finally:
+                bm.free()
+            patch.data.update()
+            surface = self._surface(body)
+            for v in patch.data.vertices:
+                hit = surface.find_nearest(v.co)
+                face = me.polygons[hit[2]]
+                weights = [(i, 1 / max((pos[i] - hit[0]).length, 1e-8)) for i in face.vertices]
+                normal = sum((nrm[i] * weight for i, weight in weights), Vector()).normalized()
+                v.co += normal * gap
+            patch.data.update()
+            fit = patch.modifiers.new("Outside body", "SHRINKWRAP")
+            fit.target, fit.wrap_mode, fit.offset = body, "OUTSIDE", gap
+            self._apply_modifiers(patch)
+            inner = [tuple(v.co) for v in patch.data.vertices]
+            outer = [tuple(v.co + surface.find_nearest(v.co)[1].normalized() * thickness) for v in patch.data.vertices]
+            polygons = [tuple(p.vertices) for p in patch.data.polygons]
+        finally:
+            self._forget(patch)
+        m = len(inner)
+        faces = [tuple(i + m for i in p) for p in polygons] + [tuple(reversed(p)) for p in polygons]
+        edges = {}
+        for vs in polygons:
             for a_, b_ in zip(vs, vs[1:] + vs[:1]):
                 key = (min(a_, b_), max(a_, b_))
                 edges[key] = edges.get(key, 0) + 1
                 edges.setdefault(("dir",) + key, (a_, b_))
         flat = []
-        for key, n in edges.items():
-            if key[0] == "dir" or n != 1:
+        for key, count in edges.items():
+            if key[0] == "dir" or count != 1:
                 continue
             a_, b_ = edges[("dir",) + key]
-            faces.append((idx[b_], idx[a_], idx[a_] + m, idx[b_] + m))
+            faces.append((b_, a_, a_ + m, b_ + m))
             flat.append(len(faces) - 1)
         obj = self._mesh("garment", inner + outer, faces)
         self._fix_normals(obj)
         self._finish_piece(obj, color, True, flat)
+        self.preserve_surface(obj)
         return obj
 
     def strap(self, on, color, points, *, width: float = 0.03, thickness: float = 0.006, closed: bool = False):
@@ -2325,6 +2791,7 @@ class Kit:
         obj = self._mesh("strap", verts, faces)
         self._fix_normals(obj)
         self._finish_piece(obj, color, False)
+        self.preserve_surface(obj)
         return obj
 
     def buckle(self, color, at, *, facing=(0, -1, 0), size: float = 0.04, bar=None):
@@ -2823,11 +3290,12 @@ class Kit:
         relax.use_volume_preserve, relax.use_normalized = True, True
         self._apply_modifiers(obj)
 
-    def skin(self, points, radii, color, *, edges=None, smooth: bool = True):
+    def skin(self, points, radii, color, *, edges=None, smooth: bool = True, subdiv: int | None = None):
         """An organic body grown around a skeleton — limbs, tails, tentacles, necks, roots, branches, horns, snakes.
         points = [(x, y, z), …] in meters; radii = one radius per point (or a single number); edges = [(i, j), …]
         joining points (default: one chain in order). Branches are fine: a point may join three or more edges (a trunk
-        forking into branches, a body with four legs). The result is smooth and closed; its density follows the tier."""
+        forking into branches, a body with four legs). The result is smooth and closed; its density follows the tier.
+        subdiv=None uses the tier default; subdiv=0 keeps a square, angular chain for blocky tails."""
         pts = [Vector(p) for p in points]
         if len(pts) < 2:
             raise ModelError("skin() needs at least two points")
@@ -2846,7 +3314,12 @@ class Kit:
             v.use_root = i == 0
         # the bare skin is square in section (a board); one level makes it eight-sided, which the low-poly look keeps
         sub = obj.modifiers.new("smooth", "SUBSURF")
-        sub.levels = sub.render_levels = 1 if self._faceted else {0: 1, 1: 1, 2: 2, 3: 2}[self.level]
+        levels = (1 if self._faceted else {0: 1, 1: 1, 2: 2, 3: 2}[self.level]) if subdiv is None else int(subdiv)
+        if not 0 <= levels <= 3:
+            raise ModelError("skin(): subdiv must be between 0 and 3")
+        sub.levels = sub.render_levels = levels
+        if levels == 0:
+            obj.modifiers.remove(sub)
         self._apply_modifiers(obj)
         self._fix_normals(obj)
         self._finish_piece(obj, color, smooth)
@@ -2867,17 +3340,21 @@ class Kit:
         self._label(target)   # a boolean builds new geometry: mark it with the line of the cut
         return target
 
-    def union(self, parts, *, fillet: float = 0.0, detail: float = 1.0):
+    def union(self, parts, *, fillet: float = 0.0, detail: float = 1.0, relax: bool = False, surface: str = "quads"):
         """Melt pieces into ONE closed mesh, the way a sculptor or a toy maker joins them — a head, a body, arms and legs
         of soft blocks; a trunk and its branches; a handle and a mug. The insides disappear, every piece keeps its
         colour, and fillet = the radius in meters of a smooth rounded blend along each seam (0.01–0.04 for a character):
         arms and a head grow out of the body instead of being stuck on it, and a rigged character bends there as one
         skin instead of its blocks pulling apart. The result is rebuilt as clean, even quads at the tier's density
         (detail scales it) on mobile-high and PC; lighter tiers and the low-poly look keep the boolean surface and crisp
-        seams. Returns the one piece (the first
+        seams. surface="voxel" keeps an even voxel surface without quad retopology (use for smooth organic forms).
+        surface="boolean" preserves the exact union topology without remeshing, fillet or relaxation;
+        use it to weld a designed shell onto a previously smoothed body while preserving its silhouette. relax=True smooths voxel steps while preserving volume for organic skin; leave it False for hard surfaces. Returns the one piece (the first
         of `parts`, grown); the others are used up — do not also put them in your parts list."""
         import bmesh
         from mathutils.kdtree import KDTree
+        if surface not in {"quads", "voxel", "boolean"}:
+            raise ModelError("union(): surface must be quads, voxel or boolean")
         parts = [p for p in parts if p is not None]
         if not parts:
             raise ModelError("union needs pieces")
@@ -2931,14 +3408,14 @@ class Kit:
         # rebuilt as fine quads with rounded seams where the tier has the polygons for it (mobile-high, PC); a lighter
         # tier's quads would be centimetres wide and turn a soft block into an octagon, so it keeps the boolean
         # surface of its own lighter pieces (and the low-poly look keeps it on every tier)
-        if not self._faceted and self.level >= 2:
-            self._remake_union(base, seam_points, r, float(detail))
+        if surface != "boolean" and not self._faceted and self.level >= 2:
+            self._remake_union(base, seam_points, r, float(detail), relax=relax, surface=surface)
         if base.data.attributes.get("mg_piece"):
             base.data.attributes.remove(base.data.attributes["mg_piece"])
         self._label(base)
         return base
 
-    def _remake_union(self, obj, seam_points, fillet: float, detail: float) -> None:
+    def _remake_union(self, obj, seam_points, fillet: float, detail: float, *, relax: bool = False, surface: str = "quads") -> None:
         """The artist's route after a boolean: one watertight voxel surface, the seams relaxed into a rounded blend,
         clean quads at the tier's density (QuadriFlow), and every face's colour and paint taken back from the piece it
         lies on."""
@@ -2952,10 +3429,34 @@ class Kit:
         old = me.copy()   # the pieces' faces, with their colours, to read back from
         tree, count = seam_points()
         vox = obj.modifiers.new("watertight", "REMESH")
-        vox.mode, vox.voxel_size, vox.adaptivity = "VOXEL", max(min(cell * 0.4, fillet * 0.3 if fillet else cell), 0.0015), 0.0
+        vox.mode, vox.voxel_size, vox.adaptivity = "VOXEL", (max(cell * .25, .0025) if surface == "voxel" else max(min(cell * 0.4, fillet * 0.3 if fillet else cell), 0.0015)), 0.0
         if hasattr(vox, "use_smooth_shade"):
             vox.use_smooth_shade = True
         self._apply_modifiers(obj)
+        if surface == "voxel":
+            # Boolean boundaries can leave isolated single-voxel cells. Remove only
+            # those eight-vertex specks; larger disconnected parts remain visible errors.
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            remaining = set(bm.verts)
+            debris = []
+            while remaining:
+                group = set()
+                pending = [next(iter(remaining))]
+                while pending:
+                    vertex = pending.pop()
+                    if vertex not in group:
+                        group.add(vertex)
+                        pending.extend(edge.other_vert(vertex) for edge in vertex.link_edges
+                                       if edge.other_vert(vertex) not in group)
+                remaining.difference_update(group)
+                if len(group) <= 8:
+                    debris.extend(group)
+            if debris and len(debris) < len(bm.verts):
+                bmesh.ops.delete(bm, geom=debris, context="VERTS")
+                bm.to_mesh(obj.data)
+            bm.free()
+
         mw = obj.matrix_world
         if fillet > 0 and count:   # relax the band round each seam: its crease fills in to a round blend
             bm = bmesh.new()
@@ -2976,7 +3477,11 @@ class Kit:
                     v.co = co
             bm.to_mesh(obj.data)
             bm.free()
-        self._clean_clay(obj, cell, relax=False)
+        if surface == "voxel":
+            if relax:
+                self.modify(obj, "smooth", factor=.6, repeat=8)
+        else:
+            self._clean_clay(obj, cell, relax=relax)
         # colours back from the pieces: each new face takes the palette cell (UV), vertex colour and paint of the face
         # under it, each vertex the paint of the nearest old vertex
         bvh = BVHTree.FromPolygons([tuple(v.co) for v in old.vertices], [tuple(p.vertices) for p in old.polygons])
@@ -3283,6 +3788,9 @@ class Kit:
         if not meshes:
             raise ModelError("build(mg) made no mesh — create parts and join them")
         once = list({o.data: o for o in reversed(meshes)}.values())   # instances share a mesh: work on it once
+        degenerate = sum(self._drop_zero_area(o) for o in once)
+        if degenerate:
+            notes.append(f"removed {degenerate} zero-area faces (no visible surface)")
         hidden = sum(self._cull_hidden(o) for o in once if not o.get("meshgate_cards"))
         if hidden:
             notes.append(f"removed {hidden} hidden faces (inside other pieces)")
@@ -3372,6 +3880,37 @@ class Kit:
                             if spend["dropped"] else ""))
         return notes
 
+    @staticmethod
+    def _drop_zero_area(obj) -> int:
+        """Remove collapsed faces without welding vertices or touching tiny valid details.
+
+        Unlike dissolve_degenerate, this cannot move a neighbouring surface. Face/loop
+        attributes survive BMesh deletion. Shape-key meshes keep their topology.
+        """
+        import bmesh
+        if obj.data.shape_keys:
+            return 0
+        bm = bmesh.new()
+        try:
+            bm.from_mesh(obj.data)
+            dead = [f for f in bm.faces if f.calc_area() == 0.0]
+            if dead:
+                edges = {e for f in dead for e in f.edges}
+                vertices = {v for f in dead for v in f.verts}
+                bmesh.ops.delete(bm, geom=dead, context="FACES_ONLY")
+                # Only debris from these collapsed faces; do not affect surface vertices.
+                wire = [e for e in edges if e.is_valid and not e.link_faces]
+                if wire:
+                    bmesh.ops.delete(bm, geom=wire, context="EDGES")
+                loose = [v for v in vertices if v.is_valid and not v.link_edges]
+                if loose:
+                    bmesh.ops.delete(bm, geom=loose, context="VERTS")
+                bm.to_mesh(obj.data)
+                obj.data.update()
+            return len(dead)
+        finally:
+            bm.free()
+
     def _apply_tiles(self) -> list[str]:
         """Turn the faces coloured with a tile (mg.tile) into its tiling material, laid by position. Faces are found
         by their palette cell, so joins and cuts keep them. Within the tier's material budget (the palette takes one;
@@ -3427,6 +3966,9 @@ class Kit:
                 self._box_uv(me, idx, m, self._tiles[n]["size"])
             used = {me.materials[p.material_index] for p in me.polygons}
             if used <= set(mats.values()):   # all tiled: out of the palette bake, and no unused palette slot
+                paint = me.color_attributes.get("mg_paint")
+                if paint is not None:
+                    me.color_attributes.remove(paint)
                 for o in bpy.data.objects:
                     if o.data is me:
                         o["meshgate_tiles"] = True
@@ -3518,6 +4060,8 @@ class Kit:
         """Weighted normals, the game artist's standard finish for hard surfaces: big flat faces keep flat shading and
         the small bevels between them take the curvature, so a low-poly box reads clean and solid. Sharp edges stay."""
         me = obj.data
+        if obj.get("meshgate_shading") in {"smooth", "flat"}:
+            return 0
         if not me.polygons or not any(p.use_smooth for p in me.polygons):
             return 0
         sharing = [o for o in bpy.data.objects if o.data is me and o is not obj]
@@ -3782,7 +4326,7 @@ class Kit:
         (z-fighting) or black. The smaller piece's faces are moved a hair out along their normals. Returns faces moved."""
         import bmesh
         from mathutils.bvhtree import BVHTree
-        if obj.data.shape_keys or len(obj.data.polygons) > 60000:
+        if obj.get("meshgate_base_source") or obj.data.shape_keys or len(obj.data.polygons) > 60000:
             return 0
         bm = bmesh.new()
         bm.from_mesh(obj.data)
@@ -4120,7 +4664,10 @@ class Kit:
 
         cache: dict = {}
         dead = []
+        protected = bm.faces.layers.int.get(PRESERVE_ATTR)
         for f in bm.faces:
+            if protected is not None and f[protected]:
+                continue
             own = island[f]
             pts = [v.co for v in f.verts]
             flo = Vector([min(c[k] for c in pts) for k in range(3)])

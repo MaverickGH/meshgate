@@ -102,7 +102,7 @@ TOOLS = [
          "view": {"type": "boolean"}}}},
     {"name": "blender_view", "description": "Render the live scene from four sides (a flat thing from above) as one "
      "image; closeups = up to two extra views [{\"at\": [x,y,z], \"from\": [dx,dy,dz], \"size\": meters}].",
-     "inputSchema": {"type": "object", "properties": {"closeups": {"type": "array"}}}},
+     "inputSchema": {"type": "object", "properties": {"closeups": {"type": "array"}, "reference": {"type": "object", "properties": {"image": {"type": "string"}, "views": {"type": "array"}, "fixed_views": {"type": "boolean"}}}}}},
     {"name": "blender_facts", "description": "Measured facts about the live scene (floating parts, triangles by line, "
      "size, asymmetry).", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "blender_measure", "description": "The gap in meters between two parts, and whether they touch or "
@@ -110,6 +110,40 @@ TOOLS = [
      "inputSchema": {"type": "object", "required": ["a", "b"],
                                          "properties": {"a": {"type": "string"}, "b": {"type": "string"}}}},
     {"name": "blender_scene", "description": "The objects in the live scene: names, sizes, triangles, materials.",
+     "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "blender_mesh", "description": "Inspect base-mesh vertices in the live scene without rebuilding. "
+     "part is an exact object name or build label 'line N'. Optional region is a world-metre box {min,max} "
+     "or sphere {center,radius,falloff:'smooth'|'constant'}. Returns vertex IDs, positions, normals, faces "
+     "within the page and the revision required for local edits. Page at most 500 vertices. Includes whole-object quality diagnostics: components, bounds, boundary/nonmanifold edges, degenerate faces and sample IDs for repair. Boundary edges count as nonmanifold.",
+     "inputSchema": {"type": "object", "required": ["part"], "properties": {
+         "part": {"type": "string"}, "region": {"type": "object"},
+         "vertices": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+         "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}}},
+    {"name": "blender_edit", "description": "Edit selected live-mesh vertices in place, preserving all other "
+     "parts and existing attributes. Inspect with blender_mesh first and pass its revision. Operations: move "
+     "with delta=[x,y,z] metres; scale with positive factors=[x,y,z], optional world pivot (default selection "
+     "centroid); smooth with strength (0,1] and iterations 1..30. Region/vertices select as in blender_mesh; "
+     "sphere smooth falloff blends the change at its boundary. No region means the entire part. "
+     "Extrude takes faces and world delta; inset takes faces and positive thickness in metres; bridge takes two equal closed boundary vertex loops. Subdivide takes faces and cuts=1..3, preserving shape; symmetrize requires a whole mesh, keep=+x/-x and plane=world x metres (default 0). Topology operations change IDs: inspect again. Works on Object-mode meshes without shape keys. Up to ten local edits can be undone in reverse order; manual changes invalidate affected undo entries.",
+     "inputSchema": {"type": "object", "required": ["part", "revision", "operation"], "properties": {
+         "part": {"type": "string"}, "revision": {"type": "integer", "minimum": 0},
+         "operation": {"type": "string", "enum": ["move", "scale", "smooth", "extrude", "inset", "bridge", "subdivide", "symmetrize"]}, "region": {"type": "object"},
+         "vertices": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+         "delta": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+         "factors": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number", "exclusiveMinimum": 0}},
+         "pivot": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+         "strength": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+         "iterations": {"type": "integer", "minimum": 1, "maximum": 30},
+         "faces": {"type": "array", "minItems": 1, "uniqueItems": True, "items": {"type": "integer", "minimum": 0}},
+         "cuts": {"type": "integer", "minimum": 1, "maximum": 3},
+         "keep": {"type": "string", "enum": ["+x", "-x"]},
+         "plane": {"type": "number"},
+         "thickness": {"type": "number", "exclusiveMinimum": 0},
+         "loops": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "array", "minItems": 3, "items": {"type": "integer", "minimum": 0}}}}}},
+    {"name": "blender_reference", "description": "Place a packed image reference in the live Blender viewport at an explicit height; front/side/back planes, hidden from renders.", "inputSchema": {"type": "object", "required": ["path", "height"], "properties": {"path": {"type": "string"}, "height": {"type": "number", "exclusiveMinimum": 0}, "view": {"type": "string", "enum": ["front", "side", "back"]}}}},
+    {"name": "blender_save_base", "description": "Save the live scene with edits and packed textures as a new .blend base revision; never overwrites an existing file. Reuse through mg.load_base.", "inputSchema": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}, "note": {"type": "string"}}}},
+    {"name": "blender_edit_undo", "description": "Undo the last successful local mesh edit. The mesh revision "
+     "advances; inspect again before editing. A new build clears this single undo slot.",
      "inputSchema": {"type": "object", "properties": {}}},
     {"name": "blender_export", "description": "Export the live scene as a checked GLB (+ FBX and engine variants) by "
      "the MeshGate contract.", "inputSchema": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string"}}}},
@@ -128,13 +162,17 @@ def call(name: str, args: dict) -> list:
             out += _image(_send({"cmd": "render"}))
         return out
     if name == "blender_view":
-        return _image(_send({"cmd": "render", "closeups": args.get("closeups") or []}))
-    cmd = {"blender_facts": "facts", "blender_measure": "measure", "blender_scene": "info", "blender_export": "export"}.get(name)
+        return _image(_send({"cmd": "render", "closeups": args.get("closeups") or [], "reference": args.get("reference")}))
+    cmd = {"blender_reference": "reference", "blender_save_base": "save_base", "blender_facts": "facts", "blender_measure": "measure", "blender_scene": "info", "blender_export": "export",
+           "blender_mesh": "mesh", "blender_edit": "edit", "blender_edit_undo": "edit_undo"}.get(name)
     if not cmd:
         raise ValueError(f"unknown tool {name}")
     rep = _send({"cmd": cmd, **args})
     if name == "blender_scene":
         rep["link"] = how
+    if cmd in {"mesh", "edit", "edit_undo"}:
+        # Mesh pages are bounded by vertex count; slicing serialized JSON corrupts the response.
+        return [{"type": "text", "text": json.dumps(rep, separators=(",", ":"))}]
     return [{"type": "text", "text": json.dumps(rep, indent=1)[:20000]}]
 
 

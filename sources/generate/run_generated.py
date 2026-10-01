@@ -108,7 +108,7 @@ def build_tier(code_obj, name: str, tier: str, seed: int, tmp: str, collision: s
     hero = finish_ == "weathered"   # realistic: a dense hero model with each material's relief pressed in
     if save_high:
         finish.save_high(ctx, save_high, hero=hero, cells=kit._cells())
-    if finish_ in ("weathered", "clean"):
+    if finish_ in ("weathered", "clean") and not ctx.scene.get("mg_base_materials"):
         src = high if high and os.path.exists(high) else (save_high if save_high and hero else None)
         hi = finish.load_high(ctx, src) if src else []
         notes += finish.weathered(ctx, budget, tier, tmp, name, want=texture or None, clean=finish_ == "clean", high=hi,

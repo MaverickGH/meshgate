@@ -259,6 +259,17 @@
     </div>
     <div class="pane hidden" id="pane-parts">
       <div class="tune-block">
+        <strong data-i18n="base_title">Blender base</strong>
+        <small class="hint" data-i18n="base_hint">Load the chosen model into MeshGate live. After your edits, save a new version of the base.</small>
+        <button type="button" class="ghost" id="base-load" data-i18n="base_load">Load into the live scene</button>
+        <button type="button" class="ghost" id="base-save" data-i18n="base_save">Save a new version of the base</button>
+        <button type="button" class="ghost" id="base-undo" data-i18n="base_undo">Undo the Blender edit</button>
+        <button type="button" class="ghost" id="base-compare" data-i18n="base_compare">Compare with the reference</button>
+        <small class="hint" id="base-status"></small>
+        <a id="base-comparison-full" class="hidden" target="_blank" rel="noopener" data-i18n="base_full">Open the comparison large</a>
+        <img id="base-comparison" class="hidden" alt="" style="width:100%;height:auto">
+      </div>
+      <div class="tune-block">
         <strong data-i18n="parts_title">Parts of the model</strong>
         <small class="hint" id="parts-hint"></small>
         <button type="button" class="ghost hidden" id="parts-split" data-i18n="parts_split">Split this model into parts</button>

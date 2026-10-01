@@ -3,6 +3,10 @@ title: Creatures and characters
 keywords: cat, kitten, dog, puppy, animal, creature, character, monster, zombie, beast, bird, fish, frog, mouse, rat, rabbit, bear, fox, wolf, horse, dragon, pet, mascot, person, human, figure, doll, plush, toy, кот, кошка, котёнок, котенок, собака, щенок, животное, зверь, существо, персонаж, монстр, зомби, птица, рыба, мышь, кролик, медведь, лиса, волк, лошадь, дракон, человек, фигурка, кукла, игрушка
 example: zombie_cats/stylized/zombie_cat.py
 ---
+- For a character sheet, first measure head width/height, shoulder width, hips, feet and ear tips. Use
+  `mg.mesh(vertices, faces, color, face_colors=...)` for continuous planned polygon surfaces when primitive blocks
+  cannot match the silhouette. Markings can share those faces instead of being protruding patches. A faceted
+  character needs broad clean planes, not many tiny facets or a rectangular shape for every part.
 - Read the shapes in the reference before choosing a tool, and do not default to balls: a character that is round
   everywhere looks like a clay doll. A toy / vinyl-figure / game-mascot character is blocks with soft edges — a boxy
   body with a flat front, a wide head box sitting right on the shoulders, straight arm and leg blocks — each a

@@ -18,6 +18,11 @@
 - **Parts you can move.** **Split into parts** makes every separate thing its own object — a pile of crates becomes one
   object per crate, named by its colour, its origin at its base — so it can be moved and reworked on its own in the
   engine. In Studio you drag, turn, scale, repaint or remove the parts and every tier is rebuilt with the changes.
+- **A character creator.** Sliders kept in the file as morph targets — head width, ears, eyes, belly, leg length —
+  change the model at once in Studio's **Appearance** tab, with its colours, as in a game; your game can move them too.
+- **Built and fitted part by part.** A model made of named parts (head, torso, arms, legs, tail) is compared with
+  every view of a character sheet part by part, and each part is fitted on its own. Shape it further by hand in a live
+  Blender scene and save that as a new base to build from.
 - **Edit under the model, send to the engine.** A bar under the model changes the texture, remeshes to a target
   polycount in quads or triangles and shows the UV layout; **Send to** puts the files straight into your Unity, Godot
   or Unreal project (and replaces them there next time), or opens the model in Blender.
@@ -154,6 +159,7 @@ python3 meshgate.py check all                                 # every automated 
 | [Installation](docs/install.md) | Every step for macOS, Windows and Linux, what each part needs, where files are kept |
 | [Getting started](docs/getting-started.md) | From install to a model in your engine; recommendations per engine; troubleshooting |
 | [Generation](docs/generation.md) | Text and picture → 3D, styles, limits, colours, animations, AI tools, generators |
+| [Building after a reference](docs/reference-modeling.md) | A character after a turnaround: measuring, fitting, saved bases, live edits |
 | [MeshGate Studio](apps/studio/README.md) | The app: every panel and setting |
 | [Quality tiers](docs/quality-tiers.md) | Budgets and render settings for PC and three mobile tiers |
 | [Asset contract](docs/asset-contract.md) | The rules every file follows, and what the validator checks |
@@ -182,9 +188,9 @@ tests/           automated checks; .github/ runs them on Linux and Windows and b
 
 ## Status
 
-**v0.6.8.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
-and Linux (portable), your own models in the library, models split into parts you can edit, and sending to Unity,
-Godot, Unreal and Blender. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
+**v0.6.9.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
+and Linux (portable), your own models in the library, models split into parts you can edit, sending to Unity, Godot,
+Unreal and Blender, a character creator with morph sliders, part-by-part fitting to a sheet and live mesh editing. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
 GitHub runs the web, Blender, Godot and Unreal API checks on Linux, and the web and Blender checks on Windows. Characters with a skeleton, A/T-pose and clips come out of the kit. Next: a live Unreal run, animation from text
 (Kimodo), Maya, signed installers — see the [roadmap](docs/roadmap.md).
 

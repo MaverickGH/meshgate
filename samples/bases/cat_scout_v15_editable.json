@@ -1,0 +1,6 @@
+{
+  "asset": "cat_scout_v15_editable.blend",
+  "sha256": "22430370471a2a726da75673f9be9bc93e8dfca5a38b0b5449675f37d2337594",
+  "source": "out/gen/cat_character_candidate_v15/cat_character_candidate_v15.blend",
+  "note": "Targeted ears/scarf candidate; all 15 morph cases tested; v14 remains baseline."
+}

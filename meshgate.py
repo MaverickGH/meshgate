@@ -1115,7 +1115,7 @@ def _check_faceted_patches(exe: str, work: Path) -> bool:
     its character-creator sliders (mg.morph) as morph targets in the GLB, and its nine parts (mg.section)."""
     out = work / "faceted_patches"
     r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
-                        str(ROOT / "sources" / "generate" / "examples" / "zombie_cat_scout.py"), "--name", "scout",
+                        str(ROOT / "tests" / "generate" / "scout_parts.py"), "--name", "scout",
                         "--style", "lowpoly", "--size", "1", "--tiers", "pc", "--targets", "web,unity", "--blender", exe,
                         "--no-preview", "--out-dir", str(out)], capture_output=True, text=True)
     try:

@@ -118,6 +118,13 @@
 - [x] A dock under the model in Studio: texture, remesh to a target polycount in quads or triangles, the UV grid, parts, send, download; the notes on the settings in an ⓘ.
 - [x] Dressing and detail tools for the kit: mg.garment, mg.strap, mg.buckle, mg.pouch, mg.fringe, mg.wrap, mg.stitch, mg.bounds; colours fitted to the reference; comparison with every view of a character sheet and depth fitted from the sides.
 
+## v0.6.9 — A character creator, part-by-part fitting, live mesh editing (done)
+- [x] `mg.morph`: character-creator sliders kept as morph targets (glTF, Unity/Godot blend shapes, Unreal); Studio's Appearance tab with live sliders, palette colours, Random and Save the look (`look.json`); LODs keep the morphs; light tiers keep what fits their file budget.
+- [x] `mg.section`: a model built part by part; every part compared with every view of a sheet (`parts.png`), fitted one at a time, and named in the AI review; the sheet's outline without holes.
+- [x] Parts that hold up in Unity: the same names on every tier, quads per piece, copies, repaint of baked textures, undo; Unity menu Parts of Selected Model.
+- [x] Live mesh editing over MCP (`blender_mesh`, `blender_edit`: move, scale, smooth, extrude, inset, bridge, subdivide, symmetrize; undo), saved bases (`blender_save_base`, `mg.load_base`), Studio → Parts → Blender base; kit `mg.mesh`, `mg.loft_path`, `mg.preserve_surface`, `mg.triangulate_polygon`, fabric and leather tiles.
+- [x] The cat scout, v15: a finished character base with six sliders (`cat_character.py`); the low-poly finish keeps markings safely.
+
 ## Later — characters and PBR
 - [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.

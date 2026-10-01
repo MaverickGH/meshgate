@@ -46,7 +46,8 @@ step("initialize answers with the protocol and tools capability",
 step("a notification gets no answer", None not in out and len(out) == 7, sorted(map(str, out)))
 tools = {t["name"]: t for t in out.get(2, {}).get("result", {}).get("tools", [])}
 step("the tools are listed with input schemas",
-     {"kit_reference", "blender_build", "blender_view", "blender_measure", "blender_export"} <= set(tools)
+     {"kit_reference", "blender_build", "blender_view", "blender_measure", "blender_export",
+      "blender_mesh", "blender_edit", "blender_edit_undo"} <= set(tools)
      and all(t.get("inputSchema", {}).get("type") == "object" for t in tools.values()), sorted(tools))
 ref = (out.get(3, {}).get("result", {}).get("content") or [{}])[0].get("text", "")
 step("kit_reference carries the rules and the kit API", all(k in ref for k in ("mg.place", "mg.blob", "Rules")), ref[:200])

@@ -115,7 +115,15 @@ if (hi.z - lo.z) < 0.3 * max(hi.x - lo.x, hi.y - lo.y):   # flat things (a tile,
     views = [("three_quarter", (0.7, -1.1, 1.0)), ("top", (0.0, -0.12, 1.0)), ("front", (0, -1, 0.5)), ("back", (-0.6, 1.0, 0.9))]
 tmp = os.path.splitext(out)[0]
 tiles = []
-shots = [(name, centre, Vector(d).normalized(), dist) for name, d in views]
+shots = [(name, centre, Vector(d).normalized(), dist, None) for name, d in views]
+# Repeatable orthographic review cameras; no perspective/elevation drift between revisions.
+reference_spec = _json.loads(reference) if reference and reference.lstrip().startswith("{") else {}
+if reference_spec.get("fixed_views"):
+    views = [("three_quarter", (.707,-.707,0)), ("front", (0,-1,0)),
+             ("side", (1,0,0)), ("back", (0,1,0))]
+    frame = max(hi.z-lo.z, hi.x-lo.x, hi.y-lo.y)*1.15
+    shots = [(name, centre, Vector(direction).normalized(), dist, frame) for name,direction in views]
+
 
 
 def _mask_crop(mask, n=64, params=False):
@@ -546,7 +554,7 @@ if reference:
                     pimg.filepath_raw = os.path.splitext(out)[0] + ".parts.png"
                     pimg.file_format = "PNG"
                     pimg.save()
-            shots.append(("matched", centre, best[3], dist))
+            shots.append(("matched", centre, best[3], dist, None))
             both = np.zeros((64, 64, 3))
             both[best[4] & ref_sil] = (1, 1, 1)
             both[ref_sil & ~best[4]] = (0.9, 0.2, 0.2)
@@ -562,8 +570,12 @@ if reference:
 for i, c in enumerate(closeups):   # the AI's own camera: a point, the direction it looks from, the width to frame
     look = Vector(c.get("from") or (0.6, -1, 0.4)).normalized()
     size = max(float(c.get("size") or radius * 0.5), radius * 0.05)
-    shots.append((f"closeup{i}", Vector(c["at"]), look, size / 2 / math.sin(fov / 2) * 1.1))
-for name, target, d, dd in shots:
+    shots.append((f"closeup{i}", Vector(c["at"]), look, size / 2 / math.sin(fov / 2) * 1.1,
+                  size*1.1 if c.get("ortho") else None))
+for name, target, d, dd, ortho in shots:
+    cam.data.type = "ORTHO" if ortho else "PERSP"
+    if ortho:
+        cam.data.ortho_scale = ortho
     cam.location = target + d * dd
     cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
     sc.render.filepath = f"{tmp}.{name}.png"

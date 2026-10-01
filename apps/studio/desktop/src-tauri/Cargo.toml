@@ -1,6 +1,6 @@
 [package]
 name = "meshgate-studio"
-version = "0.6.8"
+version = "0.6.9"
 description = "MeshGate Studio — text to game-ready 3D assets, desktop shell"
 license = "LicenseRef-MeshGate-Proprietary"
 publish = false

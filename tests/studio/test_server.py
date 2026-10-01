@@ -109,7 +109,7 @@ step("model upload refuses other file types", s == 400)
 s, _ = req("POST", "/api/gen", J, body=json.dumps({"mesh": "../../etc/passwd"}))
 step("gen refuses a model id that is not an upload", s == 400)
 _Job = server.Job
-server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name, "code": 0})()
 try:
     jb = studio.start({"mesh": mup.get("id"), "name": "crate_pile", "split": True, "concept": "sheet"})
 finally:
@@ -138,7 +138,7 @@ mitem.mkdir(exist_ok=True)
 (mitem / "gen.json").write_text(json.dumps({"name": "my_mesh", "engine": "mesh", "raw": str(lib / "_inputs" / "models" / mup["id"]),
                                             "tiers": ["mobile-low", "pc"], "topology": "tri", "report": {}}))
 _Job = server.Job
-server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name, "code": 0})()
 try:
     jb = studio.refine({"name": "my_mesh", "settings": {"tris": 10000, "topology": "quad", "texture": "2k", "pbr": True}})
     try:
@@ -163,7 +163,7 @@ kitem.mkdir(exist_ok=True)
 (kitem / "cat.py").write_text("def build(mg):\n    pass\n")
 (kitem / "gen.json").write_text(json.dumps({"name": "kit_cat", "engine": "kit", "code": "cat.py", "tiers": ["pc"], "report": {}}))
 _Job = server.Job
-server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name})()
+server.Job = lambda id_, cmd, name: type("J", (), {"id": id_, "cmd": cmd, "name": name, "code": 0})()
 try:
     studio.refine({"name": "kit_cat", "look": {"morphs": {"ear_size": 0.5, "belly": 0}, "colours": {"fur_grey": "#C28A4A"}}})
 finally:

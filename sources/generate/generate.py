@@ -309,7 +309,7 @@ def recipes_for(text: str, limit: int = 2) -> list[dict]:
         score = sum(1 for k in keys if (k in words if " " not in k else k in low))
         if score:
             found.append({"name": f.stem, "title": meta.get("title", f.stem).strip(), "example": meta.get("example", "").strip(),
-                          "body": body.strip(), "score": score})
+                          "smooth_example": meta.get("smooth_example", "").strip(), "body": body.strip(), "score": score})
     return sorted(found, key=lambda r: -r["score"])[:limit]
 
 
@@ -318,8 +318,9 @@ def build_prompt(description: str, *, name: str, style: str, size: float, tiers:
                  finish: str = "none", anims: list | None = None, split: bool = False) -> str:
     profiles = json.loads(PROFILES.read_text(encoding="utf-8"))
     picked = recipes_for(f"{description} {name}")
-    ex_file = next((HERE / "examples" / r["example"] for r in picked if r["example"] and (HERE / "examples" / r["example"]).is_file()),
-                   EXAMPLE)
+    examples = [r.get("smooth_example") or r["example"] if style != "lowpoly" and finish != "faceted"
+                else r["example"] for r in picked]
+    ex_file = next((HERE / "examples" / e for e in examples if e and (HERE / "examples" / e).is_file()), EXAMPLE)
     example = ex_file.read_text(encoding="utf-8").strip()
     recipes = "".join(f"\n## {r['title']}\n\n{r['body']}\n" for r in picked)
     recipes = f"\n# How an artist builds this\n{recipes}" if recipes else ""

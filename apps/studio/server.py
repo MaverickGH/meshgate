@@ -42,7 +42,7 @@ import keys  # noqa: E402
 import mesh  # noqa: E402
 import components  # noqa: E402  optional local models (TripoSR, Hunyuan3D, Kimodo)
 
-VERSION = "0.6.8"
+VERSION = "0.6.9"
 THREE_VERSION = "0.169.0"   # same as targets/web/index.html
 NAME_RE = re.compile(r"^[a-z0-9_\-.]{1,80}$")
 UPLOAD_RE = re.compile(r"^[0-9a-f]{16}\.(png|jpg|jpeg|webp)$")
@@ -103,6 +103,20 @@ class Studio:
         self.token = token
         self.jobs: dict[str, Job] = {}
         self._status = None
+        self._base_lock = threading.Lock()
+
+    def _busy(self, name: str):
+        if any(j.name == name and j.code is None for j in self.jobs.values()):
+            raise ValueError("Wait for this model’s build to finish first")
+
+    def _saved_base(self, folder: Path) -> dict:
+        state = _read_json(folder / "base.json")
+        for key in ("path", "code"):
+            if state:
+                path = (folder / str(state.get(key) or "")).resolve()
+                if not path.is_relative_to(folder.resolve()) or not path.is_file():
+                    raise ValueError("The saved Blender base is missing or outside this model")
+        return state
 
     def status(self, refresh: bool = False) -> dict:
         if self._status is None or refresh:
@@ -258,11 +272,13 @@ class Studio:
         name = str(req.get("name") or "")
         if not re.fullmatch(r"[a-z0-9_]{1,80}", name) or not (self.library / name / "gen.json").is_file():
             raise ValueError("pick a model from the library first")
+        self._busy(name)
         item = self.library / name
+        saved_base = self._saved_base(item)
         g = json.loads((item / "gen.json").read_text(encoding="utf-8"))
         change = str(req.get("change") or "").strip()[:2000]
         params = {str(k): float(v) for k, v in (req.get("params") or {}).items() if isinstance(v, (int, float))}
-        kit = (g.get("engine") or "kit") == "kit" and g.get("code") and (item / g["code"]).is_file()
+        kit = bool(saved_base) or ((g.get("engine") or "kit") == "kit" and g.get("code") and (item / g["code"]).is_file())
         raw = Path(g["raw"]) if g.get("raw") else None
         raw = raw if raw is None or raw.is_absolute() else item / raw
         version = str(req.get("version") or "")
@@ -289,7 +305,7 @@ class Studio:
                 budgets = {t["id"]: t["max_tris"] for t in self.status()["tiers"]}
                 g["caps"] = {t: min(n, budgets.get(t, n)) for t in (g.get("tiers") or generate.ORDER)} if n else {}
         split = bool(g.get("split") or req.get("split") is True or edits)
-        code_src = item / g["code"] if kit else None
+        code_src = item / (saved_base["code"] if saved_base else g["code"]) if kit else None
         if version:
             if not re.fullmatch(r"\d{3}", version) or not (item / "versions" / version / g["code"]).is_file():
                 raise ValueError("that version is gone")
@@ -304,11 +320,11 @@ class Studio:
         n = max([int(d.name) for d in versions.iterdir() if d.is_dir() and d.name.isdigit()] or [0]) + 1
         snap = versions / f"{n:03d}"
         snap.mkdir()
-        for f in (g.get("code"), "gen.json", "edits.json", "look.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
+        for f in (g.get("code"), "gen.json", "edits.json", "look.json", "base.json", g.get("report", {}).get("preview") or f"{name}.png", "views.png"):
             if f and (item / f).is_file():
                 shutil.copyfile(item / f, snap / f)
         if version:   # the parts as they were edited then, and the look chosen then
-            for f in ("edits.json", "look.json"):
+            for f in ("edits.json", "look.json", "base.json"):
                 old = item / "versions" / version / f
                 if old.is_file():
                     shutil.copyfile(old, item / f)
@@ -325,7 +341,7 @@ class Studio:
             else:
                 (item / "edits.json").unlink(missing_ok=True)
         if kit:
-            code_path = snap / f"source_{g['code']}"   # the run reads its code from here; the result replaces the current
+            code_path = snap / ("source_" + (g.get("code") or name + ".py"))   # the run reads its code from here; the result replaces the current
             shutil.copyfile(code_src, code_path)
             source = ["--code", str(code_path)]
         else:   # a mesh (generated or your own): refined again from its source file
@@ -408,7 +424,8 @@ class Studio:
                           "palette": [{"name": k, "index": v.get("index", 0), "hex": "#" + "".join(f"{round(max(0, min(1, c)) * 255):02x}" for c in (v.get("rgb") or [0.5] * 3)[:3])}
                                       for k, v in sorted((rep.get("palette") or {}).items(), key=lambda kv: kv[1].get("index", 0))],
                           "rebuildable": bool(g.get("code") or g.get("raw")),
-                          "code": g.get("code"), "clips": (rep.get("tiers") or {}).get(rep.get("canonical") or "", {}).get("clips", []),
+                          "saved_base": _read_json(gen_json.parent / "base.json").get("path"),
+                          "code": g.get("code") or _read_json(gen_json.parent / "base.json").get("code"), "clips": (rep.get("tiers") or {}).get(rep.get("canonical") or "", {}).get("clips", []),
                           "attempts": len(g.get("attempts", [])), "seconds": g.get("seconds"),
                           "engine": g.get("engine") or "kit", "provider": g.get("provider"),
                           "input_image": g.get("input_image"), "reference_image": g.get("reference_image"),
@@ -465,6 +482,57 @@ class Studio:
             raise ValueError(f"could not copy the files: {exc}") from exc
         self._status = None   # the remembered projects changed
         return got
+
+    def live_base(self, req: dict) -> dict:
+        with self._base_lock:
+            return self._live_base(req)
+
+    def _live_base(self, req: dict) -> dict:
+        import mcp_server
+        name = str(req.get("name") or "")
+        if not re.fullmatch(r"[a-z0-9_]{1,80}", name):
+            raise ValueError("pick a model from the library")
+        self._busy(name)
+        folder = self.library / name
+        saved = self._saved_base(folder)
+        base = folder / saved["path"] if saved else folder / (name + ".blend")
+        if not base.is_file():
+            raise ValueError("this asset has no Blender base")
+        action = req.get("action")
+        if action not in {"load", "save", "undo", "compare"}:
+            raise ValueError("unknown Blender action")
+        if action == "compare":
+            images = sorted(folder.glob("reference-review*.png"), key=lambda p:p.stat().st_mtime)
+            images = [p for p in images if not p.stem.endswith(".views")]
+            if not images:
+                raise ValueError("No reference comparison has been rendered for this model yet")
+            return {"ok": True, "image": images[-1].name}
+        if action != "load" and getattr(self, "_live_base_name", None) != name:
+            raise ValueError("Load this model into the live scene before saving or undoing")
+        mcp_server.ensure_blender()
+        if action == "load":
+            code = "def build(mg):\n    mg.load_base(" + repr(str(base)) + ")\n"
+            result = mcp_server._send({"cmd":"run", "code":code, "tier":"pc"})
+        elif action == "undo":
+            result = mcp_server._send({"cmd":"edit_undo"})
+        else:
+            path = folder / "bases" / ("revision_" + time.strftime("%Y%m%d_%H%M%S") + "_" + secrets.token_hex(3) + ".blend")
+            result = mcp_server._send({"cmd":"save_base", "path":str(path), "note":name})
+        if not result.get("ok"):
+            raise ValueError("; ".join(result.get("problems") or [result.get("error") or "restart Blender live-link and retry"]))
+        if action == "load":
+            self._live_base_name = name
+        elif action == "save":
+            if not path.is_file():
+                raise ValueError("Blender did not write the saved base")
+            source = path.with_suffix(".py")
+            source.write_text("def build(mg):\n    mg.load_base(" + repr(str(path)) + ", morphs=True)\n", encoding="utf-8")
+            state = {"path": str(path.relative_to(folder)), "code": str(source.relative_to(folder))}
+            pending = folder / "base.json.tmp"
+            pending.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            pending.replace(folder / "base.json")
+            result["active_base"] = state["path"]
+        return result
 
     def reveal(self, name: str) -> None:
         path = self.library / name
@@ -597,6 +665,8 @@ def make_handler(studio: Studio, port_ref: list):
                 if url.path == "/api/gen":
                     job = studio.start(body)
                     return self._json({"id": job.id, "name": job.name})
+                if url.path == "/api/live-base":
+                    return self._json(studio.live_base(body))
                 if url.path == "/api/refine":
                     job = studio.refine(body)
                     return self._json({"id": job.id, "name": job.name})

@@ -65,6 +65,11 @@ const STRINGS = {
     look_hint: "Sliders from the model's morph targets: they change it at once, as a game's character creator does, and stay in the GLB and FBX for your game to move. Save rebuilds every tier with this look.",
     look_none: "This model has no sliders. Kit code declares them with mg.morph — ask for a character creator in words on the Refine tab.",
     look_missing: "not on this tier (its file budget)", look_baked: "Colours of a baked texture change when you save.",
+    base_title: "Blender base", base_hint: "Load the chosen model into MeshGate live. After your edits, save a new version of the base.",
+    base_load: "Load into the live scene", base_save: "Save a new version of the base", base_undo: "Undo the Blender edit",
+    base_compare: "Compare with the reference", base_full: "Open the comparison large", base_source: "Built from: ",
+    base_saved: "Base saved — the next build uses it", base_report: "The last saved comparison report",
+    base_loaded: "Model loaded into MeshGate live", base_undone: "Edit undone",
     parts: "Parts", parts_title: "Parts of the model", parts_split: "Split this model into parts",
     parts_hint: "Click a part in the view or the list, then drag the handles, repaint, duplicate or remove it. Save rebuilds every tier with your changes; they stay with the model and come back on every rebuild.",
     parts_none: "This model is one piece. Split it to move, turn, scale, repaint or remove its parts one by one.",
@@ -154,6 +159,11 @@ const STRINGS = {
     look_hint: "Ползунки из морфов модели: меняют её сразу, как редактор персонажа в игре, и остаются в GLB и FBX — их может двигать и твоя игра. «Сохранить» пересоберёт все уровни с этой внешностью.",
     look_none: "У этой модели нет ползунков. Код kit объявляет их через mg.morph — попроси редактор персонажа словами на вкладке «Доработка».",
     look_missing: "нет на этом уровне (бюджет файла)", look_baked: "Цвета запечённой текстуры поменяются при сохранении.",
+    base_title: "База Blender", base_hint: "Загрузите выбранную модель в MeshGate live. После правок сохраните отдельную версию базы.",
+    base_load: "Загрузить в live-сцену", base_save: "Сохранить новую версию базы", base_undo: "Отменить правку Blender",
+    base_compare: "Сравнить с референсом", base_full: "Открыть сравнение крупно", base_source: "Источник сборки: ",
+    base_saved: "База сохранена и будет использована при следующей сборке", base_report: "Последний сохранённый отчёт сравнения",
+    base_loaded: "Модель загружена в MeshGate live", base_undone: "Правка отменена",
     parts: "Части", parts_title: "Части модели", parts_split: "Разделить эту модель на части",
     parts_hint: "Нажми на часть в окне или в списке и тяни за ручки, перекрашивай, дублируй или удаляй. «Сохранить» пересоберёт все уровни с твоими правками; они остаются с моделью и повторяются при каждой пересборке.",
     parts_none: "Эта модель — один кусок. Раздели её, чтобы двигать, поворачивать, масштабировать, перекрашивать или удалять части по отдельности.",
@@ -531,6 +541,9 @@ async function ensureViewer() {
   return viewer;
 }
 async function show(item, tier) {
+  $("base-comparison").classList.add("hidden");
+  $("base-comparison-full").classList.add("hidden");
+  $("base-status").textContent = item.saved_base ? t("base_source") + item.saved_base : "";
   current = item; currentTier = tier || item.canonical || Object.keys(item.tiers).pop();
   $("empty").classList.add("hidden");
   renderTierTabs(); renderLibrary();
@@ -1172,3 +1185,27 @@ tipify();
     $("pills").innerHTML = `<span class="pill bad">${e.message}</span>`;
   }
 })();
+
+for (const action of ["load", "save", "undo", "compare"]) {
+  $("base-" + action).onclick = async () => {
+    if (!current) return;
+    if (job) return;
+    const targetName = current.name;
+    const buttons = ["load", "save", "undo", "compare"].map(a => $("base-" + a));
+    buttons.forEach(b => b.disabled = true);
+    $("base-status").textContent = "Blender…";
+    try {
+      const result = await api("/api/live-base", {name: targetName, action});
+      if (current?.name !== targetName) return;
+      if (result.image) {
+        $("base-comparison").src = fileUrl(targetName, result.image);
+        $("base-comparison").classList.remove("hidden");
+        $("base-comparison-full").href = fileUrl(targetName, result.image);
+        $("base-comparison-full").classList.remove("hidden");
+      }
+      if (result.active_base) current.saved_base = result.active_base;
+      $("base-status").textContent = result.active_base ? t("base_saved") : result.image ? t("base_report") : result.path || t(action === "load" ? "base_loaded" : "base_undone");
+    } catch (error) { if (current?.name === targetName) $("base-status").textContent = error.message; }
+    finally { buttons.forEach(b => b.disabled = false); }
+  };
+}

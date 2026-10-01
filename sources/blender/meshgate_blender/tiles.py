@@ -11,7 +11,7 @@ import os
 
 import numpy as np
 
-PATTERNS = ("bricks", "planks", "tiles", "cobble", "shingles", "plates", "plaster", "ground")
+PATTERNS = ("bricks", "planks", "tiles", "cobble", "shingles", "plates", "plaster", "ground", "fabric", "leather")
 
 
 def _noise(px: int, cells: int, rng, octaves: int = 4) -> np.ndarray:
@@ -131,6 +131,19 @@ def draw(pattern: str, rgb, rgb2=None, *, px: int = 512, seed: int = 1, rough: f
         col = base * (0.85 + 0.2 * var[..., None] + 0.12 * (grain[..., None] - 0.5))
         height = 0.2 + 0.7 * h + 0.3 * rivet
         rgh = rough + 0.2 * (fine - 0.5)
+    elif pattern == "fabric":
+        u,v = _grid_uv(px)
+        warp = np.sin(u*2*np.pi*32)
+        weft = np.sin(v*2*np.pi*32)
+        weave = .5+.25*warp+.25*weft
+        col = base*(.96+.06*weave[...,None]+.02*(fine[...,None]-.5))
+        height = .45+.10*warp*weft
+        rgh = rough+.035*(1-weave)
+    elif pattern == "leather":
+        pores = _noise(px, 48, rng, 2)
+        col = base*(.95+.08*fine[...,None]+.025*(pores[...,None]-.5))
+        height = .45+.08*pores
+        rgh = rough+.055*(pores-.5)
     else:   # plaster, ground: soft fractal variation, darker patches
         big = _noise(px, 3, rng, 5)
         dark = 0.75 + 0.45 * big[..., None] + 0.12 * (fine[..., None] - 0.5)

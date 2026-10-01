@@ -377,12 +377,25 @@ claude mcp add meshgate -- python3 /path/to/meshgate.py mcp
 | `blender_view` | A rendered sheet of four views, plus up to two close-ups, as an image |
 | `blender_measure` | The gap between two parts: `"line 9"` and `"line 11"` of the build code, or object names |
 | `blender_facts`, `blender_scene` | The facts again; the objects with sizes, triangles and materials |
+| `blender_mesh` | Inspect vertices, normals, page-contained faces and revision of an object/build line and region |
+| `blender_edit` | Move, scale, smooth, extrude, inset or bridge live geometry without rebuilding the scene |
+| `blender_edit_undo` | Undo the last successful local edit |
 | `blender_export` | A checked GLB + FBX by the MeshGate contract |
 
 With Blender open, turn the link on in Sidebar (N) → MeshGate → Kit → **Connect AI**: the builds appear in a scene of
 its own, "MeshGate live", next to yours. Without an open Blender, the server starts a background one. Only kit code
 runs, with the same guard rails as `gen`: no raw `bpy`, files or network. The link listens on 127.0.0.1 only, with a
 random port and token in `~/.meshgate/blender_link.json`.
+
+### Local shape editing
+
+Inspect with `blender_mesh(part=...)`, then pass its `revision` and the same selector to `blender_edit`. Select an exact object name or unambiguous `line N`; optionally intersect with `vertices=[id,...]`, a world-space box `region={min:[x,y,z],max:[x,y,z]}`, or a sphere `region={center:[x,y,z],radius:0.1,falloff:"smooth"}`. Coordinates and move `delta` are world metres. Sphere falloff may be `constant` instead of `smooth`. Scale takes positive `factors=[x,y,z]` and optional world `pivot` (default selected centroid). Smooth takes `strength` in (0,1] and `iterations` in 1..30.
+
+Re-inspect after each edit or undo. Mesh pages are bounded to 500 vertices with `offset`, `limit`, `next_offset`; all pages must have the same revision. Geometry/placement changes made manually in Blender invalidate old revisions and prevent undo overwriting those changes. Rebuild resets the one-slot undo and gives fresh revisions.
+
+Edits affect Object-mode base meshes without shape keys. Move/scale/smooth preserve topology, UVs, materials and source labels; shared instances are isolated. Existing textures follow the deformed UVs without rebaking. Changes stay in the live scene and exported asset; they are not written back into `build(mg)`. Topology operations: `extrude` takes `faces=[id,...]` and a world-space `delta`; `inset` takes `faces` and positive `thickness` in metres; `bridge` takes `loops=[[vertex IDs],[vertex IDs]]`, two disjoint closed boundary rings of equal size. Faces must be wholly inside the selection. Reinspect after each topology edit because IDs change; the response supplies the resulting cap/inner/bridge face IDs. Existing UV layers and materials pass through native BMesh operations; new surfaces may require UV adjustment, without automatic unwrap or rebaking. Studio editing controls are not implemented at this stage. Restart an already-running Blender/live-link after updating its code.
+
+Check with `python3 tests/generate/test_live_edit.py` and `Blender -b --factory-startup --python-exit-code 1 -P tests/blender/test_live_edit.py`.
 
 ## The modeling kit in one example
 
@@ -435,3 +448,5 @@ The full examples are in [`sources/generate/examples`](../sources/generate/examp
 - The mesh engine bakes colour and normals; roughness is a constant 0.7 and there is no metallic map yet. Cloud
   generators that return PBR maps lose them in the bake for now.
 - Rigged characters from text or a picture, multi-view input and PBR map transfer are next on the [roadmap](roadmap.md).
+
+Before shaping: `subdivide` takes `faces` and `cuts=1..3`, adding control points without rounding the silhouette; neighbouring faces may receive vertices along shared edges. `symmetrize` requires the whole mesh without a subset, `keep="+x"/"-x"` and `plane`, the world X symmetry plane in metres (default 0). Both support revisions and undo. Their `faces` result lists all resulting faces; reinspect before selecting again. Add asymmetric details after shaping the symmetric base.
