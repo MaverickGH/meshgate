@@ -39,7 +39,8 @@ Everything runs on your computer. Documentation is in English and Russian: every
 | System | File from [Releases](https://github.com/MaverickGH/meshgate/releases) |
 |---|---|
 | macOS (Apple Silicon) | `MeshGate.Studio_<version>_aarch64.dmg` |
-| Windows 10/11 | `MeshGate.Studio_<version>_x64-setup.exe` (or `.msi`) |
+| Windows 10/11 | `MeshGate.Studio_<version>_x64-setup.exe` (or `.msi`) — Python included |
+| Windows without installing | `MeshGate-<version>-windows-portable.zip`, then `START_WINDOWS.cmd` — Python included |
 | Linux, or any system without installing | `MeshGate-<version>-portable.zip`, then `python3 meshgate.py studio` |
 
 The builds are not signed yet: on macOS right-click the app → **Open** the first time; on Windows choose **More info →
@@ -48,8 +49,8 @@ Run anyway**.
 ## Install in five steps
 
 1. **MeshGate Studio** — from the table above.
-2. **Python 3.9+** — usually already there; if the app says it is missing, install it from
-   [python.org](https://www.python.org/downloads/).
+2. **Python 3.9+** — included in the Windows installer and the Windows portable archive; on macOS and Linux usually
+   already there. If the app says it is missing, install it from [python.org](https://www.python.org/downloads/).
 3. **Blender 3.5+** from [blender.org](https://www.blender.org/download/). Then in Studio: **Status & AI** → Blender →
    **Install add-on**.
 4. **An AI tool** for text → 3D: **Status & AI** → Claude Code, Codex or Gemini → **Install** → **Sign in**. A
@@ -188,9 +189,10 @@ tests/           automated checks; .github/ runs them on Linux and Windows and b
 
 ## Status
 
-**v0.6.9.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
+**v0.6.10.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
 and Linux (portable), your own models in the library, models split into parts you can edit, sending to Unity, Godot,
-Unreal and Blender, a character creator with morph sliders, part-by-part fitting to a sheet and live mesh editing. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
+Unreal and Blender, a character creator with morph sliders, part-by-part fitting to a sheet, live mesh editing and saved character bases
+on every tier; Windows releases carry their own Python. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
 GitHub runs the web, Blender, Godot and Unreal API checks on Linux, and the web and Blender checks on Windows. Characters with a skeleton, A/T-pose and clips come out of the kit. Next: a live Unreal run, animation from text
 (Kimodo), Maya, signed installers — see the [roadmap](docs/roadmap.md).
 

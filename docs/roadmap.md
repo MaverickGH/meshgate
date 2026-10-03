@@ -125,6 +125,10 @@
 - [x] Live mesh editing over MCP (`blender_mesh`, `blender_edit`: move, scale, smooth, extrude, inset, bridge, subdivide, symmetrize; undo), saved bases (`blender_save_base`, `mg.load_base`), Studio → Parts → Blender base; kit `mg.mesh`, `mg.loft_path`, `mg.preserve_surface`, `mg.triangulate_polygon`, fabric and leather tiles.
 - [x] The cat scout, v15: a finished character base with six sliders (`cat_character.py`); the low-poly finish keeps markings safely.
 
+## v0.6.10 — Character bases on every tier, Windows with its own Python (done)
+- [x] A saved base (`mg.load_base`) fits every tier by itself: reduced where the triangle budget is smaller, textures scaled to the tier, and where there are too many materials the whole model baked into one atlas (colour and normal) from its own materials — the cat scout v15 on PC, mobile-high, mobile-mid and mobile-low within budget.
+- [x] Windows: installers and a Windows portable archive with private Python and uv (no Python, Git or Build Tools needed), fixed command paths and packaging, TripoSR on NVIDIA CUDA chosen automatically, a reproducible model setup without Git; checked on a Windows PC with Blender 4.5 LTS.
+
 ## Later — characters and PBR
 - [ ] Zombie Cats, realistic: the zombie cat and fish bones through a picture → 3D generator (with a cloud key or Hunyuan3D-2).
 - [ ] Character animation from text with Kimodo (installable now): SOMA BVH → retarget onto the MeshGate Humanoid in Blender → clips in GLB/FBX; needs an NVIDIA GPU.

@@ -14,7 +14,7 @@ class BlenderProfileTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()   # macOS: the temp folder /var/… is a link to /private/var/…
         self.exe = self.root / "Blender 4.5" / "blender.exe"
         self.exe.parent.mkdir()
         self.exe.touch()

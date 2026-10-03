@@ -41,7 +41,8 @@
 | Система | Файл со страницы [Releases](https://github.com/MaverickGH/meshgate/releases) |
 |---|---|
 | macOS (Apple Silicon) | `MeshGate.Studio_<версия>_aarch64.dmg` |
-| Windows 10/11 | `MeshGate.Studio_<версия>_x64-setup.exe` (или `.msi`) |
+| Windows 10/11 | `MeshGate.Studio_<версия>_x64-setup.exe` (или `.msi`) — Python внутри |
+| Windows без установки | `MeshGate-<версия>-windows-portable.zip`, затем `START_WINDOWS.cmd` — Python внутри |
 | Linux или любая система без установки | `MeshGate-<версия>-portable.zip`, затем `python3 meshgate.py studio` |
 
 Сборки пока не подписаны: на macOS в первый раз нажми на приложение правой кнопкой → **«Открыть»**; на Windows —
@@ -50,8 +51,8 @@
 ## Установка за пять шагов
 
 1. **MeshGate Studio** — из таблицы выше.
-2. **Python 3.9+** — обычно уже есть; если приложение пишет, что его нет, поставь с
-   [python.org](https://www.python.org/downloads/).
+2. **Python 3.9+** — уже внутри установщика и переносного архива для Windows; на macOS и Linux обычно уже есть. Если
+   приложение пишет, что его нет, поставь с [python.org](https://www.python.org/downloads/).
 3. **Blender 3.5+** с [blender.org](https://www.blender.org/download/). Потом в студии: **«Статус и ИИ»** → Blender →
    **«Поставить аддон»**.
 4. **ИИ-инструмент** для текст → 3D: **«Статус и ИИ»** → Claude Code, Codex или Gemini → **«Установить»** →
@@ -192,9 +193,10 @@ tests/           автоматические проверки; .github/ зап�
 
 ## Статус
 
-**v0.6.9.** Генерация по тексту и по картинке, три стиля, четыре уровня качества, MeshGate Studio для macOS, Windows
+**v0.6.10.** Генерация по тексту и по картинке, три стиля, четыре уровня качества, MeshGate Studio для macOS, Windows
 и Linux (переносная версия), свои модели в библиотеке, модели из частей, которые можно править, отправка в Unity,
-Godot, Unreal и Blender, редактор персонажа с ползунками-морфами, подгонка по частям к листу и живая правка сетки. Проверено на Blender 3.5, 4.2 LTS и 5.2 LTS, Unity 6, Godot 4.7 и в веб-вьюере; при
+Godot, Unreal и Blender, редактор персонажа с ползунками-морфами, подгонка по частям к листу, живая правка сетки и
+сохранённые базы персонажей на всех уровнях; релизы для Windows несут свой Python. Проверено на Blender 3.5, 4.2 LTS и 5.2 LTS, Unity 6, Godot 4.7 и в веб-вьюере; при
 каждом изменении GitHub запускает проверки web, Blender, Godot и API Unreal на Linux и проверки web и Blender на
 Windows. Персонажи со скелетом, A/T-позой и клипами выходят из kit. Дальше: живой запуск Unreal, анимации по тексту
 (Kimodo), Maya, подписанные установщики — см. [роадмап](docs/roadmap.ru.md).
