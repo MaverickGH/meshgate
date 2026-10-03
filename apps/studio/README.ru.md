@@ -16,8 +16,7 @@
 ## Что нужно
 
 - **Blender 3.5 или новее.** Studio находит его в обычных местах, иначе задай `MESHGATE_BLENDER`.
-- **Python 3.9 или новее.** На macOS с Homebrew или инструментами Xcode он уже есть. На Windows поставь его с
-  [python.org](https://www.python.org/downloads/) с галочкой «Add to PATH». Для необычного пути задай `MESHGATE_PYTHON`.
+- **Python 3.9 или новее на macOS/Linux и для обычного переносного архива.** Windows x64 установщик и Windows-архив включают собственные Python и uv. `MESHGATE_PYTHON` позволяет использовать другой Python.
 - **Один ИИ-инструмент командной строки, с одним входом:** Claude Code (`claude`, затем `/login`), Codex CLI
   (`codex login`), Gemini CLI (`gemini`) или Ollama для работы без интернета. Любой другой CLI подключается через
   **«Нейросеть и дополнительно» → «Своя команда»**.
@@ -150,3 +149,4 @@ npx tauri build --bundles app,dmg      # macOS; на Windows: npx tauri build --
 - На Windows собраны установщики NSIS и MSI, выполнена установка NSIS и проверен запуск сервера десктоп-приложения.
   Установленный комплект прошёл проверки файлов, API, офлайн-вьюера, сборки kit и обработки сетки с Blender 4.5 LTS.
   Также проверен переносной Windows-лаунчер; аддон Blender прошёл 35 проверок.
+- Windows x64 сборки включают собственные Python и uv. Переносной комплект прошёл запуск сервера, сборку промпта, kit и mesh при чистом PATH без системного Python; TripoSR установлен без Git и использует независимый управляемый Python для моделей.

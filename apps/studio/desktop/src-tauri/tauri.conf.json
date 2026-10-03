@@ -41,6 +41,8 @@
     "resources": {
       "../../../../meshgate.py": "meshgate/meshgate.py",
       "../../../../LICENSE": "meshgate/LICENSE",
+      "../../../../THIRD_PARTY_NOTICES.md": "meshgate/THIRD_PARTY_NOTICES.md",
+      "../../../../THIRD_PARTY_NOTICES.ru.md": "meshgate/THIRD_PARTY_NOTICES.ru.md",
       "../../../../core/validate_glb.py": "meshgate/core/validate_glb.py",
       "../../../../core/validate_fbx.py": "meshgate/core/validate_fbx.py",
       "../../../../core/profiles.json": "meshgate/core/profiles.json",

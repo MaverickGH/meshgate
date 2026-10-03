@@ -7,7 +7,7 @@ you want to do. At the end, [check it all](#8-check-that-everything-works) in on
 
 | You want to… | You need | Step |
 |---|---|---|
-| Open MeshGate Studio | The app (or the portable archive) and **Python 3.9+** | [1](#1-meshgate-studio), [2](#2-python) |
+| Open MeshGate Studio | The app (Windows includes Python) or portable archive | [1](#1-meshgate-studio), [2](#2-python) |
 | Build, check and export models | **Blender 3.5+** with the MeshGate add-on | [3](#3-blender-and-the-meshgate-add-on) |
 | Make a model from a description | One **AI command-line tool**, signed in once | [4](#4-an-ai-tool-for-text--3d) |
 | Make a model from a picture | **TripoSR** (local, free) or a cloud key | [5](#5-picture--3d) |
@@ -34,7 +34,7 @@ Download from the [Releases](https://github.com/MaverickGH/meshgate/releases) pa
 | System | File | Install |
 |---|---|---|
 | macOS (Apple Silicon) | `MeshGate.Studio_<version>_aarch64.dmg` | Open it and drag **MeshGate Studio** into Applications |
-| Windows 10/11 (64-bit) | `MeshGate.Studio_<version>_x64-setup.exe` or `_x64_en-US.msi` | Run it; either one installs the same app |
+| Windows 10/11 (64-bit) | `MeshGate.Studio_<version>_x64-setup.exe` or `_x64_en-US.msi` | EXE: current user, no administrator required. MSI: machine installation, administrator required |
 | Linux, or any system without installing | `MeshGate-<version>-portable.zip` | Unpack it anywhere |
 
 The builds are not signed yet, so the first launch needs one extra click:
@@ -56,15 +56,29 @@ Set `MESHGATE_PYTHON` to the full path of your Python executable if needed.
 **From the source code** (for development): `git clone https://github.com/MaverickGH/meshgate.git`, then
 `python3 meshgate.py studio` in that folder.
 
+For Windows without installation, use `MeshGate-<version>-windows-portable.zip`, unpack it and double-click `START_WINDOWS.cmd`.
+Python and uv are included.
+
+First launch on Windows 10/11 x64:
+
+1. Install MeshGate with the EXE and open it from Start. Build Tools, Node.js, Git and system Python are unnecessary for the Studio window.
+2. Install Blender from its official website; reopen Studio and check the green Blender indicator.
+3. For picture → 3D, open Status & AI → TripoSR → Install. Internet is needed for packages and the first model download; subsequent runs can work locally.
+4. For text → 3D, choose one AI CLI and sign into your account. Cloud tools need an account/key; Ollama needs a separate local model.
+5. Load a picture and generate. Files appear in Documents/MeshGate Assets.
+
+For local models, Windows also needs [Microsoft Visual C++ Redistributable x64](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist). Studio checks for it before installing TripoSR and gives the official installer link if it is missing. Build Tools are unnecessary.
+
 ## 2. Python
 
-MeshGate Studio — the app and the portable version — runs on **Python 3.9 or newer**. Only the standard library is
-used: nothing to `pip install`.
+MeshGate Studio runs on **Python 3.9 or newer**. The Windows x64 installer and `-windows-portable.zip` include
+private Python and uv, so a separate Python installation is unnecessary. Other platforms and the generic portable
+archive need Python installed. The server uses the standard library: no extra packages to install.
 
 - **macOS:** usually present. If not, install it from [python.org](https://www.python.org/downloads/) or run
   `xcode-select --install` in Terminal.
-- **Windows:** install from [python.org](https://www.python.org/downloads/) and tick **Add python.exe to PATH**, or
-  from the Microsoft Store.
+- **Windows:** the installer includes Python. For source checkouts or the generic portable archive, install from
+  [python.org](https://www.python.org/downloads/) and tick **Add python.exe to PATH**.
 - **Linux:** preinstalled on most distributions (`python3 --version`).
 
 If the app says Python was not found, install it and open the app again. `MESHGATE_PYTHON` points it at a particular
@@ -108,9 +122,8 @@ for Gemini) is enough; an API key is the alternative. Codex signed in to ChatGPT
 Pick one:
 
 - **TripoSR — local and free** (MIT, CPU, NVIDIA CUDA or Apple GPU; CUDA needs more disk space). Studio → **Status & AI** → Optional components →
-  TripoSR → **Install** (also under **AI and advanced**), or `python3 meshgate.py gen --setup triposr`. It needs `git` and either [uv](https://docs.astral.sh/uv/) or Python
-  3.10–3.12.
-  On Windows, a tested GTX 1080 configuration uses `MESHGATE_TRIPOSR_TORCH_SPEC=torch==2.7.1` and
+  TripoSR → **Install** (also under **AI and advanced**), or `python3 meshgate.py gen --setup triposr`. It uses [uv](https://docs.astral.sh/uv/) or Python 3.10–3.12. Windows releases include both. Git is optional; without it, setup downloads and checks the pinned source archive.
+  Windows automatically selects CUDA for supported NVIDIA GPUs with a suitable driver, otherwise CPU. To override this selection, a tested GTX 1080 configuration uses `MESHGATE_TRIPOSR_TORCH_SPEC=torch==2.7.1` and
   `MESHGATE_TRIPOSR_TORCH_INDEX=https://download.pytorch.org/whl/cu118` before setup.
   `MESHGATE_TRIPOSR_HOME` selects the environment directory; `MESHGATE_TRIPOSR_MODEL` can point to a local folder
   containing `config.yaml` and `model.ckpt`. Keep `HF_HOME` and `U2NET_HOME` consistent between setup and launch

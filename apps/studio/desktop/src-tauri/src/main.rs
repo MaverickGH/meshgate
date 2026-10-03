@@ -100,11 +100,13 @@ fn user_path() -> String {
 }
 
 /// A Python 3.9+ that can run the server: MESHGATE_PYTHON, then the usual names and locations.
-fn find_python(path: &str) -> Option<Vec<String>> {
+fn find_python(path: &str, root: &Path) -> Option<Vec<String>> {
     let mut candidates: Vec<Vec<String>> = Vec::new();
     if let Ok(p) = std::env::var("MESHGATE_PYTHON") {
         candidates.push(vec![p]);
     }
+    #[cfg(windows)]
+    candidates.push(vec![root.join("runtime/windows/python/python.exe").to_string_lossy().into_owned()]);
     let names: &[&[&str]] = if cfg!(windows) {
         &[&["py", "-3"], &["python"], &["python3"]]
     } else {
@@ -143,8 +145,16 @@ fn start_server(app: AppHandle) {
     let Some(root) = meshgate_root(&app) else {
         return show_error(&app, "The MeshGate files were not found next to the app (set MESHGATE_ROOT).");
     };
-    let path = user_path();
-    let Some(python) = find_python(&path) else {
+    let mut path = user_path();
+    #[cfg(windows)]
+    {
+        path = format!("{};{};{}", root.join("runtime/windows").display(),
+                       root.join("runtime/windows/python/Scripts").display(), path);
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            path = format!("{path};{appdata}\\npm");
+        }
+    }
+    let Some(python) = find_python(&path, &root) else {
         let how = if cfg!(windows) {
             "Install Python from python.org (tick \"Add python.exe to PATH\") or the Microsoft Store, then open MeshGate Studio again."
         } else {

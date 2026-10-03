@@ -21,7 +21,13 @@ const candidates = process.platform === "win32" ? [["py", "-3"], ["python"], ["p
 if (process.env.MESHGATE_PYTHON) candidates.unshift([process.env.MESHGATE_PYTHON]);
 for (const [exe, ...args] of candidates) {
   const r = spawnSync(exe, [...args, script], { stdio: "inherit" });
-  if (r.status === 0) process.exit(0);
+  if (r.status === 0) {
+    if (process.platform === "win32") {
+      const runtime = spawnSync(exe, [...args, path.join(root, "scripts", "build_windows_runtime.py")], { stdio: "inherit" });
+      if (runtime.status !== 0) process.exit(1);
+    }
+    process.exit(0);
+  }
 }
 console.error("MeshGate Studio: Python 3.9+ is needed to prepare the bundle (https://www.python.org/downloads/).");
 process.exit(1);

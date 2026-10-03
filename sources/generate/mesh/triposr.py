@@ -10,15 +10,22 @@ The venv lives outside the repository and outside your Python; delete the folder
 from __future__ import annotations
 
 import os
+import ctypes
+import hashlib
+import io
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 HOME = Path(os.environ.get("MESHGATE_TRIPOSR_HOME", Path.home() / ".cache" / "meshgate" / "triposr"))
 REPO = HOME / "TripoSR"
 VENV = HOME / "venv"
 COMMIT = "107cefdc244c39106fa830359024f6a2f1c78871"   # the TripoSR revision MeshGate is tested with
+SOURCE_SHA256 = "a7b3871a1b4377bef96cbfb99bdc952bdd4f5df9f65fea4208d978a343fd1162"
 PACKAGES = ["torch", "omegaconf==2.3.0", "einops==0.7.0", "transformers==4.35.0", "trimesh==4.0.5", "rembg",
             "onnxruntime", "huggingface-hub<0.26", "imageio", "PyMCubes", "Pillow", "numpy<2"]
 RUNNER = Path(__file__).with_name("triposr_run.py")
@@ -44,24 +51,68 @@ def _python_request() -> str:
     return "3.11"
 
 
+def _torch_selection() -> tuple[str, str | None]:
+    """Keep explicit choices; Windows defaults to CPU or the CUDA wheel validated for Pascal–Ada."""
+    spec = os.environ.get("MESHGATE_TRIPOSR_TORCH_SPEC")
+    index = os.environ.get("MESHGATE_TRIPOSR_TORCH_INDEX")
+    if spec or index or sys.platform != "win32":
+        return spec or "torch", index
+    nvidia = shutil.which("nvidia-smi")
+    if nvidia:
+        try:
+            result = subprocess.check_output([nvidia, "--query-gpu=compute_cap,driver_version", "--format=csv,noheader"],
+                                             text=True, timeout=10).splitlines()[0]
+            capability, driver = [float(v.strip()) for v in result.split(",")]
+            if 6 <= capability < 10 and driver >= 520:
+                return "torch==2.7.1", "https://download.pytorch.org/whl/cu118"
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            pass
+    return "torch==2.7.1", "https://download.pytorch.org/whl/cpu"
+
+
 def setup(log=print) -> int:
     """Clone TripoSR at the tested revision and install its runtime into a private Python 3.11 venv."""
+    if os.name == "nt":
+        try:
+            ctypes.WinDLL("msvcp140.dll")
+        except OSError:
+            log("TripoSR needs Microsoft Visual C++ Redistributable x64 (not Build Tools). "
+                "Install https://aka.ms/vc14/vc_redist.x64.exe and retry Install in Studio.")
+            return 1
     HOME.mkdir(parents=True, exist_ok=True)
     git = shutil.which("git")
-    if not git:
-        log("git is needed to fetch TripoSR (https://git-scm.com)")
-        return 1
-    if not REPO.exists():
-        subprocess.check_call([git, "clone", "-q", "https://github.com/VAST-AI-Research/TripoSR.git", str(REPO)])
-    subprocess.call([git, "-C", str(REPO), "fetch", "-q", "--depth", "50", "origin"])
-    subprocess.check_call([git, "-C", str(REPO), "checkout", "-q", COMMIT])
+    if not git or (REPO.exists() and not (REPO / ".git").is_dir()):
+        marker = REPO / ".meshgate-revision"
+        if not marker.exists() or marker.read_text(encoding="ascii").strip() != COMMIT:
+            if REPO.exists():
+                raise RuntimeError(f"Unrecognized TripoSR folder: {REPO}; choose a new MESHGATE_TRIPOSR_HOME")
+            log("downloading the pinned TripoSR source archive (Git is not required)…")
+            url = f"https://codeload.github.com/VAST-AI-Research/TripoSR/zip/{COMMIT}"
+            with urllib.request.urlopen(url, timeout=120) as response:
+                data = response.read()
+            if hashlib.sha256(data).hexdigest() != SOURCE_SHA256:
+                raise RuntimeError("TripoSR source checksum mismatch")
+            with tempfile.TemporaryDirectory(dir=HOME) as tmp:
+                with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                    for name in archive.namelist():
+                        path = (Path(tmp) / name).resolve()
+                        if not path.is_relative_to(Path(tmp).resolve()):
+                            raise RuntimeError("Unsafe TripoSR archive path")
+                    archive.extractall(tmp)
+                source = Path(tmp) / f"TripoSR-{COMMIT}"
+                (source / ".meshgate-revision").write_text(COMMIT, encoding="ascii")
+                source.rename(REPO)
+    else:
+        if not REPO.exists():
+            subprocess.check_call([git, "clone", "-q", "https://github.com/VAST-AI-Research/TripoSR.git", str(REPO)])
+        subprocess.call([git, "-C", str(REPO), "fetch", "-q", "--depth", "50", "origin"])
+        subprocess.check_call([git, "-C", str(REPO), "checkout", "-q", COMMIT])
     uv = shutil.which("uv")
-    torch_spec = os.environ.get("MESHGATE_TRIPOSR_TORCH_SPEC", "torch")
-    torch_index = os.environ.get("MESHGATE_TRIPOSR_TORCH_INDEX")
+    torch_spec, torch_index = _torch_selection()
     packages = [torch_spec if p == "torch" else p for p in PACKAGES]
     if uv:
         if not python().exists():
-            subprocess.check_call([uv, "venv", "-q", "--python", _python_request(), str(VENV)])
+            subprocess.check_call([uv, "venv", "-q", "--managed-python", "--python", _python_request(), str(VENV)])
         installer = [uv, "pip", "install", "-q", "--python", str(python())]
     else:
         base = (sys.executable if (3, 10) <= sys.version_info[:2] <= (3, 12) else

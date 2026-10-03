@@ -15,8 +15,7 @@ into the web, Unity, Godot or Unreal.
 ## What you need
 
 - **Blender 3.5 or newer.** Studio finds it in the usual places, or set `MESHGATE_BLENDER`.
-- **Python 3.9 or newer.** macOS with Homebrew or the Xcode tools already has it. On Windows, install it from
-  [python.org](https://www.python.org/downloads/) with "Add to PATH" ticked. Set `MESHGATE_PYTHON` for an unusual path.
+- **Python 3.9 or newer on macOS/Linux and for the generic portable archive.** Windows x64 installers and the Windows portable archive include private Python and uv. `MESHGATE_PYTHON` can override the included Python.
 - **One AI command-line tool, signed in once:** Claude Code (`claude`, then `/login`), Codex CLI (`codex login`),
   Gemini CLI (`gemini`) or Ollama for offline use. Any other CLI works through **AI and advanced → Custom command**.
 - **For pictures, a mesh generator:** press **Install TripoSR** under **AI and advanced**. It runs locally, is MIT
@@ -136,3 +135,4 @@ tag or on demand. `npx tauri dev` runs the shell against the repository without 
 - On Windows, the NSIS and MSI installers were built, the NSIS installer was installed, and the desktop app started
   its local server. The installed bundle passed the file, API, offline viewer, kit build and mesh refine checks with
   Blender 4.5 LTS. The portable Windows launcher was also checked; the Blender add-on passed 35 checks.
+- Windows x64 releases include private Python and uv. The portable bundle passed server, prompt, kit and mesh checks with a clean PATH and no host Python; TripoSR setup passed without Git and uses an independent managed Python for its model environment.

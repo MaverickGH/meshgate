@@ -10,6 +10,8 @@ MeshGate — проприетарное ПО (см. [LICENSE](LICENSE)). Он в
 | [three.js](https://github.com/mrdoob/three.js) 0.169.0 | Вьюер студии и `targets/web` (в комплекте или с CDN) | MIT |
 | [IBM Plex Sans](https://github.com/IBM/plex) | Шрифт интерфейса студии, `apps/studio/ui/fonts` | SIL Open Font License 1.1 (`apps/studio/ui/fonts/LICENSE.txt`) |
 | [Tauri](https://tauri.app) 2 | Оболочка приложения MeshGate Studio | MIT или Apache-2.0 |
+| [CPython](https://www.python.org/) 3.11.16 / [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Приватное окружение Windows | PSF; лицензии зависимостей в `runtime/windows/python` |
+| [uv](https://github.com/astral-sh/uv) 0.12.19 | Установка локальных моделей в Windows | MIT или Apache-2.0; `runtime/windows/uv-licenses` |
 | [TripoSR](https://github.com/VAST-AI-Research/TripoSR) | Скачивается по запросу `meshgate.py gen --setup triposr` в `~/.cache/meshgate` | MIT (код и веса) |
 | [glTFast](https://github.com/Unity-Technologies/com.unity.cloud.gltfast) | Зависимость для Unity, ставится через Package Manager | Apache-2.0 |
 | [glTFRuntime](https://github.com/rdeioris/glTFRuntime) | Необязательный плагин Unreal, ставишь сам | MIT |

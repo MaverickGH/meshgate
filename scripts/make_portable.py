@@ -56,6 +56,11 @@ setlocal
 cd /d "%~dp0"
 set "PYTHONUTF8=1"
 if defined MESHGATE_PYTHON goto custom_python
+if exist "%~dp0runtime\windows\python\python.exe" (
+    set "PATH=%~dp0runtime\windows;%PATH%"
+    "%~dp0runtime\windows\python\python.exe" meshgate.py studio %*
+    goto done
+)
 py -3 -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1
 if not errorlevel 1 (
     py -3 meshgate.py studio %*
@@ -91,12 +96,18 @@ def main() -> int:
     ap.add_argument("--version", default=version())
     ap.add_argument("--out", default=str(ROOT / "dist"))
     ap.add_argument("--keep", help="also leave the unpacked folder here (for tests)")
+    ap.add_argument("--windows-runtime", action="store_true", help="include the private Windows x64 Python + uv")
     args = ap.parse_args()
     if not (ROOT / "apps" / "studio" / "ui" / "vendor" / "three" / "build" / "three.module.js").exists():
         subprocess.check_call([sys.executable, str(ROOT / "scripts" / "vendor_three.py")])   # offline viewer
-    name = f"MeshGate-{args.version}-portable"
+    name = f"MeshGate-{args.version}-{'windows-' if args.windows_runtime else ''}portable"
     with tempfile.TemporaryDirectory() as tmp:
         stage = Path(tmp) / name
+        if args.windows_runtime:
+            runtime = ROOT / "apps/studio/desktop/runtime/windows"
+            if not (runtime / "python/python.exe").is_file():
+                raise RuntimeError("Run scripts/build_windows_runtime.py first")
+            shutil.copytree(runtime, stage / "runtime/windows", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         for rel in INCLUDE:
             src = ROOT / rel
             if src.is_dir():
@@ -107,7 +118,9 @@ def main() -> int:
             else:
                 print(f"missing: {rel}")
                 return 1
-        (stage / "START.txt").write_text(START, encoding="utf-8")
+        intro = ("Windows x64: Python and uv are included. Double-click START_WINDOWS.cmd.\n"
+                 "Windows x64: Python и uv включены. Запусти START_WINDOWS.cmd двойным кликом.\n\n") if args.windows_runtime else ""
+        (stage / "START.txt").write_text(intro + START, encoding="utf-8")
         (stage / "START_WINDOWS.cmd").write_bytes(START_WINDOWS.replace("\n", "\r\n").encode("ascii"))
         out = Path(args.out).resolve()
         out.mkdir(parents=True, exist_ok=True)

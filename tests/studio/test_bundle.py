@@ -44,14 +44,26 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("root")
     ap.add_argument("--blender")
+    ap.add_argument("--private-runtime", action="store_true", help="require bundled Windows Python; no host Python or tools on PATH")
     args = ap.parse_args()
     root = Path(args.root).resolve()
     missing = [f for f in NEEDED if not (root / f).is_file()]
     step("the bundle carries every file Studio needs", not missing, ", ".join(missing))
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "MESHGATE_STUDIO_TOKEN": "bundle-test",
            "MESHGATE_PYTHON": sys.executable, "PYTHONUTF8": "1"}
+    python = sys.executable
+    if args.private_runtime:
+        python = str(root / "runtime/windows/python/python.exe")
+        if not Path(python).is_file():
+            step("private Python is present", False, python)
+            return 1
+        for key in list(env):
+            if key.startswith(("MESHGATE_", "UV_", "HF_", "PYTHON")) or key == "U2NET_HOME":
+                env.pop(key)
+        env.update({"PATH": str(root / "runtime/windows") + os.pathsep + os.path.join(os.environ["SystemRoot"], "System32"),
+                    "MESHGATE_STUDIO_TOKEN": "bundle-test", "PYTHONUTF8": "1", "PYTHONDONTWRITEBYTECODE": "1"})
     lib = Path(tempfile.mkdtemp(prefix="meshgate-bundle-"))
-    launch = [sys.executable, str(root / "meshgate.py"), "studio"]
+    launch = [python, str(root / "meshgate.py"), "studio"]
     if os.name == "nt" and (root / "START_WINDOWS.cmd").is_file():
         launch = ["cmd.exe", "/d", "/c", str(root / "START_WINDOWS.cmd")]
     srv = subprocess.Popen([*launch, "--port", "0", "--no-browser",
@@ -81,7 +93,7 @@ def main() -> int:
     step("the bundled status finds the engine plugins it ships", bool(url) and all(
         (status.get("tools", {}).get(t) or {}).get("plugin") for t in ("blender", "unity", "godot", "unreal")))
     step("three.js is served from the bundle (offline viewer)", bool(url) and three == 200)
-    r = subprocess.run([sys.executable, str(root / "meshgate.py"), "gen", "a crate", "--prompt-only"], capture_output=True,
+    r = subprocess.run([python, str(root / "meshgate.py"), "gen", "a crate", "--prompt-only"], capture_output=True,
                        text=True, env=env, cwd=str(root))
     step("gen builds a prompt from the bundled kit", "mg.part(" in r.stdout)
     if args.blender:
@@ -89,7 +101,7 @@ def main() -> int:
                             ("hydrant", ["--mesh", str(root / "sources/generate/examples/hydrant_triposr_raw.glb"),
                                          "--size", "0.8", "--tiers", "mobile-low,mobile-mid"])):
             out = lib / name
-            r = subprocess.run([sys.executable, str(root / "meshgate.py"), "gen", *extra, "--name", name, "--no-preview",
+            r = subprocess.run([python, str(root / "meshgate.py"), "gen", *extra, "--name", name, "--no-preview",
                                 "--blender", args.blender, "--out-dir", str(out)], capture_output=True, text=True,
                                env=env, cwd=str(root))
             try:
