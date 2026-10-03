@@ -466,6 +466,7 @@ class Kit:
         self._section_fit = dict(section_fit or {})
         self._shift = Vector()
         self._max_file_mb = float(max_file_mb) if max_file_mb else None
+        self._base_notes = []   # what fitting a loaded base to the tier did (mg.load_base)
         self._split = bool(split)   # every separate thing its own object (crates, planks, a lid) to move in an engine
         self._edits = dict(edits or {})   # hand changes to those parts (Studio's part editor), by part name
         self._pose_c: dict = {}                     # bone → the rotation that posed it (clips play as modelled)
@@ -2398,6 +2399,10 @@ class Kit:
             bpy.ops.object.join()
         obj = meshes[0]
         obj.name = self._name + "_base"
+        tris = sum(len(p.vertices) - 2 for p in obj.data.polygons)
+        if self._max_tris and tris * ratio > 0.9 * self._max_tris:   # a lighter tier: fewer triangles, before the morphs
+            ratio = 0.9 * self._max_tris / max(1, tris)
+            self._base_notes.append(f"base reduced for the tier: {tris:,} → about {int(tris * ratio):,} triangles")
         if ratio < 1:
             import bmesh
             # Remember which islands were closed before collapse; leave intentional openings alone.
@@ -2482,6 +2487,9 @@ class Kit:
                 obj.data.update()
             finally:
                 bm.free()
+        from . import basefit
+        self._base_notes += basefit.fit(obj, max_materials=self._max_materials, max_texture=self._max_texture,
+                                        max_texture_mb=self._max_texture_mb, tmp=self._tmp, name=self._name)
         self.preserve_surface(obj)
         obj["meshgate_base_source"] = path
         bpy.context.scene["mg_base_materials"] = True
@@ -3777,6 +3785,7 @@ class Kit:
             return self._finalize_rest(notes)
 
     def _finalize_rest(self, notes: list) -> list[str]:
+        notes += self._base_notes
         if self._fit:
             notes += self._apply_fit()
         self._make_palette()

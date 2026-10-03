@@ -545,6 +545,7 @@ def _check_generation(exe: str, work: Path) -> bool:
     ok &= _check_split(exe, work)
     ok &= _check_quad_parts(exe, work)
     ok &= _check_faceted_patches(exe, work)
+    ok &= _check_base_tiers(exe, work)
     ok &= _check_quality(exe, work)
     ok &= _check_concept(exe, work)
     if exe == (find_blenders() or [exe])[0]:   # Studio's Cancel stops the Blender of a job that never ends
@@ -1136,6 +1137,26 @@ def _check_faceted_patches(exe: str, work: Path) -> bool:
         good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
     if not good:
         print(f"  ✗ faceted patches: {why}")
+    return good
+
+
+def _check_base_tiers(exe: str, work: Path) -> bool:
+    """A saved character base (mg.load_base: the cat scout v15, five materials, fifteen 2K textures) fits the phone
+    tiers: on mobile-low it is reduced under 8,000 triangles and baked into one material with 512 px maps."""
+    out = work / "base_tiers"
+    r = subprocess.run([sys.executable, str(ROOT / "meshgate.py"), "gen", "--code",
+                        str(ROOT / "sources" / "generate" / "examples" / "cat_character.py"), "--name", "cat_character",
+                        "--size", "1", "--tiers", "mobile-low", "--blender", exe, "--no-preview", "--out-dir", str(out)],
+                       capture_output=True, text=True)
+    try:
+        g = json.load(open(out / "gen.json"))
+        t = g["report"]["tiers"]["mobile-low"]
+        good = g["ok"] and t["tris"] <= 8000 and t.get("materials") == 1 and (t.get("max_texture") or 0) <= 512
+        why = [t["tris"], t.get("materials"), t.get("max_texture"), g.get("problems")]
+    except Exception as exc:  # noqa: BLE001
+        good, why = False, [str(exc), (r.stdout + r.stderr)[-500:]]
+    if not good:
+        print(f"  ✗ base on phone tiers: {why}")
     return good
 
 

@@ -192,7 +192,7 @@ validation pass. The pattern of the tears is not an exact tracing of the referen
 
 ### The version in the repository (v0.6.9)
 
-A loaded base is a PC model for now: it keeps its 15 textures and five materials as they are, so the phone tiers are over their texture-memory and material budgets — build it with `--tiers pc`. Textures scaled and materials baked into an atlas per tier are next.
+A loaded base fits every tier by itself, the way an artist makes phone LODs of a hero model: where the tier's triangle budget is smaller it is reduced before the morphs; its textures are scaled to the tier's size and memory; and where it has more materials than the tier allows, the whole model is baked into one material — a second, fresh unwrap that bakes from its own materials (their textures pinned to the old UVs), so nothing under the clothes or behind an eye is caught by mistake. The cat v15: PC and mobile-high keep its five materials (textures 96 → 28 MB on mobile-high), mobile-mid gets one 1024 px atlas, mobile-low 7,185 triangles and a 512 px atlas. Light tiers keep the morph sliders that fit their file budget.
 
 
 The repository holds the latest version, v15: `sources/generate/examples/cat_character.py` (the prepared base
