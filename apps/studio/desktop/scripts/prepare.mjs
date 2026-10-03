@@ -18,6 +18,7 @@ function dropCaches(dir) {
 }
 for (const d of ["core", "sources", "apps/studio", "targets/web"]) dropCaches(path.join(root, d));
 const candidates = process.platform === "win32" ? [["py", "-3"], ["python"], ["python3"]] : [["python3"], ["python"]];
+if (process.env.MESHGATE_PYTHON) candidates.unshift([process.env.MESHGATE_PYTHON]);
 for (const [exe, ...args] of candidates) {
   const r = spawnSync(exe, [...args, script], { stdio: "inherit" });
   if (r.status === 0) process.exit(0);

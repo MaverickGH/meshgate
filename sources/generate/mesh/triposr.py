@@ -1,4 +1,4 @@
-"""TripoSR — local image → 3D (MIT code and weights, VAST-AI-Research + Stability AI). Runs on CPU or Apple MPS.
+"""TripoSR — local image → 3D (MIT code and weights, VAST-AI-Research + Stability AI). CPU, NVIDIA CUDA or Apple MPS.
 
     python3 meshgate.py gen --setup triposr     # one time: ~3 GB into ~/.cache/meshgate/triposr (Python 3.11 venv)
     python3 meshgate.py gen --image photo.png --engine mesh --provider triposr
@@ -56,19 +56,28 @@ def setup(log=print) -> int:
     subprocess.call([git, "-C", str(REPO), "fetch", "-q", "--depth", "50", "origin"])
     subprocess.check_call([git, "-C", str(REPO), "checkout", "-q", COMMIT])
     uv = shutil.which("uv")
+    torch_spec = os.environ.get("MESHGATE_TRIPOSR_TORCH_SPEC", "torch")
+    torch_index = os.environ.get("MESHGATE_TRIPOSR_TORCH_INDEX")
+    packages = [torch_spec if p == "torch" else p for p in PACKAGES]
     if uv:
         if not python().exists():
             subprocess.check_call([uv, "venv", "-q", "--python", _python_request(), str(VENV)])
-        subprocess.check_call([uv, "pip", "install", "-q", "--python", str(python()), *PACKAGES])
+        installer = [uv, "pip", "install", "-q", "--python", str(python())]
     else:
-        base = next((p for p in ("python3.11", "python3.12", "python3.10") if shutil.which(p)), None)
+        base = (sys.executable if (3, 10) <= sys.version_info[:2] <= (3, 12) else
+                next((p for p in ("python3.11", "python3.12", "python3.10") if shutil.which(p)), None))
         if not base:
             log("Python 3.10–3.12 or uv (https://docs.astral.sh/uv/) is needed for the TripoSR environment")
             return 1
         if not python().exists():
             subprocess.check_call([base, "-m", "venv", str(VENV)])
         subprocess.check_call([str(python()), "-m", "pip", "install", "-q", "--upgrade", "pip"])
-        subprocess.check_call([str(python()), "-m", "pip", "install", "-q", *PACKAGES])
+        installer = [str(python()), "-m", "pip", "install", "-q"]
+    if torch_index:
+        log(f"installing {torch_spec} from {torch_index}")
+        subprocess.check_call([*installer, torch_spec, "--index-url", torch_index])
+        packages = [p for p in packages if p != torch_spec]
+    subprocess.check_call([*installer, *packages])
     log(f"TripoSR ready: {REPO} (venv {VENV}). The weights download on the first run.")
     return 0
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cancel really stops the work: a Studio job whose build code never ends is cancelled through the API, and the Blender
-it started must be gone. POSIX only (on Windows the tree is taken down by taskkill /T).
+it started must be gone. On Windows the tree is taken down by taskkill /T.
 
     python3 tests/studio/test_cancel.py [--blender PATH]
 """
@@ -28,9 +28,6 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--blender")
     args = ap.parse_args()
-    if os.name == "nt":
-        print("  · cancel test is POSIX only — skipped")
-        return 0
     if args.blender:
         os.environ["MESHGATE_BLENDER"] = args.blender
     import server
@@ -50,7 +47,15 @@ def main() -> int:
         return json.loads(c.getresponse().read())
 
     def blenders():
-        out = subprocess.run(["pgrep", "-f", f"run_generated.py.*{lib}"], capture_output=True, text=True).stdout
+        if os.name == "nt":
+            folder = str(lib).replace("'", "''")
+            query = ("Get-CimInstance Win32_Process -Filter \"Name='blender.exe'\" | "
+                     "Where-Object { $_.CommandLine -and $_.CommandLine.Contains('run_generated.py') "
+                     f"-and $_.CommandLine.Contains('{folder}') }} | Select-Object -ExpandProperty ProcessId")
+            out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", query], capture_output=True,
+                                 text=True, check=True).stdout
+        else:
+            out = subprocess.run(["pgrep", "-f", f"run_generated.py.*{lib}"], capture_output=True, text=True).stdout
         return [int(p) for p in out.split()]
 
     job = post("/api/gen", {"description": "never ends", "engine": "kit", "ai_cmd": f"{sys.executable} {loop_ai}",
@@ -68,10 +73,16 @@ def main() -> int:
     gone = not blenders()
     print(f"  {'✓' if gone else '✗'} cancel stopped Blender too ({time.time() - t0:.1f} s)")
     state = studio.jobs[job["id"]]
+    t0 = time.time()
+    while state.code is None and time.time() - t0 < 5:
+        time.sleep(0.1)
     print(f"  {'✓' if state.cancelled and state.code is not None else '✗'} the job is marked cancelled and finished")
     ok &= gone and state.cancelled and state.code is not None
     for pid in blenders():   # never leave a stuck Blender behind, even when the check failed
-        os.kill(pid, 9)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=True)
+        else:
+            os.kill(pid, 9)
     httpd.shutdown()
     print("Result: " + ("cancel stops the whole job." if ok else "cancel left work running."))
     return 0 if ok else 1

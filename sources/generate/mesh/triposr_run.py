@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--repo", required=True)
     ap.add_argument("--image", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--model", default=os.environ.get("MESHGATE_TRIPOSR_MODEL", "stabilityai/TripoSR"),
+                    help="Hugging Face model id or a local folder containing config.yaml and model.ckpt")
     ap.add_argument("--resolution", type=int, default=256)
     ap.add_argument("--foreground-ratio", type=float, default=0.85)
     ap.add_argument("--no-remove-bg", action="store_true")
@@ -56,7 +58,8 @@ def main():
 
     t0 = time.time()
     device = "mps" if torch.backends.mps.is_available() else ("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = TSR.from_pretrained("stabilityai/TripoSR", config_name="config.yaml", weight_name="model.ckpt")
+    print(f"MESHGATE_TRIPOSR loading {args.model} on {device}", flush=True)
+    model = TSR.from_pretrained(args.model, config_name="config.yaml", weight_name="model.ckpt")
     model.renderer.set_chunk_size(8192)
 
     img = Image.open(args.image)

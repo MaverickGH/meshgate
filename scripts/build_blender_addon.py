@@ -21,20 +21,21 @@ SRC = ROOT / "sources" / "blender" / "meshgate_blender"
 
 
 def version() -> str:
-    m = re.search(r'^version = "([^"]+)"', (SRC / "blender_manifest.toml").read_text(), re.M)
+    m = re.search(r'^version = "([^"]+)"', (SRC / "blender_manifest.toml").read_text(encoding="utf-8"), re.M)
     return m.group(1)
 
 
 def build(out_dir: Path) -> Path:
     ver = version()
-    bl = re.search(r'"version": \((\d+), (\d+), (\d+)\)', (SRC / "__init__.py").read_text())
+    bl = re.search(r'"version": \((\d+), (\d+), (\d+)\)', (SRC / "__init__.py").read_text(encoding="utf-8"))
     if bl and ".".join(bl.groups()) != ver:
         sys.exit(f"✗ version mismatch: blender_manifest.toml {ver} vs bl_info {'.'.join(bl.groups())}")
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"meshgate-blender-{ver}.zip"
     files = {}
     for p in sorted(SRC.rglob("*")):
-        if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc":
+        if (p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"
+                and not any(part.startswith("._") for part in p.relative_to(SRC).parts)):
             files[p.relative_to(SRC).as_posix()] = p
     for name in ("validate_glb.py", "validate_fbx.py", "profiles.json"):
         files[f"validator/{name}"] = ROOT / "core" / name
@@ -55,6 +56,9 @@ def build(out_dir: Path) -> Path:
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", default=str(ROOT / "dist"))
     args = ap.parse_args()

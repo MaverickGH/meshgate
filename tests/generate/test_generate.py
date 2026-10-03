@@ -27,7 +27,10 @@ def step(name, ok, detail=""):
 
 # examples shipped with the repository are allowed
 for ex in sorted((ROOT / "sources" / "generate" / "examples").glob("*.py")):
-    step(f"example {ex.name} passes safety", not safety.check(ex.read_text()), str(safety.check(ex.read_text())))
+    if ex.name.startswith("._"):
+        continue
+    issues = safety.check(ex.read_text(encoding="utf-8"))
+    step(f"example {ex.name} passes safety", not issues, str(issues))
 
 OK = "def build(mg):\n    mg.part('cube', '#ffffff')\n"
 DENIED = {
@@ -233,5 +236,14 @@ sheet_model = generate.build_prompt("a lamp", name="lamp", style="stylized", siz
 step("the model prompt explains how to read each view and its axes",
      "turnaround sheet" in sheet_model and "SIDE: horizontal = Y" in sheet_model and "TOP: horizontal = X" in sheet_model)
 os.environ.pop("MESHGATE_CODEX")
+with tempfile.TemporaryDirectory(prefix="meshgate command space ") as command_dir:
+    script = Path(command_dir) / "fake ai.py"
+    script.write_text("import sys\nsys.stdin.read()\nprint('def build(mg):\\n    pass')\n", encoding="utf-8")
+    import subprocess
+    import shlex
+    command = (subprocess.list2cmdline([sys.executable, str(script)]) if os.name == "nt"
+               else shlex.join([sys.executable, str(script)]))
+    answer = generate.ask_ai("custom", "test prompt", ai_cmd=command, timeout=15)
+    step("a custom AI command works when its script path contains spaces", "def build(mg):" in answer)
 print("Result: " + ("generation checks passed." if not FAILS else f"{len(FAILS)} failed."))
 sys.exit(1 if FAILS else 0)

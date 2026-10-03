@@ -48,10 +48,14 @@ def main() -> int:
     root = Path(args.root).resolve()
     missing = [f for f in NEEDED if not (root / f).is_file()]
     step("the bundle carries every file Studio needs", not missing, ", ".join(missing))
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "MESHGATE_STUDIO_TOKEN": "bundle-test"}
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "MESHGATE_STUDIO_TOKEN": "bundle-test",
+           "MESHGATE_PYTHON": sys.executable, "PYTHONUTF8": "1"}
     lib = Path(tempfile.mkdtemp(prefix="meshgate-bundle-"))
-    srv = subprocess.Popen([sys.executable, str(root / "meshgate.py"), "studio", "--port", "0", "--no-browser",
-                            "--library", str(lib)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+    launch = [sys.executable, str(root / "meshgate.py"), "studio"]
+    if os.name == "nt" and (root / "START_WINDOWS.cmd").is_file():
+        launch = ["cmd.exe", "/d", "/c", str(root / "START_WINDOWS.cmd")]
+    srv = subprocess.Popen([*launch, "--port", "0", "--no-browser",
+                            "--library", str(lib)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", env=env,
                            cwd=str(root))
     url = None
     t0 = time.time()
@@ -67,7 +71,11 @@ def main() -> int:
         c = http.client.HTTPConnection("127.0.0.1", url, timeout=20)
         c.request("GET", "/three/build/three.module.js", headers={"Host": f"127.0.0.1:{url}"})
         three = c.getresponse().status
-    srv.terminate()
+    if os.name == "nt" and launch[0] == "cmd.exe":
+        subprocess.run(["taskkill", "/PID", str(srv.pid), "/T", "/F"], capture_output=True)
+    else:
+        srv.terminate()
+    srv.wait(timeout=10)
     step("the bundled server starts and answers /api/status with the token from the environment",
          bool(url) and len(status.get("tiers", [])) == 4)
     step("the bundled status finds the engine plugins it ships", bool(url) and all(

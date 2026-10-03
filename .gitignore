@@ -13,6 +13,7 @@ apps/studio/ui/vendor/
 *.blend1
 # ОС
 .DS_Store
+._*
 # Ассеты: в репозитории живут только демо-примеры (≈1.5 МБ каждый); свои держите вне репо
 samples/*.glb
 samples/*.gltf
@@ -41,3 +42,6 @@ samples/_local/
 
 # local tool settings (Claude Code preview servers)
 .claude/
+# Local package caches and macOS sidecars (keep after sample-pack allow rules).
+.pnpm-store/
+._*

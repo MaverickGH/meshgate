@@ -144,6 +144,9 @@ def handle(exe: str, zip_path: Path | None, uninstall: bool) -> bool:
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--blender", help="path to the Blender executable (default: MESHGATE_BLENDER, PATH, usual install places)")
     ap.add_argument("--all", action="store_true", help="every Blender found")

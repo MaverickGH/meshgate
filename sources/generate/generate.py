@@ -302,6 +302,8 @@ def recipes_for(text: str, limit: int = 2) -> list[dict]:
     low = text.lower()
     found = []
     for f in sorted(RECIPES.glob("*.md")):
+        if f.name.startswith("._"):
+            continue
         raw = f.read_text(encoding="utf-8")
         head, _, body = raw.partition("\n---\n")
         meta = dict(line.split(":", 1) for line in head.strip("-\n").splitlines() if ":" in line)
@@ -406,6 +408,8 @@ def absolute_paths(parts: list[str]) -> list[str]:
     MeshGate was started (tests/fake_ai.py, ./my_cli) into absolute paths first."""
     out = []
     for c in parts:
+        if os.name == "nt" and len(c) >= 2 and c[0] == c[-1] and c[0] in ("'", '"'):
+            c = c[1:-1]  # shlex's Windows mode retains the enclosing quotes
         looks_like_path = ("/" in c or "\\" in c or c.startswith(".")) and not c.startswith("-") and "{" not in c
         out.append(str(Path(c).resolve()) if looks_like_path and Path(c).exists() else c)
     return out

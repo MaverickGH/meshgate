@@ -18,6 +18,8 @@ LINK = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 
 def pages():
     for p in ROOT.rglob("*.md"):
+        if any(part.startswith("._") for part in p.relative_to(ROOT).parts):
+            continue
         rel = p.relative_to(ROOT).as_posix()
         if any(part in SKIP for part in p.relative_to(ROOT).parts) or rel.startswith("samples/_local") or "/.godot/" in rel:
             continue

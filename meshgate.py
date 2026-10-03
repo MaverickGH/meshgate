@@ -183,9 +183,12 @@ def _addon_installed(blender_exe: str | None) -> str | None:
     homes = {"Darwin": Path.home() / "Library" / "Application Support" / "Blender",
              "Windows": Path(os.environ.get("APPDATA", "")) / "Blender Foundation" / "Blender"}
     base = homes.get(platform.system(), Path.home() / ".config" / "blender") / major_minor
-    for cand in (base / "extensions" / "user_default" / "meshgate", base / "scripts" / "addons" / "meshgate"):
-        if (cand / "__init__.py").exists():
-            return str(cand)
+    portable = Path(blender_exe).resolve().parent / "portable"
+    bases = [portable] if portable.is_dir() else [base]
+    for profile in bases:
+        for cand in (profile / "extensions" / "user_default" / "meshgate", profile / "scripts" / "addons" / "meshgate"):
+            if (cand / "__init__.py").exists():
+                return str(cand)
     return None
 
 
@@ -342,8 +345,11 @@ def cmd_samples(args) -> int:
 
 
 def _check_web() -> int:
-    code = cmd_validate(argparse.Namespace(files=[str(p) for p in sorted(SAMPLES.glob("*.glb"))], strict=True, json=False))
+    code = cmd_validate(argparse.Namespace(files=[str(p) for p in sorted(SAMPLES.glob("*.glb"))
+                                                if not p.name.startswith("._")], strict=True, json=False))
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "check_profiles.py")]))   # tiers identical everywhere
+    code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "studio" / "test_tools.py")]))
+    code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_triposr_setup.py")]))
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_generate.py")]))   # gen: safety, prompt
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_library.py")]))   # free-model library
     code = max(code, subprocess.call([sys.executable, str(ROOT / "tests" / "generate" / "test_mcp.py")]))   # MCP server protocol

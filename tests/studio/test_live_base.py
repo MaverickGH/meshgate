@@ -26,13 +26,13 @@ with tempfile.TemporaryDirectory() as tmp:
   source=folder/state['code'];assert 'morphs=True' in source.read_text()
   restarted=server.Studio(Path(tmp),'new')
   restarted.live_base({'name':'cat','action':'load'})
-  assert str(target) in send.call_args.args[0]['code']
+  assert repr(str(target)) in send.call_args.args[0]['code']
   (folder/'cat.py').write_text('def build(mg):\n    pass\n')
   (folder/'gen.json').write_text(json.dumps({'name':'cat','engine':'kit','code':'cat.py','tiers':['pc']}))
   with patch.object(server,'Job',side_effect=lambda jid,cmd,name:types.SimpleNamespace(id=jid,cmd=cmd,name=name,code=0)):
    job=restarted.refine({'name':'cat'})
    selected=Path(job.cmd[job.cmd.index('--code')+1])
-   assert str(target) in selected.read_text(), 'restart rebuild ignored saved geometry'
+   assert repr(str(target)) in selected.read_text(), 'restart rebuild ignored saved geometry'
   restarted.jobs['busy']=types.SimpleNamespace(name='cat',code=None)
   for req in ({'name':'cat','action':'save'},{'name':'cat','action':'load'}):
    try:restarted.live_base(req)

@@ -50,6 +50,8 @@ python3 meshgate.py studio
 ```
 
 It opens Studio in your browser. It runs on this computer only; no one else can reach it.
+On Windows you can also double-click `START_WINDOWS.cmd`: it finds Python through `py -3`, `python` or `python3`.
+Set `MESHGATE_PYTHON` to the full path of your Python executable if needed.
 
 **From the source code** (for development): `git clone https://github.com/MaverickGH/meshgate.git`, then
 `python3 meshgate.py studio` in that folder.
@@ -105,9 +107,14 @@ for Gemini) is enough; an API key is the alternative. Codex signed in to ChatGPT
 
 Pick one:
 
-- **TripoSR — local and free** (MIT, ~3 GB, CPU or Apple GPU). Studio → **Status & AI** → Optional components →
+- **TripoSR — local and free** (MIT, CPU, NVIDIA CUDA or Apple GPU; CUDA needs more disk space). Studio → **Status & AI** → Optional components →
   TripoSR → **Install** (also under **AI and advanced**), or `python3 meshgate.py gen --setup triposr`. It needs `git` and either [uv](https://docs.astral.sh/uv/) or Python
   3.10–3.12.
+  On Windows, a tested GTX 1080 configuration uses `MESHGATE_TRIPOSR_TORCH_SPEC=torch==2.7.1` and
+  `MESHGATE_TRIPOSR_TORCH_INDEX=https://download.pytorch.org/whl/cu118` before setup.
+  `MESHGATE_TRIPOSR_HOME` selects the environment directory; `MESHGATE_TRIPOSR_MODEL` can point to a local folder
+  containing `config.yaml` and `model.ckpt`. Keep `HF_HOME` and `U2NET_HOME` consistent between setup and launch
+  to reuse the transformer configuration and background-removal model offline.
 - **A cloud generator:** a key for [Meshy](https://www.meshy.ai/api) (`MESHY_API_KEY`), [Tripo](https://platform.tripo3d.ai)
   (`TRIPO_API_KEY`) or [fal.ai](https://fal.ai/dashboard/keys) (`FAL_KEY`: TRELLIS, Hunyuan3D, TripoSR). Paste it in
   Studio → **Status & AI** → API keys, or set it in the environment.

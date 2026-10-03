@@ -27,10 +27,11 @@ INCLUDE = [
     "targets/unity/com.meshgate.unity", "targets/godot/MeshGateDemo/addons/meshgate", "targets/unreal/MeshGate",
     "scripts/build_blender_addon.py", "scripts/install_blender_addon.py", "scripts/vendor_three.py",
 ]
-SKIP = re.compile(r"(__pycache__|\.pyc$|\.DS_Store$|\.blend1$)")
+SKIP = re.compile(r"(^\._|__pycache__|\.pyc$|\.DS_Store$|\.blend1$)")
 START = """MeshGate Studio — portable
 
 Needs Python 3.9+ (nothing to pip install) and Blender 3.5+. Then, in this folder:
+On Windows, double-click START_WINDOWS.cmd (MESHGATE_PYTHON can specify your Python).
 
     python3 meshgate.py doctor     # what is found and what is missing
     python3 meshgate.py studio     # opens Studio in your browser (runs on this computer only)
@@ -42,12 +43,42 @@ Generated assets go to ~/Documents/MeshGate Assets. Guide: docs/getting-started.
 MeshGate Studio — переносная версия
 
 Нужны Python 3.9+ (ничего ставить через pip не нужно) и Blender 3.5+. Потом в этой папке:
+На Windows запусти START_WINDOWS.cmd двойным кликом (MESHGATE_PYTHON задаёт путь к Python).
 
     python3 meshgate.py doctor     # что найдено и чего не хватает
     python3 meshgate.py studio     # открывает студию в браузере (работает только на этом компьютере)
 
 Готовые ассеты сохраняются в ~/Documents/MeshGate Assets. Руководство: docs/getting-started.ru.md
 """
+
+START_WINDOWS = r'''@echo off
+setlocal
+cd /d "%~dp0"
+set "PYTHONUTF8=1"
+if defined MESHGATE_PYTHON goto custom_python
+py -3 -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1
+if not errorlevel 1 (
+    py -3 meshgate.py studio %*
+    goto done
+)
+python -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1
+if not errorlevel 1 (
+    python meshgate.py studio %*
+    goto done
+)
+python3 -c "import sys; sys.exit(sys.version_info < (3, 9))" >nul 2>&1
+if not errorlevel 1 (
+    python3 meshgate.py studio %*
+    goto done
+)
+echo Install Python 3.9+ from https://www.python.org/downloads/ and add it to PATH.
+pause
+exit /b 1
+:custom_python
+"%MESHGATE_PYTHON%" meshgate.py studio %*
+:done
+if errorlevel 1 pause
+'''
 
 
 def version() -> str:
@@ -77,6 +108,7 @@ def main() -> int:
                 print(f"missing: {rel}")
                 return 1
         (stage / "START.txt").write_text(START, encoding="utf-8")
+        (stage / "START_WINDOWS.cmd").write_bytes(START_WINDOWS.replace("\n", "\r\n").encode("ascii"))
         out = Path(args.out).resolve()
         out.mkdir(parents=True, exist_ok=True)
         archive = out / f"{name}.zip"

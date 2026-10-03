@@ -133,4 +133,6 @@ tag or on demand. `npx tauri dev` runs the shell against the repository without 
 - `tests/studio/test_cancel.py` cancels a job whose build never ends and checks that its Blender is gone. Quitting
   the app asks the server to cancel its jobs first, so no Blender is left running.
 - Progress arrives line by line while Blender works, not only at the end.
-- The Windows build is configured and runs in CI, but it has not been started on a Windows machine yet.
+- On Windows, the NSIS and MSI installers were built, the NSIS installer was installed, and the desktop app started
+  its local server. The installed bundle passed the file, API, offline viewer, kit build and mesh refine checks with
+  Blender 4.5 LTS. The portable Windows launcher was also checked; the Blender add-on passed 35 checks.

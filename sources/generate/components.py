@@ -1,6 +1,6 @@
 """Optional local components — big models MeshGate can install into ~/.cache/meshgate, each in its own Python venv.
 
-    python3 meshgate.py gen --setup triposr      picture → 3D, MIT, ~3 GB, CPU or Apple GPU (installed and wired in)
+    python3 meshgate.py gen --setup triposr      picture → 3D, MIT, ~3 GB, CPU, NVIDIA CUDA or Apple GPU (installed and wired in)
     python3 meshgate.py gen --setup hunyuan3d    picture → 3D, higher quality, ~10 GB, NVIDIA GPU recommended
     python3 meshgate.py gen --setup kimodo       text → character animation, ~20 GB, NVIDIA GPU, Meta Llama 3 access
 
@@ -103,9 +103,9 @@ class _TripoSR:
         return triposr.setup(log=log)
 
     def info(self) -> dict:
-        return {"id": "triposr", "label": "TripoSR", "what": "picture → 3D, used by the mesh engine", "size": "~3 GB",
+        return {"id": "triposr", "label": "TripoSR", "what": "picture → 3D, used by the mesh engine", "size": "~3 GB (more with CUDA)",
                 "license": "MIT (code and weights)", "url": "https://github.com/VAST-AI-Research/TripoSR",
-                "gpu": "CPU or Apple GPU", "installed": triposr.available(), "extra_step": None, "missing": None,
+                "gpu": "CPU, NVIDIA CUDA or Apple GPU", "installed": triposr.available(), "extra_step": None, "missing": None,
                 "folder": str(triposr.HOME), "setup": "meshgate.py gen --setup triposr"}
 
 

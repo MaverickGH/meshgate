@@ -50,6 +50,8 @@ python3 meshgate.py studio
 ```
 
 Студия откроется в браузере. Она работает только на этом компьютере, снаружи к ней не подключиться.
+На Windows можно запустить `START_WINDOWS.cmd` двойным кликом: он ищет Python через `py -3`, `python` или `python3`.
+При необходимости задай `MESHGATE_PYTHON` — полный путь к исполняемому файлу Python.
 
 **Из исходников** (для разработки): `git clone https://github.com/MaverickGH/meshgate.git`, затем
 `python3 meshgate.py studio` в этой папке.
@@ -105,9 +107,14 @@ Google для Gemini); API-ключ — альтернатива. Codex со в�
 
 Выбери одно:
 
-- **TripoSR — локально и бесплатно** (MIT, ~3 ГБ, процессор или видеочип Apple). Студия → **«Статус и ИИ»** →
+- **TripoSR — локально и бесплатно** (MIT, процессор, NVIDIA CUDA или видеочип Apple; CUDA занимает больше места). Студия → **«Статус и ИИ»** →
   «Дополнительные компоненты» → TripoSR → **«Установить»** (есть и в разделе «Нейросеть и дополнительно»), или
   `python3 meshgate.py gen --setup triposr`. Нужны `git` и [uv](https://docs.astral.sh/uv/) либо Python 3.10–3.12.
+  Проверенная конфигурация для Windows и GTX 1080: перед установкой задать `MESHGATE_TRIPOSR_TORCH_SPEC=torch==2.7.1`
+  и `MESHGATE_TRIPOSR_TORCH_INDEX=https://download.pytorch.org/whl/cu118`.
+  `MESHGATE_TRIPOSR_HOME` задаёт папку окружения; `MESHGATE_TRIPOSR_MODEL` может указывать на локальную папку
+  с `config.yaml` и `model.ckpt`. Используй одинаковые `HF_HOME` и `U2NET_HOME` при установке и запуске,
+  чтобы конфигурация трансформера и модель удаления фона использовались из кэша без сети.
 - **Облачный генератор:** ключ [Meshy](https://www.meshy.ai/api) (`MESHY_API_KEY`), [Tripo](https://platform.tripo3d.ai)
   (`TRIPO_API_KEY`) или [fal.ai](https://fal.ai/dashboard/keys) (`FAL_KEY`: TRELLIS, Hunyuan3D, TripoSR). Вставь его в
   студии → **«Статус и ИИ»** → «Ключи API» или задай в окружении.

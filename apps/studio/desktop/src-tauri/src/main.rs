@@ -169,6 +169,7 @@ fn start_server(app: AppHandle) {
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONDONTWRITEBYTECODE", "1") // never write .pyc into the (signed) app bundle
         .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUTF8", "1") // Windows file reads and subprocess output must use UTF-8 too
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
