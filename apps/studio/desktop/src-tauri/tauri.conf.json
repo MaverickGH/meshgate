@@ -1,0 +1,56 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MeshGate Studio",
+  "version": "0.6.11",
+  "identifier": "dev.meshgate.studio",
+  "build": {
+    "frontendDist": "../splash",
+    "beforeBuildCommand": "node scripts/prepare.mjs"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MeshGate Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 620,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Text to game-ready 3D assets for web, Unity, Godot and Unreal",
+    "longDescription": "MeshGate Studio sends your description to an AI command-line tool (Claude Code, Codex, Gemini, Ollama or your own), builds the model in Blender once per quality tier and checks it against the MeshGate asset contract.",
+    "copyright": "\u00a9 2026 CYBER Department. All rights reserved.",
+    "licenseFile": "../../../../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../runtime/studio/resources/": "meshgate/",
+      "../runtime/studio/python/": "meshgate/runtime/studio/python/",
+      "../runtime/studio/runtime.json": "meshgate/runtime/studio/runtime.json",
+      "../runtime/studio/uv-licenses/": "meshgate/runtime/studio/uv-licenses/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

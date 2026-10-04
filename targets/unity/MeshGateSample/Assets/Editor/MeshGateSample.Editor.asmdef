@@ -1,0 +1,6 @@
+{
+  "name": "MeshGateSample.Editor",
+  "references": [ "MeshGate.Runtime", "MeshGate.Editor" ],
+  "includePlatforms": [ "Editor" ],
+  "autoReferenced": true
+}

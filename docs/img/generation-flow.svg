@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 250" font-family="'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14">
+  <title>MeshGate generation: description, AI command-line tool, build code, Blender once per tier, validated files, feedback loop</title>
+  <style>
+    .box { fill: #f7f6f4; stroke: #d07d45; stroke-width: 1.5; }
+    .hub { fill: #fbefe5; stroke: #d07d45; stroke-width: 2; }
+    .t { fill: #1d1f22; } .m { fill: #6b6e73; font-size: 12px; }
+    .a { stroke: #d07d45; stroke-width: 1.5; fill: none; marker-end: url(#h); }
+    .fb { stroke: #e11d48; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; marker-end: url(#hr); }
+    .tier { fill: #ffffff; stroke: #e2b690; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #1c1e21; } .hub { fill: #2a2119; } .t { fill: #ededed; } .m { fill: #a2a4a8; } .tier { fill: #1c1e21; }
+    }
+  </style>
+  <defs>
+    <marker id="h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#d07d45"/></marker>
+    <marker id="hr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e11d48"/></marker>
+  </defs>
+
+  <rect class="box" x="10" y="70" width="140" height="70" rx="10"/>
+  <text class="t" x="80" y="100" text-anchor="middle" font-weight="600">Description</text>
+  <text class="m" x="80" y="120" text-anchor="middle">+ style, size, tiers</text>
+
+  <path class="a" d="M150 105H190"/>
+  <rect class="box" x="190" y="70" width="150" height="70" rx="10"/>
+  <text class="t" x="265" y="100" text-anchor="middle" font-weight="600">AI command line</text>
+  <text class="m" x="265" y="120" text-anchor="middle">claude · codex · gemini · …</text>
+
+  <path class="a" d="M340 105H380"/>
+  <rect class="box" x="380" y="70" width="130" height="70" rx="10"/>
+  <text class="t" x="445" y="100" text-anchor="middle" font-weight="600">build(mg)</text>
+  <text class="m" x="445" y="120" text-anchor="middle">safety check</text>
+
+  <path class="a" d="M510 105H550"/>
+  <rect class="hub" x="550" y="20" width="190" height="170" rx="12"/>
+  <text class="t" x="645" y="46" text-anchor="middle" font-weight="600">Blender, once per tier</text>
+  <rect class="tier" x="570" y="60" width="150" height="26" rx="6"/><text class="m" x="645" y="78" text-anchor="middle">pc · canonical GLB</text>
+  <rect class="tier" x="570" y="92" width="150" height="26" rx="6"/><text class="m" x="645" y="110" text-anchor="middle">mobile-high</text>
+  <rect class="tier" x="570" y="124" width="150" height="26" rx="6"/><text class="m" x="645" y="142" text-anchor="middle">mobile-mid</text>
+  <rect class="tier" x="570" y="156" width="150" height="26" rx="6"/><text class="m" x="645" y="174" text-anchor="middle">mobile-low</text>
+
+  <path class="a" d="M740 105H780"/>
+  <rect class="box" x="780" y="70" width="170" height="70" rx="10"/>
+  <text class="t" x="865" y="100" text-anchor="middle" font-weight="600">Validated files</text>
+  <text class="m" x="865" y="120" text-anchor="middle">web · Unity · Godot · Unreal</text>
+
+  <path class="fb" d="M645 190V228H265V146"/>
+  <text x="455" y="222" text-anchor="middle" font-size="12" fill="#e11d48">error · over budget · wrong size → fix and retry</text>
+</svg>

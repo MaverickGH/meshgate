@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "../runtime/studio/uv": "meshgate/runtime/studio/uv"
+    }
+  }
+}

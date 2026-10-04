@@ -1,0 +1,22 @@
+schema_version = "1.0.0"
+
+id = "meshgate"
+version = "0.5.0"
+name = "MeshGate"
+tagline = "Check, fix and export assets for web, Unity, Godot and Unreal"
+maintainer = "MeshGate contributors"
+type = "add-on"
+
+website = "https://github.com/MaverickGH/meshgate"
+tags = ["Import-Export", "Game Engine", "Pipeline"]
+
+blender_version_min = "4.2.0"
+license = ["SPDX:LicenseRef-MeshGate-Proprietary"]
+copyright = ["2026 CYBER Department"]
+
+[permissions]
+files = "Export glTF/FBX files and read them back for validation"
+network = "Serve the export folder on localhost for the browser preview; search and download free CC0 / CC-BY models (Kit panel)"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "/.git/", "*.zip"]

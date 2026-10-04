@@ -1,0 +1,14 @@
+{
+  "name": "com.meshgate.unity",
+  "version": "0.3.0",
+  "displayName": "MeshGate",
+  "description": "Loads canonical MeshGate GLBs (meters, Y-up, PBR, names) into Unity on top of glTFast: runtime loading, animations by name, colliders, interaction, orbit camera.",
+  "unity": "6000.0",
+  "license": "LicenseRef-MeshGate-Proprietary",
+  "licensesUrl": "https://github.com/MaverickGH/meshgate/blob/main/LICENSE",
+  "author": { "name": "MeshGate", "url": "https://github.com/MaverickGH/meshgate" },
+  "keywords": [ "gltf", "glb", "gltfast", "meshgate", "blender" ],
+  "dependencies": {
+    "com.unity.cloud.gltfast": "6.20.0"
+  }
+}

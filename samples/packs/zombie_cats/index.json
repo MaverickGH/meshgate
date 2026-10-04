@@ -1,0 +1,453 @@
+{
+  "pack": "zombie_cats",
+  "title": "Zombie Cats",
+  "canonical_detail": "pc",
+  "assets": [
+    {
+      "file": "zc_ground_tile.glb",
+      "title": "Ground tile (paw prints)",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_ground_tile.fbx",
+      "tris": 5741,
+      "clips": [],
+      "dims_m": [
+        2.0001,
+        0.05,
+        2.0001
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_ground_tile.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_ground_tile.mobile-high.glb",
+          "tris": 3637,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_ground_tile.mobile-mid.glb",
+          "tris": 2444,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_ground_tile.mobile-low.glb",
+          "tris": 1094,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_road_tile.glb",
+      "title": "Road tile (fish marks)",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_road_tile.fbx",
+      "tris": 758,
+      "clips": [],
+      "dims_m": [
+        2.0,
+        0.109,
+        2.0
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_road_tile.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_road_tile.mobile-high.glb",
+          "tris": 468,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_road_tile.mobile-mid.glb",
+          "tris": 238,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_road_tile.mobile-low.glb",
+          "tris": 67,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_fence_broken.glb",
+      "title": "Broken fence (cat-ear pickets)",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_fence_broken.fbx",
+      "tris": 4943,
+      "clips": [],
+      "dims_m": [
+        1.9499,
+        1.1,
+        0.2267
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_fence_broken.fbx",
+        "zc_fence_broken.unreal.fbx",
+        "zc_fence_broken.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_fence_broken.mobile-high.glb",
+          "tris": 2858,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_fence_broken.mobile-mid.glb",
+          "tris": 3688,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_fence_broken.mobile-low.glb",
+          "tris": 1354,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_tombstone_cat.glb",
+      "title": "Cat tombstone",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_tombstone_cat.fbx",
+      "tris": 5358,
+      "clips": [],
+      "dims_m": [
+        0.84,
+        1.1107,
+        0.5819
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_tombstone_cat.fbx",
+        "zc_tombstone_cat.unreal.fbx",
+        "zc_tombstone_cat.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_tombstone_cat.mobile-high.glb",
+          "tris": 2878,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_tombstone_cat.mobile-mid.glb",
+          "tris": 1852,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_tombstone_cat.mobile-low.glb",
+          "tris": 1264,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_dead_tree.glb",
+      "title": "Dead tree + yarn",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_dead_tree.fbx",
+      "tris": 2336,
+      "clips": [
+        "yarn_swing"
+      ],
+      "dims_m": [
+        1.58,
+        2.6058,
+        0.8894
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_dead_tree.fbx",
+        "zc_dead_tree.unreal.fbx",
+        "zc_dead_tree.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_dead_tree.mobile-high.glb",
+          "tris": 896,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_dead_tree.mobile-mid.glb",
+          "tris": 436,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_dead_tree.mobile-low.glb",
+          "tris": 371,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_cardboard_barricade.glb",
+      "title": "Box barricade (hiding cat)",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_cardboard_barricade.fbx",
+      "tris": 8910,
+      "clips": [],
+      "dims_m": [
+        1.81,
+        1.33,
+        0.66
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_cardboard_barricade.fbx",
+        "zc_cardboard_barricade.unreal.fbx",
+        "zc_cardboard_barricade.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_cardboard_barricade.mobile-high.glb",
+          "tris": 4002,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_cardboard_barricade.mobile-mid.glb",
+          "tris": 4238,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_cardboard_barricade.mobile-low.glb",
+          "tris": 680,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_toxic_can.glb",
+      "title": "Toxic cat food can",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_toxic_can.fbx",
+      "tris": 14288,
+      "clips": [
+        "bubbles"
+      ],
+      "dims_m": [
+        0.9358,
+        0.9445,
+        0.9703
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_toxic_can.fbx",
+        "zc_toxic_can.unreal.fbx",
+        "zc_toxic_can.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_toxic_can.mobile-high.glb",
+          "tris": 7918,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_toxic_can.mobile-mid.glb",
+          "tris": 5574,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_toxic_can.mobile-low.glb",
+          "tris": 3902,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_street_lamp.glb",
+      "title": "Fish street lamp",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_street_lamp.fbx",
+      "tris": 8218,
+      "clips": [
+        "swing"
+      ],
+      "dims_m": [
+        0.56,
+        3.1539,
+        0.9568
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_street_lamp.fbx",
+        "zc_street_lamp.unreal.fbx",
+        "zc_street_lamp.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_street_lamp.mobile-high.glb",
+          "tris": 4049,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_street_lamp.mobile-mid.glb",
+          "tris": 1078,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_street_lamp.mobile-low.glb",
+          "tris": 294,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_bones_pile.glb",
+      "title": "Fish bones",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_bones_pile.fbx",
+      "tris": 9996,
+      "clips": [],
+      "dims_m": [
+        0.6671,
+        0.1971,
+        0.4674
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_bones_pile.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_bones_pile.mobile-high.glb",
+          "tris": 6150,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_bones_pile.mobile-mid.glb",
+          "tris": 3498,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_bones_pile.mobile-low.glb",
+          "tris": 1506,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_scratch_post_ruin.glb",
+      "title": "Ruined scratching post",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_scratch_post_ruin.fbx",
+      "tris": 23847,
+      "clips": [],
+      "dims_m": [
+        0.6248,
+        1.07,
+        0.56
+      ],
+      "bones": 0,
+      "variants": [
+        "zc_scratch_post_ruin.fbx",
+        "zc_scratch_post_ruin.unreal.fbx",
+        "zc_scratch_post_ruin.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_scratch_post_ruin.mobile-high.glb",
+          "tris": 14304,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_scratch_post_ruin.mobile-mid.glb",
+          "tris": 7366,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_scratch_post_ruin.mobile-low.glb",
+          "tris": 2489,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_zombie_cat.glb",
+      "title": "Zombie cat (Humanoid, idle/shamble)",
+      "kind": "asset",
+      "made_with": "kit, stylized",
+      "fbx": "zc_zombie_cat.fbx",
+      "tris": 83521,
+      "clips": [
+        "idle",
+        "shamble"
+      ],
+      "dims_m": [
+        0.615,
+        1.0867,
+        0.5472
+      ],
+      "bones": 25,
+      "variants": [
+        "zc_zombie_cat.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "zc_zombie_cat.mobile-high.glb",
+          "tris": 33217,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_zombie_cat.mobile-mid.glb",
+          "tris": 18215,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "zc_zombie_cat.mobile-low.glb",
+          "tris": 5933,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "zc_diorama.glb",
+      "title": "Diorama: zombie cat street",
+      "kind": "scene",
+      "fbx": null,
+      "tris": 458861,
+      "clips": [
+        "bubbles",
+        "idle",
+        "shamble",
+        "swing",
+        "yarn_swing"
+      ],
+      "dims_m": [
+        8.0001,
+        3.1539,
+        8.0001
+      ],
+      "bones": 75,
+      "variants": [],
+      "tiers": {
+        "mobile-low": {
+          "file": "zc_diorama.mobile-low.glb",
+          "tris": 51448,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "zc_diorama.mobile-mid.glb",
+          "tris": 130367,
+          "within_budget": true
+        },
+        "mobile-high": {
+          "file": "zc_diorama.mobile-high.glb",
+          "tris": 273187,
+          "within_budget": true
+        }
+      }
+    }
+  ]
+}

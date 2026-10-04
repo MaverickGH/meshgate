@@ -1,0 +1,30 @@
+# Unity: генерируемое
+/Library/
+/Temp/
+/Logs/
+/obj/
+/UserSettings/
+/Build*/
+/TestResults/
+*.csproj
+*.sln
+# копии демо-GLB кладёт MeshGate → Build demo scene (источник — samples/ в корне репо)
+/Assets/StreamingAssets/*.glb
+/Assets/MeshGate/*.glb
+/Assets/MeshGate/*.glb.meta
+/Assets/MeshGate/*.fbx
+/Assets/MeshGate/*.fbx.meta
+/Assets/MeshGate/meshgate_demo_textures/
+/Assets/MeshGate/meshgate_demo_textures.meta
+/Assets/MeshGate/meshgate_hero_textures/
+/Assets/MeshGate/meshgate_hero_textures.meta
+/Assets/MeshGate/MeshGateHero.controller
+/Assets/MeshGate/MeshGateHero.controller.meta
+/Assets/MeshGate/meshgate_*_textures/
+/Assets/MeshGate/meshgate_*_textures.meta
+/Assets/MeshGate/*.controller
+/Assets/MeshGate/*.controller.meta
+/Assets/MeshGate/Packs/
+/Assets/MeshGate/Packs.meta
+/Assets/StreamingAssets/packs/
+/Assets/StreamingAssets/packs.meta

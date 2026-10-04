@@ -1,0 +1,70 @@
+{
+  "assets": [
+    {
+      "file": "meshgate_demo.glb",
+      "title": "Beacon chest",
+      "tags": [
+        "hierarchy",
+        "hinge",
+        "emission",
+        "glass",
+        "2 animations"
+      ],
+      "fbx": "meshgate_demo.fbx",
+      "draco": "meshgate_demo.draco.glb"
+    },
+    {
+      "file": "meshgate_hero.glb",
+      "title": "Hero humanoid",
+      "tags": [
+        "Unity Humanoid skeleton",
+        "21 bones",
+        "UV",
+        "idle/wave"
+      ],
+      "fbx": "meshgate_hero.fbx"
+    },
+    {
+      "file": "meshgate_lantern.glb",
+      "title": "Lantern",
+      "tags": [
+        "transmission",
+        "ior",
+        "emission",
+        "swing/flicker"
+      ],
+      "fbx": "meshgate_lantern.fbx"
+    },
+    {
+      "file": "meshgate_barrel.glb",
+      "title": "Barrel",
+      "tags": [
+        "normal map",
+        "roughness map",
+        "cylindrical UV"
+      ],
+      "fbx": "meshgate_barrel.fbx"
+    },
+    {
+      "file": "meshgate_drone.glb",
+      "title": "Drone",
+      "tags": [
+        "deep hierarchy",
+        "4 rotors",
+        "hover/rotors",
+        "90 KB"
+      ],
+      "fbx": "meshgate_drone.fbx"
+    }
+  ],
+  "packs": [
+    {
+      "title": "Zombie Cats pack",
+      "path": "packs/zombie_cats"
+    },
+    {
+      "title": "Generated pack (meshgate.py gen)",
+      "path": "packs/generated"
+    }
+  ]
+}

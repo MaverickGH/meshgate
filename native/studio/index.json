@@ -1,0 +1,18 @@
+{
+  "version": "0.6.11",
+  "python": "3.11.16",
+  "packages": {
+    "macos-arm64": {
+      "file": "macos-arm64.zip",
+      "sha256": "a011bb5263293a6d0a3026972263bc164237be0243d3c4be9c681b4e32d58629"
+    },
+    "linux-x64": {
+      "file": "linux-x64.zip",
+      "sha256": "8cabfb0654b7d0241fc7fe608e224f40b3c6fd55a0f81cb1d2d548697c235ca5"
+    },
+    "windows-x64": {
+      "file": "windows-x64.zip",
+      "sha256": "cddb68e6dafdcd41e407511e226356ad8c93aca2a28b2fa5d69110377f3e2013"
+    }
+  }
+}

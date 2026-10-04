@@ -1,0 +1,107 @@
+name: studio-desktop
+# MeshGate Studio installers for macOS and Windows. Manual or on a version tag, so everyday pushes stay cheap.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            bundles: app,dmg
+          - os: windows-latest
+            bundles: nsis,msi
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"   # Windows runners default to cp1252; every check prints ✓
+    defaults:
+      run:
+        working-directory: apps/studio/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: apps/studio/desktop/src-tauri }
+      - name: Studio server and generation checks (pure Python)
+        if: hashFiles('native/studio/index.json') == ''
+        working-directory: .
+        run: |
+          python tests/generate/test_generate.py
+          python tests/generate/test_providers.py
+          python tests/studio/test_server.py
+      - run: npm ci
+      - name: MSVC environment for native Python modules
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Build the installer (unsigned)
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+      - name: The bundled copy of MeshGate works on its own (files, server, three.js, prompt)
+        working-directory: .
+        run: python tests/studio/test_bundle.py apps/studio/desktop/src-tauri/target/release/meshgate --private-runtime
+      - name: Native portable with private Python and uv
+        shell: bash
+        working-directory: .
+        run: |
+          python scripts/make_portable.py --compiled --out dist --keep "$RUNNER_TEMP/native-portable"
+          python tests/studio/test_bundle.py "$RUNNER_TEMP/native-portable" --private-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meshgate-studio-${{ runner.os }}
+          path: |
+            apps/studio/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/studio/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/studio/desktop/src-tauri/target/release/bundle/msi/*.msi
+            dist/*-portable.zip
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Build native Studio and check portable generation
+        run: |
+          python scripts/vendor_three.py
+          python scripts/prepare_studio_bundle.py
+          python scripts/make_portable.py --compiled --out dist --keep "$RUNNER_TEMP/native-portable"
+          wget -q https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz -O /tmp/blender.tar.xz
+          tar -xf /tmp/blender.tar.xz -C /tmp
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libxkbcommon0 libsm6
+          python tests/studio/test_bundle.py "$RUNNER_TEMP/native-portable" --private-runtime --blender /tmp/blender-4.2.23-linux-x64/blender
+      - uses: actions/upload-artifact@v4
+        with: { name: meshgate-studio-Linux, path: "dist/*-portable.zip" }
+  release:
+    # A version tag also gets a draft GitHub Release with both installers and the portable archive attached. It stays a draft (not visible to
+    # anyone without access) until someone publishes it by hand.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Draft release with the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # artifacts keep their bundle/<kind>/ folders; upload the installer files themselves
+          mapfile -t files < <(find dist -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.msi' -o -name '*-portable.zip' \))
+          printf '%s\n' "${files[@]}"
+          test ${#files[@]} -gt 0
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${files[@]}" --draft --generate-notes --title "MeshGate $TAG" --repo "$GITHUB_REPOSITORY"
+          fi

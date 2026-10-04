@@ -1,0 +1,206 @@
+**English** · [Русский](README.ru.md)
+
+# MeshGate
+
+> Make a game-ready 3D model from a description or a picture — or bring your own from Blender — and get checked files
+> for the web, Unity, Godot and Unreal, one per quality level.
+
+![Parts fly out of the MeshGate portal and snap together like a construction kit: a windmill, a treasure chest, a street lamp](docs/img/meshgate-hero-v4.gif)
+
+## What it does
+
+- **Text → 3D.** Describe the model. An AI tool you already use (Claude Code, Codex, Gemini or Ollama) writes a short
+  program that builds it from simple parts, and Blender builds it.
+- **Picture → 3D.** Drop a picture. TripoSR on your computer, or a cloud generator, turns it into a mesh; MeshGate
+  stands it upright, simplifies it and bakes its colours.
+- **Your own models.** Drop a GLB, FBX, OBJ, PLY or STL into Studio and it goes into the library, cleaned, remeshed
+  and baked for every tier. In Blender, the add-on checks a model, fixes what engines trip over and exports it.
+- **Parts you can move.** **Split into parts** makes every separate thing its own object — a pile of crates becomes one
+  object per crate, named by its colour, its origin at its base — so it can be moved and reworked on its own in the
+  engine. In Studio you drag, turn, scale, repaint or remove the parts and every tier is rebuilt with the changes.
+- **A character creator.** Sliders kept in the file as morph targets — head width, ears, eyes, belly, leg length —
+  change the model at once in Studio's **Appearance** tab, with its colours, as in a game; your game can move them too.
+- **Built and fitted part by part.** A model made of named parts (head, torso, arms, legs, tail) is compared with
+  every view of a character sheet part by part, and each part is fitted on its own. Shape it further by hand in a live
+  Blender scene and save that as a new base to build from.
+- **Edit under the model, send to the engine.** A bar under the model changes the texture, remeshes to a target
+  polycount in quads or triangles and shows the UV layout; **Send to** puts the files straight into your Unity, Godot
+  or Unreal project (and replaces them there next time), or opens the model in Blender.
+- **Ready for every device.** Each model is built for four quality tiers — PC, mobile high, mobile mid, mobile low —
+  within each tier's triangle and texture budget, as `.glb` plus `.fbx` and engine variants with collision and LODs.
+  Every file is checked against the engines' rules before you see it.
+- **Three styles that really differ:** stylized, low-poly (faceted, several times lighter) and realistic (dirt, colour
+  variation and relief baked into textures).
+
+Everything runs on your computer. Documentation is in English and Russian: every page has a language switcher.
+
+Release 0.6.11 packages five Studio modules as native libraries.
+[Protection limits](docs/code-protection.md) · [Repeat this in other projects](docs/code-protection-other-repos.md).
+
+## Download
+
+| System | File from [Releases](https://github.com/MaverickGH/meshgate/releases) |
+|---|---|
+| macOS (Apple Silicon) | `MeshGate.Studio_<version>_aarch64.dmg` — Python included |
+| Windows 10/11 | `MeshGate.Studio_<version>_x64-setup.exe` (or `.msi`) — Python included |
+| Windows without installing | `MeshGate-<version>-windows-portable.zip`, then `START_WINDOWS.cmd` — Python included |
+| Linux x64 without installing | `MeshGate-<version>-linux-portable.zip`, then `sh START.sh` — Python included |
+| macOS ARM64 without installing | `MeshGate-<version>-macos-portable.zip`, then `sh START.sh` — Python included |
+
+The builds are not signed yet: on macOS right-click the app → **Open** the first time; on Windows choose **More info →
+Run anyway**.
+
+## Install in five steps
+
+1. **MeshGate Studio** — from the table above.
+2. **Python** — included in release 0.6.11 on all three platforms. Public checkouts use the bundled Python 3.11 runtime.
+3. **Blender 3.5+** from [blender.org](https://www.blender.org/download/). Then in Studio: **Status & AI** → Blender →
+   **Install add-on**.
+4. **An AI tool** for text → 3D: **Status & AI** → Claude Code, Codex or Gemini → **Install** → **Sign in**. A
+   subscription sign-in is enough.
+5. **TripoSR** for picture → 3D: **Status & AI** → Optional components → TripoSR → **Install** (~3 GB, free).
+
+**Status & AI** shows at any time what was found and what is missing. Every option, every system and the engine
+plugins: **[Installation](docs/install.md)**.
+
+## Your first model
+
+1. Type a description — "a rusty street lamp with a fish-shaped lantern" — or drop a picture.
+2. Pick a style: **Stylized**, **Low-poly** or **Realistic**.
+3. Optional: **Output settings** for the size, the tiers, your own triangle limits and textures or vertex colours;
+   **Animations** to describe clips such as "open: the lid opens".
+4. Press **Generate**. In one to three minutes every tier appears in 3D with its triangle count.
+5. Under the model: **Texture**, **Remesh / UV**, **Parts**, the plug to send it into your engine project, and
+   **Download**. **Show files** opens the folder with the `.glb`, `.fbx` and engine files.
+
+![MeshGate Studio](docs/img/studio.png)
+
+## How it works
+
+![text → code → Blender per tier → validated files](docs/img/generation-flow.svg)
+
+The AI writes code against MeshGate's modeling kit, or a neural network makes a mesh. Blender, in the background,
+builds the model once per tier, and every file goes through the validator: size in meters, axes, materials, names,
+the tier's budget and what each engine needs. Anything wrong goes back to the AI with its code, up to three times.
+Details: [Generation](docs/generation.md) and the [asset contract](docs/asset-contract.md).
+
+## Use the files in your engine
+
+| Engine | Plugin | Which file |
+|---|---|---|
+| Web (Three.js) | none — [`meshgate-viewer.js`](targets/web/README.md) picks the tier by device | `<name>.glb` and `<name>.<tier>.glb` |
+| Unity 6 | glTFast + [`com.meshgate.unity`](targets/unity/README.md) | `.glb` at runtime; `.fbx` for Humanoid; `.unity.fbx` with LODs |
+| Godot 4.4+ | the [`meshgate`](targets/godot/README.md) add-on | `.glb`; `.godot.glb` with collision |
+| Unreal 5.4–5.6 | the [`MeshGate`](targets/unreal/README.md) plugin | `.glb` through Interchange; `.unreal.fbx` with `UCX_` collision |
+
+Web, Unity and Godot have automated checks that load every sample and generated asset (`meshgate.py check`); Unreal
+is checked against its Python API, a live editor run is next. Recommendations per engine: [Getting started](docs/getting-started.md#6-recommendations-per-target).
+
+## Example: Zombie Cats in three styles
+
+![The Zombie Cats pack in three styles, made with the Tripo / Meshy picture → 3D generators](docs/img/zc-concept-target.jpg)
+
+*Made with the Tripo / Meshy picture → 3D generators — the quality MeshGate's mesh engine reaches with a cloud key.
+What MeshGate's own kit engine generates without one is below.*
+
+Eleven assets, generated by MeshGate once per style from one description each and a reference picture. The realistic
+ones get their surfaces from the bake: wood grain, corrugated cardboard, mossy stone, rope, rusting metal. Every file
+fits every tier's budget, and the build code is in the repository, so `python3 sources/generate/make_style_packs.py`
+rebuilds all three packs without an AI. The zombie cat is sculpted, not stacked: one clay body with the arms reaching
+forward, a painted coat with soft edges, a stitched scar, a torn ear, a collar and bell
+([code](sources/generate/examples/zombie_cats/realistic/zombie_cat.py)); the realistic fish bones are spline spines,
+arched ribs and fanned fin rays ([code](sources/generate/examples/zombie_cats/realistic/bones_pile.py)).
+
+**Generated by MeshGate's kit engine, no key needed:**
+
+![The same Zombie Cats assets, generated by MeshGate in three styles](docs/img/zc-styles-lineup.jpg)
+
+| Stylized | Low-poly | Realistic |
+|---|---|---|
+| ![Stylized diorama](docs/img/zc-diorama-stylized.jpg) | ![Low-poly diorama](docs/img/zc-diorama-lowpoly.jpg) | ![Realistic diorama](docs/img/zc-diorama-realistic.jpg) |
+
+The hand-built original, with a rigged Humanoid cat and collision variants, checked in Unity and Godot:
+[`samples/packs/zombie_cats`](samples/packs/zombie_cats/README.md).
+
+## In Blender, without Studio
+
+Install the add-on (**Status & AI** → **Install add-on**, or `python3 meshgate.py install-blender` with Blender
+closed), then press **N** → **MeshGate**: tick the engines and tiers, **Check**, **Fix all**, **Export**. It writes a
+validated GLB plus FBX, collision for Unreal and Godot and LOD meshes for Unity, and opens the result in the browser.
+See [sources/blender/README.md](sources/blender/README.md).
+
+An AI client can build in Blender too: **Kit** → **Connect AI**, then `claude mcp add meshgate -- python3 meshgate.py mcp`.
+It builds kit code, sees rendered views and measured facts, and exports. See
+[docs/generation.md](docs/generation.md#live-blender-for-an-ai-client-mcp).
+
+## Command line
+
+The same without a window, and in CI:
+
+```bash
+python3 meshgate.py doctor                                    # what is installed and what is missing
+python3 meshgate.py gen "a wooden treasure chest" --size 0.8  # text → model for every tier
+python3 meshgate.py gen --image photo.jpg --size 0.8          # picture → model
+python3 meshgate.py gen --mesh crates.fbx --split             # your own model → every tier, one object per crate
+python3 meshgate.py send out/gen/crates --to unity --project ~/Games/MyGame   # into a Unity / Godot / Unreal project
+python3 meshgate.py studio                                    # MeshGate Studio in your browser
+python3 meshgate.py mcp                                       # MCP server: an AI client builds in live Blender
+python3 meshgate.py export scene.blend --out build/asset.glb --fbx   # Blender file → checked GLB (+ FBX)
+python3 meshgate.py validate build/asset.glb --strict         # check any GLB or FBX
+python3 meshgate.py serve --glb build/asset.glb               # view it in the web viewer
+python3 meshgate.py install-blender                           # install the Blender add-on
+python3 meshgate.py check all                                 # every automated check: web, Blender, Unity, Godot, Unreal
+```
+
+`gen` options — style, triangle limits, vertex colours, animations, concept pictures — are in
+[docs/generation.md](docs/generation.md). Tools are found automatically; `MESHGATE_BLENDER`, `MESHGATE_UNITY`,
+`MESHGATE_GODOT` and `MESHGATE_UNREAL` point to others.
+
+## Documentation
+
+| Page | What is in it |
+|---|---|
+| [Installation](docs/install.md) | Every step for macOS, Windows and Linux, what each part needs, where files are kept |
+| [Getting started](docs/getting-started.md) | From install to a model in your engine; recommendations per engine; troubleshooting |
+| [Generation](docs/generation.md) | Text and picture → 3D, styles, limits, colours, animations, AI tools, generators |
+| [Building after a reference](docs/reference-modeling.md) | A character after a turnaround: measuring, fitting, saved bases, live edits |
+| [MeshGate Studio](apps/studio/README.md) | The app: every panel and setting |
+| [Quality tiers](docs/quality-tiers.md) | Budgets and render settings for PC and three mobile tiers |
+| [Asset contract](docs/asset-contract.md) | The rules every file follows, and what the validator checks |
+| [Architecture](docs/architecture.md) | Why glTF, how sources and engines plug in |
+| [Roadmap](docs/roadmap.md) | What is done and what comes next |
+
+For AI coding agents, [`SKILL.md`](SKILL.md) turns the pipeline into a repeatable skill (`python3 scripts/install_skill.py`).
+
+<details>
+<summary>Repository layout</summary>
+
+```
+meshgate.py      the command line: doctor, gen, studio, send, export, validate, serve, check, install-blender, …
+core/            asset contract, quality tiers, GLB and FBX validators (standard library only)
+sources/blender  the Blender add-on, the modeling kit, headless export, demo generators
+sources/generate text and picture → model: prompts, AI tool adapters, guard rails, generators, refine, examples
+sources/maya     planned second source (v0.7)
+apps/studio      MeshGate Studio: local server and interface, Tauri desktop app for macOS and Windows
+targets/         web viewer, Unity package, Godot add-on, Unreal plugin
+samples/         demo assets and the Zombie Cats and Generated packs
+docs/            documentation (English and Russian)
+tests/           automated checks; .github/ runs them on Linux and Windows and builds the installers
+```
+
+</details>
+
+## Status
+
+**v0.6.10.** Generation from text and pictures, three styles, four quality tiers, MeshGate Studio for macOS, Windows
+and Linux (portable), your own models in the library, models split into parts you can edit, sending to Unity, Godot,
+Unreal and Blender, a character creator with morph sliders, part-by-part fitting to a sheet, live mesh editing and saved character bases
+on every tier; Windows releases carry their own Python. Checked on Blender 3.5, 4.2 LTS and 5.2 LTS, Unity 6, Godot 4.7 and in the web viewer; for every change
+GitHub runs the web, Blender, Godot and Unreal API checks on Linux, and the web and Blender checks on Windows. Characters with a skeleton, A/T-pose and clips come out of the kit. Next: a live Unreal run, animation from text
+(Kimodo), Maya, signed installers — see the [roadmap](docs/roadmap.md).
+
+## License
+
+Proprietary — all rights reserved, see [LICENSE](LICENSE). You may use official releases and ship games made with
+the plugins; the models you make are yours. Copying, sharing or modifying the code needs written permission.
+Third-party components keep their own licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

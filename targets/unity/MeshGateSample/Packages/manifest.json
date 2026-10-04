@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "com.meshgate.unity": "file:../../com.meshgate.unity",
+    "com.unity.cloud.gltfast": "6.20.0",
+    "com.unity.test-framework": "1.5.1",
+    "com.unity.modules.animation": "1.0.0",
+    "com.unity.modules.imageconversion": "1.0.0",
+    "com.unity.modules.imgui": "1.0.0",
+    "com.unity.modules.jsonserialize": "1.0.0",
+    "com.unity.modules.physics": "1.0.0",
+    "com.unity.modules.ui": "1.0.0",
+    "com.unity.modules.uielements": "1.0.0",
+    "com.unity.modules.unitywebrequest": "1.0.0",
+    "com.unity.modules.unitywebrequesttexture": "1.0.0"
+  }
+}

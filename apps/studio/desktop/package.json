@@ -1,0 +1,17 @@
+{
+  "name": "meshgate-studio",
+  "private": true,
+  "version": "0.6.11",
+  "description": "MeshGate Studio desktop shell (Tauri): starts the local Studio server and shows it in a native window.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "tauri": "tauri",
+    "prepare-bundle": "node scripts/prepare.mjs",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon app-icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0"
+  }
+}

@@ -1,0 +1,351 @@
+{
+  "pack": "generated",
+  "title": "Generated with meshgate.py gen",
+  "canonical_detail": "pc",
+  "assets": [
+    {
+      "file": "gen_windmill.glb",
+      "title": "Windmill \u2014 kit code from text",
+      "kind": "asset",
+      "made_with": "kit, text",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_windmill.fbx",
+      "tris": 15619,
+      "clips": [
+        "spin"
+      ],
+      "dims_m": [
+        11.7804,
+        14.7902,
+        6.9563
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_windmill.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_windmill.mobile-high.glb",
+          "tris": 7698,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_windmill.mobile-mid.glb",
+          "tris": 3340,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_windmill.mobile-low.glb",
+          "tris": 1235,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_street_lamp.glb",
+      "title": "Street lamp \u2014 kit code from text",
+      "kind": "asset",
+      "made_with": "kit, text",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_street_lamp.fbx",
+      "tris": 18091,
+      "clips": [],
+      "dims_m": [
+        0.815,
+        3.215,
+        0.52
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_street_lamp.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_street_lamp.mobile-high.glb",
+          "tris": 9649,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_street_lamp.mobile-mid.glb",
+          "tris": 4177,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_street_lamp.mobile-low.glb",
+          "tris": 1322,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_fire_hydrant.glb",
+      "title": "Fire hydrant \u2014 kit code",
+      "kind": "asset",
+      "made_with": "kit, hand-written example",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_fire_hydrant.fbx",
+      "tris": 1784,
+      "clips": [],
+      "dims_m": [
+        0.45,
+        0.765,
+        0.395
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_fire_hydrant.fbx",
+        "gen_fire_hydrant.unreal.fbx",
+        "gen_fire_hydrant.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_fire_hydrant.mobile-high.glb",
+          "tris": 1262,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_fire_hydrant.mobile-mid.glb",
+          "tris": 756,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_fire_hydrant.mobile-low.glb",
+          "tris": 396,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_treasure_chest.glb",
+      "title": "Treasure chest \u2014 kit code, opening lid",
+      "kind": "asset",
+      "made_with": "kit, hand-written example",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_treasure_chest.fbx",
+      "tris": 1294,
+      "clips": [
+        "open"
+      ],
+      "dims_m": [
+        0.8,
+        0.615,
+        0.535
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_treasure_chest.fbx",
+        "gen_treasure_chest.unreal.fbx",
+        "gen_treasure_chest.godot.glb"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_treasure_chest.mobile-high.glb",
+          "tris": 912,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_treasure_chest.mobile-mid.glb",
+          "tris": 672,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_treasure_chest.mobile-low.glb",
+          "tris": 196,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_toxic_can.glb",
+      "title": "Toxic can \u2014 kit code from a picture",
+      "kind": "asset",
+      "made_with": "kit, picture",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_toxic_can.fbx",
+      "tris": 16172,
+      "clips": [],
+      "dims_m": [
+        0.47,
+        0.7722,
+        0.5619
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_toxic_can.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_toxic_can.mobile-high.glb",
+          "tris": 8083,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_toxic_can.mobile-mid.glb",
+          "tris": 3245,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_toxic_can.mobile-low.glb",
+          "tris": 1179,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_hydrant_photo.glb",
+      "title": "Hydrant \u2014 TripoSR from a picture",
+      "kind": "asset",
+      "made_with": "mesh, TripoSR",
+      "colors": "texture",
+      "caps": null,
+      "fbx": null,
+      "tris": 62500,
+      "clips": [],
+      "dims_m": [
+        0.4552,
+        0.8,
+        0.4534
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_hydrant_photo.godot.glb"
+      ],
+      "tiers": {
+        "mobile-low": {
+          "file": "gen_hydrant_photo.mobile-low.glb",
+          "tris": 4000,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_hydrant_photo.mobile-mid.glb",
+          "tris": 10000,
+          "within_budget": true
+        },
+        "mobile-high": {
+          "file": "gen_hydrant_photo.mobile-high.glb",
+          "tris": 21000,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_toxic_can_vertex.glb",
+      "title": "Toxic can \u2014 kit code, vertex colours, no textures",
+      "kind": "asset",
+      "made_with": "kit, vertex colours",
+      "colors": "vertex",
+      "caps": null,
+      "fbx": "gen_toxic_can_vertex.fbx",
+      "tris": 16172,
+      "clips": [],
+      "dims_m": [
+        0.47,
+        0.7722,
+        0.5619
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_toxic_can_vertex.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_toxic_can_vertex.mobile-high.glb",
+          "tris": 8083,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_toxic_can_vertex.mobile-mid.glb",
+          "tris": 3245,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_toxic_can_vertex.mobile-low.glb",
+          "tris": 1179,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_forest_glade.glb",
+      "title": "Forest glade \u2014 kit code, instanced trees and fence",
+      "kind": "asset",
+      "made_with": "kit, instances",
+      "colors": "texture",
+      "caps": null,
+      "fbx": "gen_forest_glade.fbx",
+      "tris": 6950,
+      "clips": [],
+      "dims_m": [
+        13.3473,
+        4.03,
+        13.8169
+      ],
+      "bones": 0,
+      "variants": [
+        "gen_forest_glade.fbx"
+      ],
+      "tiers": {
+        "mobile-high": {
+          "file": "gen_forest_glade.mobile-high.glb",
+          "tris": 3150,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_forest_glade.mobile-mid.glb",
+          "tris": 1810,
+          "within_budget": true
+        },
+        "mobile-low": {
+          "file": "gen_forest_glade.mobile-low.glb",
+          "tris": 676,
+          "within_budget": true
+        }
+      }
+    },
+    {
+      "file": "gen_hydrant_lowpoly.glb",
+      "title": "Hydrant \u2014 TripoSR, own limits 300\u20133,000 tris, vertex colours",
+      "kind": "asset",
+      "made_with": "mesh, vertex colours, own limits",
+      "colors": "vertex",
+      "caps": {
+        "mobile-low": 300,
+        "mobile-mid": 800,
+        "mobile-high": 1500,
+        "pc": 3000
+      },
+      "fbx": null,
+      "tris": 3000,
+      "clips": [],
+      "dims_m": [
+        0.4538,
+        0.7979,
+        0.4528
+      ],
+      "bones": 0,
+      "variants": [],
+      "tiers": {
+        "mobile-low": {
+          "file": "gen_hydrant_lowpoly.mobile-low.glb",
+          "tris": 300,
+          "within_budget": true
+        },
+        "mobile-mid": {
+          "file": "gen_hydrant_lowpoly.mobile-mid.glb",
+          "tris": 800,
+          "within_budget": true
+        },
+        "mobile-high": {
+          "file": "gen_hydrant_lowpoly.mobile-high.glb",
+          "tris": 1500,
+          "within_budget": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+/.godot/
+# synced copies of the repository samples (targets/godot/sync_samples.sh) and Godot's import sidecars
+/samples/
+*.tmp

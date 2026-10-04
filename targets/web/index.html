@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeshGate — web viewer</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0e17; --panel: rgba(14, 18, 34, .82); --line: rgba(139, 92, 246, .28);
+    --text: #e7ebff; --muted: #8f98bf; --accent: #a78bfa; --accent-2: #7c5cf0; --ok: #5fd39a; --warn: #f5b74f; --err: #fb7e8f;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { outline: none; }
+
+  /* --- panel --- */
+  #panel { position: fixed; left: 14px; top: 14px; bottom: 14px; width: 320px; display: flex; flex-direction: column; gap: 10px;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(14px);
+           padding: 12px; overflow: hidden; transition: transform .25s ease; }
+  #panel.hidden { transform: translateX(-352px); }
+  #panel header { display: flex; align-items: center; gap: 8px; }
+  #panel header b { color: var(--accent); font-size: 15px; letter-spacing: .02em; }
+  #panel header small { color: var(--muted); }
+  #panel header .spacer { flex: 1; }
+  #panel-body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; padding-right: 2px; }
+
+  details { border: 1px solid rgba(255,255,255,.06); border-radius: 8px; background: rgba(255,255,255,.025); }
+  details > summary { cursor: pointer; padding: 7px 10px; font-weight: 600; color: #cdd3f5; list-style: none; display: flex; align-items: center; gap: 6px; user-select: none; }
+  details > summary::before { content: "▸"; color: var(--accent); font-size: 11px; transition: transform .15s; }
+  details[open] > summary::before { transform: rotate(90deg); }
+  details > summary .badge { margin-left: auto; font-weight: 500; color: var(--muted); font-size: 11px; }
+  .sec { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+
+  dl { display: grid; grid-template-columns: 96px 1fr; gap: 3px 8px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; font-family: var(--mono); font-size: 12px; word-break: break-word; }
+  dd.ok { color: var(--ok); } dd.warn { color: var(--warn); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font: 11px var(--mono); padding: 2px 6px; border-radius: 5px; background: rgba(167,139,250,.14); border: 1px solid rgba(167,139,250,.25); color: #cbbcff; }
+  .chip.dim { opacity: .55; }
+  #gallery .chip { cursor: pointer; font: 12px system-ui, sans-serif; padding: 4px 9px; }
+  #gallery .chip:hover { background: rgba(167,139,250,.3); }
+  #gallery .chip.active { background: var(--accent-2); color: #fff; border-color: var(--accent-2); }
+  #gallery .gallery-group { flex-basis: 100%; margin-top: 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+
+  button, .btn { font: inherit; color: var(--text); background: rgba(167,139,250,.14); border: 1px solid rgba(167,139,250,.35); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  button:hover { background: rgba(167,139,250,.26); }
+  button.primary { background: var(--accent-2); border-color: var(--accent-2); }
+  button.primary:hover { background: #8d70f5; }
+  button.active { background: rgba(167,139,250,.35); border-color: var(--accent); }
+  button.icon { padding: 4px 7px; line-height: 1; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .row label { color: var(--muted); }
+  input[type=range] { flex: 1; accent-color: var(--accent); min-width: 80px; }
+  input[type=text], select { font: inherit; color: var(--text); background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.12); border-radius: 6px; padding: 5px 8px; }
+  input[type=text] { flex: 1; min-width: 0; }
+  label.toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; color: #cdd3f5; }
+  label.toggle input { accent-color: var(--accent); }
+
+  /* object tree */
+  #tree { font-family: var(--mono); font-size: 12px; max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+  #tree .node { display: flex; align-items: center; gap: 6px; padding: 2px 6px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+  #tree .node:hover { background: rgba(167,139,250,.12); }
+  #tree .node.selected { background: rgba(167,139,250,.28); color: #fff; }
+  #tree .node .t { color: var(--muted); font-size: 10px; width: 34px; }
+  #tree .node .tri { margin-left: auto; color: var(--muted); font-size: 10px; }
+
+  /* animations */
+  #clips { display: flex; flex-direction: column; gap: 4px; }
+  #clips .clip { display: flex; align-items: center; gap: 6px; }
+  #clips .clip button { flex: 1; text-align: left; font-family: var(--mono); font-size: 12px; }
+  #clips .clip small { color: var(--muted); font-family: var(--mono); }
+  #timeline { width: 100%; }
+  #time { font-family: var(--mono); color: var(--muted); font-size: 11px; min-width: 88px; text-align: right; }
+
+  /* overlays */
+  #tip { position: fixed; pointer-events: none; padding: 4px 8px; border-radius: 6px; background: rgba(10,12,24,.9); border: 1px solid var(--line);
+         font: 12px var(--mono); color: #d9ccff; transform: translate(14px, 14px); display: none; z-index: 5; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px; background: rgba(10,12,24,.92);
+           border: 1px solid var(--line); color: var(--text); display: none; max-width: min(720px, 90vw); z-index: 6; }
+  #toast.err { border-color: var(--err); color: #ffd3d9; }
+  #drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(124,92,240,.18);
+          border: 3px dashed var(--accent); z-index: 7; pointer-events: none; font-size: 20px; color: #fff; }
+  #drop.over { display: flex; }
+  #stats { position: fixed; right: 14px; top: 14px; padding: 6px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line);
+           font: 11px var(--mono); color: var(--muted); backdrop-filter: blur(14px); }
+  #stats b { color: var(--text); font-weight: 500; }
+  #help { position: fixed; right: 14px; bottom: 14px; padding: 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line);
+          font-size: 11px; color: var(--muted); backdrop-filter: blur(14px); max-width: 360px; }
+  #help kbd { font: 10px var(--mono); padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); color: var(--text); }
+  #help .pipe { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.08); font-family: var(--mono); color: #b9a6ff; }
+  #toggle-panel { position: fixed; left: 14px; top: 14px; display: none; z-index: 4; }
+  #toggle-panel.show { display: block; }
+  #progress { position: fixed; left: 0; top: 0; height: 2px; width: 0; background: var(--accent); transition: width .15s; z-index: 8; }
+
+  @media (max-width: 720px) {
+    #panel { width: calc(100vw - 28px); bottom: auto; max-height: 60vh; }
+    #help { display: none; }
+    #stats { top: auto; bottom: 14px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="progress"></div>
+
+<aside id="panel">
+  <header>
+    <b>MeshGate</b><small>web viewer · glTF/GLB</small>
+    <span class="spacer"></span>
+    <button class="icon" id="btn-hide" title="Hide panel (Tab)">◀</button>
+  </header>
+  <div id="panel-body">
+    <details open>
+      <summary>Samples <span class="badge" id="gallery-count"></span></summary>
+      <div class="sec"><div class="chips" id="gallery"></div></div>
+    </details>
+
+    <details open>
+      <summary>Asset <span class="badge" id="asset-name">—</span></summary>
+      <div class="sec">
+        <dl id="asset-info"><dt>status</dt><dd id="asset-status">loading…</dd></dl>
+        <div class="chips" id="asset-ext"></div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Selection <span class="badge" id="sel-name">nothing</span></summary>
+      <div class="sec">
+        <dl id="sel-info"><dt></dt><dd style="color:var(--muted)">hover and click an object · double-click to focus</dd></dl>
+        <div class="row"><button id="btn-frame-sel">Frame (F)</button><button id="btn-clear-sel">Deselect (Esc)</button></div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Objects <span class="badge" id="tree-count">0</span></summary>
+      <div class="sec"><div id="tree"></div></div>
+    </details>
+
+    <details open id="anim-section">
+      <summary>Animations <span class="badge" id="anim-count">0</span></summary>
+      <div class="sec">
+        <div id="clips"></div>
+        <div class="row">
+          <button id="btn-play" class="primary">⏯ Pause</button>
+          <button id="btn-stop">⏹</button>
+          <button id="btn-all">All</button>
+          <label class="toggle"><input type="checkbox" id="chk-loop" checked> loop</label>
+        </div>
+        <div class="row"><input type="range" id="timeline" min="0" max="1" step="0.001" value="0"><span id="time">0.00 / 0.00 s</span></div>
+        <div class="row"><label>speed</label><input type="range" id="speed" min="0.1" max="3" step="0.1" value="1"><span id="speed-val" style="font-family:var(--mono)">1.0×</span></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>View</summary>
+      <div class="sec">
+        <div class="row">
+          <label>quality</label>
+          <select id="quality">
+            <option value="auto">Auto</option>
+            <option value="mobile-low">Mobile · low</option>
+            <option value="mobile-mid">Mobile · mid</option>
+            <option value="mobile-high">Mobile · high</option>
+            <option value="pc">PC · high quality</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>environment</label>
+          <select id="env">
+            <option value="room">studio (RoomEnvironment)</option>
+            <option value="none">no environment</option>
+            <option value="hdr">HDRI from URL…</option>
+          </select>
+        </div>
+        <div class="row" id="hdr-row" style="display:none"><input type="text" id="hdr-url" placeholder="https://…/sky.hdr"><button id="btn-hdr">↵</button></div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="chk-envbg"> HDRI background</label>
+          <label class="toggle"><input type="checkbox" id="chk-grid" checked> grid (G)</label>
+          <label class="toggle"><input type="checkbox" id="chk-shadows" checked> shadows</label>
+          <label class="toggle"><input type="checkbox" id="chk-wire"> wireframe (W)</label>
+          <label class="toggle"><input type="checkbox" id="chk-skel"> skeleton (S)</label>
+          <label class="toggle"><input type="checkbox" id="chk-uv"> UV checker (U)</label>
+        </div>
+        <div class="row"><label>exposure</label><input type="range" id="exposure" min="0.2" max="2.5" step="0.05" value="1"><span id="exposure-val" style="font-family:var(--mono)">1.00</span></div>
+        <div class="row"><button id="btn-reset">Reset camera (R)</button><button id="btn-shot">PNG screenshot</button></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Load another GLB</summary>
+      <div class="sec">
+        <div class="row"><input type="text" id="glb-url" placeholder="/samples/name.glb or https://…"><button id="btn-load">↵</button></div>
+        <div class="row"><label class="btn" for="file">Choose file…</label><input type="file" id="file" accept=".glb,.gltf,.hdr" style="display:none"><span style="color:var(--muted)">or drop a .glb / .hdr onto the page</span></div>
+        <div class="row"><small style="color:var(--muted)">URL parameters: <code>?glb=…</code> <code>&hdr=…</code> <code>&env=none</code> <code>&autoplay=0</code></small></div>
+      </div>
+    </details>
+  </div>
+</aside>
+<button id="toggle-panel" class="icon" title="Show panel (Tab)">▶</button>
+
+<div id="stats"><b id="st-tier">—</b> · <b id="st-fps">—</b> fps · <b id="st-calls">—</b> draw calls · <b id="st-tris">—</b> tris</div>
+<div id="help">
+  <kbd>LMB</kbd> orbit · <kbd>RMB</kbd> pan · <kbd>wheel</kbd> zoom · <kbd>click</kbd> select · <kbd>2×click</kbd> focus ·
+  <kbd>Space</kbd> animation · <kbd>F</kbd> frame · <kbd>G</kbd> grid · <kbd>W</kbd> wireframe · <kbd>S</kbd> skeleton · <kbd>U</kbd> UV · <kbd>R</kbd> camera · <kbd>Tab</kbd> panel
+  <div class="pipe">Blender → export_meshgate.py → validate_glb.py → GLB → this viewer / Unity / Godot / Unreal</div>
+</div>
+<div id="tip"></div>
+<div id="toast"></div>
+<div id="drop">Release to load .glb / .hdr</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
